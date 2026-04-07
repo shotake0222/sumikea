@@ -1,75 +1,71 @@
 import { supabase } from '@/lib/supabase';
 import { notFound } from 'next/navigation';
+import { getNearbyStores } from '@/lib/osm';
 
 export default async function RoomPage({ params }: { params: { id: string } }) {
-  const { data: property, error } = await supabase
-    .from('properties')
-    .select('*')
-    .eq('id', params.id)
-    .single();
+  // 1. 物件・ゴミ出し・お知らせを並列で取得
+  const [propRes, trashRes, newsRes] = await Promise.all([
+    supabase.from('properties').select('*').eq('id', params.id).single(),
+    supabase.from('trash_schedules').select('*').eq('property_id', params.id),
+    supabase.from('announcements').select('*').eq('property_id', params.id).order('created_at', { ascending: false })
+  ]);
 
-  if (error || !property) {
-    return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl font-bold text-red-600">物件が見つかりません</h1>
-        <p className="mt-2 text-gray-600">ID: {params.id}</p>
-      </div>
-    );
-  }
+  if (!propRes.data) return notFound();
+  const property = propRes.data;
+
+  // 2. 周辺店舗を取得（物件の緯度経度を使用）
+  const stores = await getNearbyStores(property.lat || 35.698, property.lng || 139.413);
 
   return (
     <main className="max-w-md mx-auto min-h-screen bg-gray-50 pb-20">
-      {/* ヘッダー */}
-      <header className="bg-blue-600 text-white p-6 shadow-md">
-        <h1 className="text-2xl font-bold">{property.name}</h1>
-        <p className="text-sm opacity-90 mt-1">{property.address}</p>
+      <header className="bg-blue-600 text-white p-6 shadow-md text-center">
+        <h1 className="text-xl font-bold">{property.name} コンシェルジュ</h1>
+        <p className="text-xs opacity-80 mt-1">{property.address}</p>
       </header>
 
-      <div className="p-4 space-y-6">
-        {/* セクション1：ゴミ出し (OCR/手入力反映用) */}
+      <div className="p-4 space-y-4">
+        {/* ゴミ出しセクション */}
         <section className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h2 className="font-bold text-lg mb-3 flex items-center">
-            📅 ゴミ出しスケジュール
-          </h2>
-          <div className="grid grid-cols-2 gap-2 text-sm text-center">
-            <div className="bg-orange-50 p-2 rounded text-orange-700">可燃：月・木</div>
-            <div className="bg-blue-50 p-2 rounded text-blue-700">不燃：第1・3水</div>
-            <div className="bg-green-50 p-2 rounded text-green-700">資源：金</div>
-            <div className="bg-gray-50 p-2 rounded text-gray-500">プラ：火</div>
-          </div>
-        </section>
-
-        {/* セクション2：お知らせ (管理者ページ連携用) */}
-        <section className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h2 className="font-bold text-lg mb-2">📢 管理会社からのお知らせ</h2>
-          <div className="text-sm text-gray-600 border-l-4 border-blue-500 pl-3 py-1">
-            <p className="font-semibold text-gray-800">4/15 排水管清掃のお知らせ</p>
-            <p className="text-xs">当日は9:00〜12:00まで断水となります。</p>
-          </div>
-        </section>
-
-        {/* セクション3：周辺店舗 (Google Maps API連携用) */}
-        <section className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h2 className="font-bold text-lg mb-2">🛒 周辺のお得情報</h2>
-          <p className="text-xs text-gray-400 mb-3">※Google Mapsより自動取得</p>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center border-b pb-2">
-              <div>
-                <p className="font-bold text-sm">スーパー・ライフ</p>
-                <p className="text-xs text-gray-500">徒歩3分 / チラシあり</p>
+          <h2 className="font-bold text-md mb-3 flex items-center">📅 今週のゴミ出し</h2>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {trashRes.data?.length ? trashRes.data.map((t: any) => (
+              <div key={t.id} className="bg-gray-50 p-2 rounded border border-gray-100">
+                <span className="font-bold text-blue-600">{t.day_of_week}曜日</span>: {t.category}
               </div>
-              <button className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full">チラシ</button>
+            )) : <p className="text-gray-400 col-span-2">スケジュールが未登録です</p>}
+          </div>
+        </section>
+
+        {/* お知らせセクション */}
+        <section className="bg-white rounded-xl p-4 shadow-sm">
+          <h2 className="font-bold text-md mb-2">📢 管理室から</h2>
+          {newsRes.data?.slice(0, 1).map((n: any) => (
+            <div key={n.id} className="text-sm bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+              <p className="font-bold text-yellow-800">{n.title}</p>
+              <p className="text-xs text-yellow-700 mt-1">{n.content}</p>
             </div>
+          )) || <p className="text-gray-400 text-sm">新しいお知らせはありません</p>}
+        </section>
+
+        {/* 周辺店舗（OSM連携） */}
+        <section className="bg-white rounded-xl p-4 shadow-sm">
+          <h2 className="font-bold text-md mb-3">🛒 周辺の店舗（無料API取得）</h2>
+          <div className="space-y-3">
+            {stores.map((s: any, i: number) => (
+              <div key={i} className="flex justify-between items-center text-sm border-b pb-2 last:border-0">
+                <span className="font-medium text-gray-700">{s.name}</span>
+                <span className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase">{s.type}</span>
+              </div>
+            ))}
           </div>
         </section>
       </div>
 
-      {/* フッターナビ（住人・店舗・管理者への切り替えイメージ） */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t p-3 flex justify-around text-[10px] text-gray-400">
-        <div className="text-blue-600 font-bold">住民</div>
-        <div>店舗</div>
-        <div>管理会社</div>
-        <div>運営</div>
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t p-4 flex justify-around text-xs text-gray-400 shadow-lg">
+        <div className="text-blue-600 font-bold border-b-2 border-blue-600 pb-1">ホーム</div>
+        <div>クーポン</div>
+        <div>掲示板</div>
+        <div>マイ設定</div>
       </nav>
     </main>
   );
