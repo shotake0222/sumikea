@@ -1,12 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-// VercelのSettings > Environment Variables に登録する名前をこれに統一します
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// ANON でも ANONYM でも、どちらかある方を採用する設定です
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANONYM_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  // ビルド時にエラーの理由を明確にするためのメッセージ
-  console.error('Supabase環境変数が設定されていません。URL:', supabaseUrl)
+  console.error('設定エラー: URLまたはKeyが読み込めません', { url: !!supabaseUrl, key: !!supabaseAnonKey })
 }
 
 export const supabase = createClient(
