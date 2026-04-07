@@ -1,4 +1,4 @@
-import { supabase } from '../../lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 export default async function RoomPage(props: any) {
   // Next.js 15対策: paramsをawaitする
