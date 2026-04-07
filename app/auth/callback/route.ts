@@ -7,22 +7,27 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  
-  // 重要：メールのリンクから物件ID（id）を受け取る
-  const propertyId = requestUrl.searchParams.get('id')
 
   if (code) {
     const supabase = createRouteHandlerClient({ cookies })
-    // 認可コードをセッションに交換（これでログイン完了）
-    await supabase.auth.exchangeCodeForSession(code)
+    // 1. まずログインを完了させる
+    const { data: { session } } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (session?.user) {
+      // 2. このユーザーが紐付いている物件IDをDBから探す
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('property_id')
+        .eq('id', session.user.id)
+        .single()
+
+      if (profile?.property_id) {
+        // 物件IDが見つかれば、その専用ページへ自動転送！
+        return NextResponse.redirect(`${requestUrl.origin}/rooms/${profile.property_id}`)
+      }
+    }
   }
 
-  // 物件IDがある場合はその部屋へ、なければトップへ
-  if (propertyId) {
-    // 例: /rooms/036097d4... へリダイレクト
-    return NextResponse.redirect(`${requestUrl.origin}/rooms/${propertyId}`)
-  }
-  
-  // 物件IDが不明な場合のみトップページへ
+  // 物件が不明な場合のみトップページへ
   return NextResponse.redirect(requestUrl.origin)
 }
