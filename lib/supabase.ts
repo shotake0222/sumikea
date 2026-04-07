@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-// ANON でも ANONYM でも、どちらかある方を採用する設定です
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANONYM_KEY
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+// 変数が空の場合にエラーを出すようにして、原因を特定しやすくする
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('設定エラー: URLまたはKeyが読み込めません', { url: !!supabaseUrl, key: !!supabaseAnonKey })
+  console.error("Supabaseの環境変数が読み込めていません。")
 }
 
 export const supabase = createClient(
-  supabaseUrl || '', 
+  supabaseUrl || '',
   supabaseAnonKey || ''
 )
