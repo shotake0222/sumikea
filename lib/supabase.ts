@@ -1,20 +1,20 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// サーバーサイドとクライアントサイド両方で安全に初期化
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: false // サーバーサイドでのエラーを防ぐ
-  }
-})
-// 変数が空の場合にエラーを出すようにして、原因を特定しやすくする
+// 環境変数が無い場合にビルドログで気づけるようにする
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("Supabaseの環境変数が読み込めていません。")
+  console.warn("⚠️ Supabaseの環境変数が読み込めていません。Vercelの設定を確認してください。")
 }
 
+// 唯一の定義（サーバー・クライアント両対応の設定）
 export const supabase = createClient(
   supabaseUrl || '',
-  supabaseAnonKey || ''
+  supabaseAnonKey || '',
+  {
+    auth: {
+      persistSession: false
+    }
+  }
 )
