@@ -1,39 +1,23 @@
-'use client'
-import { useEffect, Suspense } from 'react' // Suspenseを追加
-import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
-function AuthHandler() { // 処理部分を切り分け
-  const router = useRouter()
-  const searchParams = useSearchParams()
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  // ログイン画面から引き継いできた物件IDを取得
+  const propertyId = requestUrl.searchParams.get('id')
 
-  useEffect(() => {
-    const handleAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const propertyId = searchParams.get('property_id')
+  if (code) {
+    const supabase = createRouteHandlerClient({ cookies })
+    await supabase.auth.exchangeCodeForSession(code)
 
-      if (propertyId) {
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          property_id: propertyId,
-          email: user.email,
-        })
-        router.push(`/rooms/${propertyId}`)
-      } else {
-        router.push('/')
-      }
+    // ログイン成功後、物件IDがあればそのページへ、なければトップへ
+    if (propertyId) {
+      return NextResponse.redirect(`${requestUrl.origin}/rooms/${propertyId}`)
     }
-    handleAuth()
-  }, [router, searchParams])
+  }
 
-  return <div className="p-10 text-center">認証を完了しています...</div>
-}
-
-export default function AuthCallback() {
-  return (
-    <Suspense fallback={<div className="p-10 text-center">読み込み中...</div>}>
-      <AuthHandler />
-    </Suspense>
-  )
+  // IDがない場合のフォールバック
+  return NextResponse.redirect(requestUrl.origin)
 }
