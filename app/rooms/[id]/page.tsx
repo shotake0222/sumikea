@@ -1,5 +1,4 @@
-// 1. パス指定を「@/」から相対パスに変更（設定不要で確実に動くようにするため）
-import { supabase } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase' // 「@/」ではなく「../../」を使う
 
 // 2. Next.js 14/15の仕様に合わせ、paramsの型定義をより安全にする
 type Props = {
