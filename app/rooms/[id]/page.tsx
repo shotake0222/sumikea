@@ -1,53 +1,82 @@
 export const dynamic = 'force-dynamic';
 
 import { supabase } from '@/lib/supabase';
+import { notFound } from 'next/navigation';
+import { getNearbyStores } from '@/lib/osm';
 
 export default async function RoomPage({ params }: { params: { id: string } }) {
+  // 1. データの並列取得（DBのみ）
+  const [propRes, trashRes, newsRes] = await Promise.all([
+    supabase.from('properties').select('*').eq('id', params.id).single(),
+    supabase.from('trash_schedules').select('*').eq('property_id', params.id),
+    supabase.from('announcements').select('*').eq('property_id', params.id).order('created_at', { ascending: false })
+  ]);
+
+  if (propRes.error || !propRes.data) return notFound();
+  const property = propRes.data;
+
+  // 2. 周辺店舗の取得（もしエラーが起きてもページを落とさない）
+  let stores = [];
   try {
-    // 1. まずIDが届いているかチェック
-    if (!params.id) {
-      return <div className="p-10 text-black">エラー: URLにIDが含まれていません。</div>;
-    }
-
-    // 2. Supabaseからデータを取る（ここが怪しい）
-    const { data: property, error: propError } = await supabase
-      .from('properties')
-      .select('name, address')
-      .eq('id', params.id)
-      .single();
-
-    // 3. Supabaseがエラーを返した場合、その中身を表示
-    if (propError) {
-      return (
-        <div className="p-10 text-red-600 bg-white min-h-screen">
-          <h1 className="font-bold text-xl">Supabaseがエラーを返しました</h1>
-          <p className="mt-2 text-sm">Message: {propError.message}</p>
-          <p className="text-xs text-gray-400">Code: {propError.code}</p>
-          <p className="text-xs text-gray-400">Hint: {propError.hint}</p>
-          <hr className="my-4" />
-          <p className="text-black text-xs">アクセスしようとしたID: {params.id}</p>
-        </div>
-      );
-    }
-
-    // 4. データが取れた場合
-    return (
-      <div className="p-10 text-black bg-white min-h-screen">
-        <h1 className="text-2xl font-bold text-green-600">接続成功！</h1>
-        <p className="mt-4">物件名: {property?.name}</p>
-        <p className="text-sm text-gray-500">住所: {property?.address}</p>
-      </div>
-    );
-
-  } catch (err: any) {
-    // 5. プログラム自体がクラッシュした場合
-    return (
-      <div className="p-10 text-orange-600 bg-white min-h-screen">
-        <h1 className="font-bold text-xl">プログラム実行エラー</h1>
-        <pre className="mt-4 text-xs bg-gray-100 p-4 overflow-auto">
-          {err.message || "Unknown error"}
-        </pre>
-      </div>
-    );
+    // タイムアウト対策として、もし5秒以上かかったら諦める設定などが望ましいですが、まずはtry-catchで保護
+    stores = await getNearbyStores(property.lat || 35.698, property.lng || 139.413);
+  } catch (e) {
+    console.error("OSM Fetch Error:", e);
   }
+
+  return (
+    <main className="max-w-md mx-auto min-h-screen bg-gray-50 pb-20 text-black">
+      <header className="bg-blue-600 text-white p-6 shadow-md text-center">
+        <h1 className="text-xl font-bold">{property.name}</h1>
+        <p className="text-xs opacity-80 mt-1">{property.address}</p>
+      </header>
+
+      <div className="p-4 space-y-4">
+        {/* ゴミ出しセクション */}
+        <section className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <h2 className="font-bold text-md mb-3 flex items-center text-blue-600">📅 ゴミ出しカレンダー</h2>
+          <div className="grid grid-cols-1 gap-2 text-sm">
+            {trashRes.data?.length ? trashRes.data.map((t: any) => (
+              <div key={t.id} className="flex justify-between bg-gray-50 p-2 rounded">
+                <span className="font-bold">{t.day_of_week}曜日</span>
+                <span>{t.category}</span>
+              </div>
+            )) : <p className="text-gray-400">登録なし</p>}
+          </div>
+        </section>
+
+        {/* お知らせ */}
+        <section className="bg-white rounded-xl p-4 shadow-sm">
+          <h2 className="font-bold text-md mb-2">📢 お知らせ</h2>
+          {newsRes.data?.length ? (
+            <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 text-sm">
+              <p className="font-bold">{newsRes.data[0].title}</p>
+              <p className="text-xs mt-1">{newsRes.data[0].content}</p>
+            </div>
+          ) : <p className="text-gray-400 text-sm">なし</p>}
+        </section>
+
+        {/* 周辺店舗（自動取得） */}
+        <section className="bg-white rounded-xl p-4 shadow-sm">
+          <h2 className="font-bold text-md mb-3">🛒 近所のスーパー・コンビニ</h2>
+          <div className="space-y-2">
+            {stores.length > 0 ? stores.map((s: any, i: number) => (
+              <div key={i} className="flex justify-between items-center text-sm border-b pb-2 last:border-0">
+                <span>{s.name}</span>
+                <span className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-400 uppercase">{s.type}</span>
+              </div>
+            )) : <p className="text-gray-400 text-sm">店舗情報を読み込み中、または取得失敗</p>}
+          </div>
+        </section>
+      </div>
+
+      {/* 固定フッター */}
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t p-4 flex justify-around text-xs text-gray-400">
+        <div className="text-blue-600 font-bold">ホーム</div>
+        <div>クーポン</div>
+        <div>掲示板</div>
+        <div>設定</div>
+      </nav>
+    </main>
+  );
 }
