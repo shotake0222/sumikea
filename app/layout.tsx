@@ -1,5 +1,6 @@
 // app/layout.tsx
-import "./[uuid]/globals.css"; // 's' を付けて再試行
+// sがあるかないか、両方試せるように一応 sなしを推奨します（画像でそう見えたため）
+import "./[uuid]/global.css"; 
 
 export const metadata = {
   title: 'sumikea',
