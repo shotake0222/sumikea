@@ -1,10 +1,14 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import AdminLayout from '../../../components/AdminLayout'; // 以前作成した共通レイアウト
+import AdminLayout from '../../../components/AdminLayout';
+import { useRouter } from 'next/navigation';
 
 export default function ShopPostPage() {
-  const [properties, setProperties] = useState<any[]>([]);
+  const router = useRouter();
+  const [myStore, setMyStore] = useState<any>(null);
+  const [allowedProperties, setAllowedProperties] = useState<any[]>([]);
+  
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [storeName, setStoreName] = useState('');
   const [title, setTitle] = useState('');
@@ -16,18 +20,45 @@ export default function ShopPostPage() {
   const [isMultiPost, setIsMultiPost] = useState(false);
   const [nearbyProperties, setNearbyProperties] = useState<any[]>([]);
 
+  // マルチテナント・初期化処理
   useEffect(() => {
-    const fetchProperties = async () => {
-      const { data } = await supabase.from('properties').select('uuid, name, lat, lng');
-      if (data) setProperties(data);
+    const initializePortal = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      // 店舗情報の取得
+      const { data: storeData } = await supabase
+        .from('stores')
+        .select('*')
+        .eq('owner_id', user.id)
+        .single();
+      
+      if (storeData) {
+        setMyStore(storeData);
+        setStoreName(storeData.name);
+
+        // 配信許可されている物件のみ取得
+        const { data: permissionData } = await supabase
+          .from('store_property_permissions')
+          .select('properties(uuid, name, lat, lng)')
+          .eq('store_id', storeData.id);
+        
+        if (permissionData) {
+          setAllowedProperties(permissionData.map((d: any) => d.properties));
+        }
+      }
     };
-    fetchProperties();
-  }, []);
+    initializePortal();
+  }, [router]);
 
   const handleNearbySearch = async () => {
+    // ショップの座標は本来myStoreから取得するが、デモ用に固定値
     const shopLat = 35.698; 
     const shopLng = 139.413;
-    const filtered = properties.filter(p => {
+    const filtered = allowedProperties.filter(p => {
       if (!p.lat || !p.lng) return false;
       const dist = Math.sqrt(Math.pow(p.lat - shopLat, 2) + Math.pow(p.lng - shopLng, 2));
       return dist < 0.005; 
@@ -37,7 +68,10 @@ export default function ShopPostPage() {
   };
 
   const handleAIGenerate = async () => {
-    const displayPropName = isMultiPost ? (nearbyProperties[0]?.name || "周辺") : (properties.find(p => p.uuid === selectedPropertyId)?.name || "物件");
+    const displayPropName = isMultiPost 
+      ? (nearbyProperties[0]?.name || "周辺") 
+      : (allowedProperties.find(p => p.uuid === selectedPropertyId)?.name || "物件");
+    
     if (!storeName) return alert('店舗名を入力してください');
     
     setAiGenerating(true);
@@ -57,12 +91,15 @@ export default function ShopPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!myStore) return alert('店舗セッションが有効ではありません');
+
     const targetIds = isMultiPost ? nearbyProperties.map(p => p.uuid) : [selectedPropertyId];
     if (targetIds.length === 0 || !targetIds[0]) return alert('配信先の物件を選択してください');
     
     setLoading(true);
     const insertData = targetIds.map(uuid => ({
       store_name: storeName,
+      store_id: myStore.id, // マルチテナント識別子
       title, 
       content, 
       property_id: uuid,
@@ -85,7 +122,6 @@ export default function ShopPostPage() {
   return (
     <AdminLayout userType="SHOP">
       <div className="flex flex-col lg:flex-row gap-8">
-        {/* 左側：入力フォーム */}
         <div className="flex-1 space-y-6">
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100">
             <div className="flex justify-between items-center mb-8">
@@ -101,7 +137,6 @@ export default function ShopPostPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* 配信モード選択 */}
               <div className="flex p-1.5 bg-slate-100 rounded-2xl w-fit">
                 <button 
                   type="button"
@@ -117,7 +152,7 @@ export default function ShopPostPage() {
 
               {!isMultiPost ? (
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">配信先物件</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">配信先物件（許可済み）</label>
                   <select 
                     className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm focus:ring-2 focus:ring-blue-600 outline-none"
                     value={selectedPropertyId}
@@ -125,7 +160,7 @@ export default function ShopPostPage() {
                     required={!isMultiPost}
                   >
                     <option value="">配信先を選択してください</option>
-                    {properties.map(p => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+                    {allowedProperties.map(p => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
                   </select>
                 </div>
               ) : (
@@ -143,7 +178,7 @@ export default function ShopPostPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">店舗名</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">表示店舗名</label>
                   <input 
                     className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm" 
                     value={storeName} 
@@ -186,7 +221,7 @@ export default function ShopPostPage() {
               </div>
 
               <button 
-                disabled={loading}
+                disabled={loading || !myStore}
                 className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-xl shadow-slate-200 transition active:scale-[0.98] mt-4"
               >
                 {loading ? '配信中...' : isMultiPost ? '対象物件へ一括ポスティング' : 'デジタルポスティングを実行'}
@@ -195,13 +230,11 @@ export default function ShopPostPage() {
           </div>
         </div>
 
-        {/* 右側：プレビュー（スマホ画面を模したデザイン） */}
+        {/* 右側：プレビュー */}
         <div className="w-full lg:w-80 space-y-6">
           <div className="sticky top-24 bg-slate-900 rounded-[3rem] p-4 pt-12 pb-8 shadow-2xl relative border-[6px] border-slate-800">
             <div className="absolute top-4 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-800 rounded-full"></div>
-            
             <p className="text-[10px] text-center text-slate-500 font-bold mb-6 uppercase tracking-tighter">Smartphone Preview</p>
-            
             <div className="bg-slate-50 rounded-[2rem] overflow-hidden min-h-[400px]">
               <div className="bg-white p-5 m-3 rounded-2xl shadow-sm border border-slate-100">
                 <span className="text-[9px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded mb-2 inline-block uppercase">
@@ -211,7 +244,7 @@ export default function ShopPostPage() {
                   {title || 'ここに見出しが表示されます'}
                 </h3>
                 <p className="text-[11px] text-slate-500 line-clamp-3 mb-4">
-                  {content || 'ここに入力した広告の本文が表示されます。住民の興味を引く内容を書きましょう。'}
+                  {content || '住民の興味を引く内容を書きましょう。'}
                 </p>
                 {couponCode && (
                   <div className="bg-slate-900 text-white p-2 rounded-xl text-center">
