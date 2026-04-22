@@ -12,7 +12,8 @@
     "next": "14.x",
     "react": "^18",
     "react-dom": "^18",
-    "@supabase/supabase-js": "latest"
+    "@supabase/supabase-js": "latest",
+    "lucide-react": "latest"
   },
   "devDependencies": {
     "typescript": "^5",
