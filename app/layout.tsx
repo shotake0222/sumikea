@@ -1,3 +1,6 @@
+// app/layout.tsx
+import "./globals.css"; // ここで今作ったファイルを読み込む
+
 export const metadata = {
   title: 'sumikea',
   description: '物件単位の生活インフラ情報アプリ',
