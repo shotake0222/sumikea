@@ -39,3 +39,25 @@ export default function TrashUploadButton({ propertyId }: { propertyId: string }
     </label>
   );
 }
+
+const handleUpload = async (file: File) => {
+  // 1. 時刻チェック（例: 朝5時〜10時以外は警告）
+  const hour = new Date().getHours();
+  if (hour < 5 || hour > 10) {
+    if (!confirm("現在はゴミ収集時間外の可能性があります。報告を続けますか？")) return;
+  }
+
+  // 2. 位置情報チェック（任意：物件の座標と照合）
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    // ここで物件の座標(property.lat/lng)と距離計算し、離れすぎていれば警告
+    // ...
+    
+    // 3. アップロード実行
+    const { data, error } = await supabase.storage.from('trash-reports').upload(`...`);
+    
+    if (!error && onSuccess) {
+      onSuccess(); // これでResidentDashboardClient側の広告ポップアップが動く
+    }
+  });
+};

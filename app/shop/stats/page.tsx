@@ -103,3 +103,29 @@ export default function ShopStatsPage() {
     </div>
   );
 }
+
+// 印刷用ボタンを追加
+const handlePrint = () => {
+  window.print(); // ブラウザの印刷機能を呼び出し
+};
+
+// ... return 内 ...
+<div className="flex justify-between items-center mb-6 no-print">
+  <h1 className="text-xl font-bold text-gray-800">📊 配信成果レポート</h1>
+  <button 
+    onClick={handlePrint}
+    className="bg-gray-800 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-black"
+  >
+    レポートを保存/印刷
+  </button>
+</div>
+
+{/* 印刷時にだけ見えるサマリー（営業資料用） */}
+<div className="hidden print:block mb-8 border-b-2 pb-4">
+  <h1 className="text-3xl font-black mb-2">AD Performance Report</h1>
+  <p className="text-gray-500">発行日: {new Date().toLocaleDateString()}</p>
+  <div className="mt-6 p-4 bg-gray-100 rounded-lg">
+    <p className="text-lg font-bold">総インプレッション数: {stats.reduce((acc, s) => acc + s.total_views, 0)}回</p>
+    <p className="text-sm text-gray-600">※本レポートはポスティングDXシステムにより自動生成されました。</p>
+  </div>
+</div>
