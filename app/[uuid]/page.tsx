@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/supabase'; // 相対パスに変更
 import { notFound } from 'next/navigation';
 
 interface Props {

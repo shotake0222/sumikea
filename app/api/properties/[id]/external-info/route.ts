@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase'; // これ1本に絞る
+// 修正前: import { supabase } from '@/lib/supabase';
+import { supabase } from '../../../../../lib/supabase'; // 5階層上にある lib フォルダを指定
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const propertyId = params.id
