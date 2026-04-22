@@ -9,7 +9,6 @@ export default function ShopPostPage() {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 物件リストを読み込む
   useEffect(() => {
     const fetchProperties = async () => {
       const { data } = await supabase.from('properties').select('id, name');
@@ -41,26 +40,44 @@ export default function ShopPostPage() {
 
   return (
     <div className="max-w-md mx-auto p-6 bg-white min-h-screen">
-      <h1 className="text-xl font-bold mb-6 border-b pb-2">📢 店舗広告・クーポン投稿</h1>
+      <h1 className="text-xl font-bold mb-6 border-b pb-2 text-orange-600">📢 店舗広告・クーポン投稿</h1>
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="text-sm font-medium">配信先の物件を選択</label>
           <select 
-            className="w-full border p-3 rounded mt-1 bg-gray-50"
+            className="w-full border p-3 rounded mt-1 bg-gray-50 focus:ring-2 focus:ring-orange-500 outline-none"
             value={selectedPropertyId}
             onChange={(e) => setSelectedPropertyId(e.target.value)}
             required
           >
-            <option value="">物件を選択してください</option>
+            <option value="">配信先を選んでください</option>
             {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-        {/* ...前回のタイトル・内容のinput... */}
+        <div>
+          <label className="text-sm font-medium">キャッチコピー</label>
+          <input 
+            className="w-full border p-3 rounded mt-1" 
+            value={title} 
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="例：タイムセール実施中！"
+            required
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">特典・内容</label>
+          <textarea 
+            className="w-full border p-3 rounded mt-1 h-24" 
+            value={content} 
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="この画面提示で10%OFF"
+          />
+        </div>
         <button 
           disabled={loading}
-          className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-lg"
+          className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-orange-600 transition"
         >
-          {loading ? '送信中...' : 'この物件に配信する'}
+          {loading ? '送信中...' : 'この物件に配信を開始する'}
         </button>
       </form>
     </div>
