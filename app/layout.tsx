@@ -1,5 +1,4 @@
-// app/layout.tsx
-import "./globals.css"; // ここで今作ったファイルを読み込む
+import "./globals.css"; // これで上のファイルを読み込みます
 
 export const metadata = {
   title: 'sumikea',
@@ -13,6 +12,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
+      {/* bodyタグにTailwindのクラスが入っているか確認してください */}
       <body className="antialiased bg-slate-50 text-slate-800">
         {children}
       </body>
