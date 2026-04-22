@@ -1,13 +1,12 @@
-// 1. ファイル名から 's' を取る 
-// 2. 同じ階層にあるので ./ で指定
-import './global.css'; 
+// 3回戻って [uuid] フォルダの中の global.css を見に行く
+import '../[uuid]/global.css'; 
 
 export const metadata = {
-  title: 'sumikea - 住民ダッシュボード',
-  description: '物件単位の生活インフラ情報アプリ',
+  title: 'sumikea - 管理画面',
+  description: 'ポスティング・運用管理コンソール',
 }
 
-export default function RootLayout({
+export default function AdminRootLayout({
   children,
 }: {
   children: React.ReactNode
