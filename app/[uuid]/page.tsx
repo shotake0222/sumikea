@@ -107,3 +107,28 @@ export default async function ResidentDashboard({ params }: Props) {
     </main>
   );
 }
+
+// アイコン用に lucide-react をインポート (package.jsonに追加済み)
+import { Camera } from 'lucide-react';
+
+// ... (既存のコードのゴミ出しセクション内)
+<section className="mb-6 p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+  <div className="flex justify-between items-center mb-3">
+    <h2 className="font-semibold flex items-center">🗑 今日のゴミ出し</h2>
+    {/* 投稿用隠しinput */}
+    <label className="cursor-pointer bg-blue-600 text-white p-2 rounded-full shadow-md hover:bg-blue-700 transition">
+      <Camera size={20} />
+      <input 
+        type="file" 
+        accept="image/*" 
+        capture="environment" 
+        className="hidden" 
+        onChange={async (e) => {
+          /* ここに後述のアップロードロジックを実装 */
+          alert('画像を解析してポイントを付与します！');
+        }}
+      />
+    </label>
+  </div>
+  {/* ...以下、既存の表示ロジック */}
+</section>
