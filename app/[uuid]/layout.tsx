@@ -1,4 +1,6 @@
-import "@/app/globals.css"; // @/ を使った指定
+// 1. ファイル名から 's' を取る 
+// 2. 同じ階層にあるので ./ で指定
+import './global.css'; 
 
 export const metadata = {
   title: 'sumikea - 住民ダッシュボード',
