@@ -1,34 +1,8 @@
-import { supabase } from '../../lib/supabase'; // 相対パスに変更
+import { supabase } from '../../lib/supabase';
 import { notFound } from 'next/navigation';
-// インポート追加
-import { uploadImage } from '../../lib/upload'; 
+// 切り出したボタンコンポーネントをインポート
+import TrashUploadButton from '../../components/TrashUploadButton';
 
-// ... onChangeの中身
-onChange={async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  try {
-    // 1. 画像アップロード
-    const imageUrl = await uploadImage(file, 'trash-calendars');
-    
-    // 2. OCR Edge Functionの呼び出し
-    // ※SupabaseのURLは環境に合わせて変更してください
-    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-trash-ocr`, {
-      method: 'POST',
-      body: JSON.stringify({ 
-        imageUrl, 
-        propertyId: property.id, 
-        userId: 'GUEST' // ログインなしの場合はGUEST等
-      }),
-    });
-
-    alert('投稿ありがとうございます！解析が終わるとカレンダーが更新されます。');
-  } catch (err) {
-    console.error(err);
-    alert('アップロードに失敗しました');
-  }
-}}
 interface Props {
   params: { uuid: string };
 }
@@ -36,7 +10,6 @@ interface Props {
 export default async function ResidentDashboard({ params }: Props) {
   const { uuid } = params;
 
-  // 1. 物件情報の取得
   const { data: property, error: pError } = await supabase
     .from('properties')
     .select('*')
@@ -47,16 +20,13 @@ export default async function ResidentDashboard({ params }: Props) {
     notFound();
   }
 
-  // 2. 関連データの並列取得（外部API補完を追加）
   const [trashData, announcementData, adsData, externalAdsRes] = await Promise.all([
     supabase.from('trash_schedules').select('*').eq('property_id', property.id),
     supabase.from('announcements').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
     supabase.from('local_ads').select('*').eq('property_id', property.id).limit(5),
-    // 外部API (Google Maps等) からの補完データをフェッチ
     fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/properties/${property.id}/external-info`, { next: { revalidate: 3600 } }).then(res => res.ok ? res.json() : [])
   ]);
 
-  // 3. 自社広告を優先し、外部データを結合
   const combinedAds = [
     ...(adsData.data || []).map(ad => ({ ...ad, isExternal: false })),
     ...externalAdsRes.map((ad: any) => ({ ...ad, isExternal: true }))
@@ -69,9 +39,12 @@ export default async function ResidentDashboard({ params }: Props) {
         <p className="text-sm text-gray-500">{property.address}</p>
       </header>
 
-      {/* ゴミ出し情報セクション (変更なし) */}
+      {/* ゴミ出し情報セクション：ボタンを外部コンポーネント化 */}
       <section className="mb-6 p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-        <h2 className="font-semibold mb-3 flex items-center">🗑 今日のゴミ出し</h2>
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="font-semibold flex items-center">🗑 今日のゴミ出し</h2>
+          <TrashUploadButton propertyId={property.id} />
+        </div>
         <div className="grid grid-cols-2 gap-2">
           {trashData.data?.map((item) => (
             <div key={item.id} className="text-sm p-2 bg-blue-50 text-blue-700 rounded">
@@ -79,12 +52,12 @@ export default async function ResidentDashboard({ params }: Props) {
             </div>
           ))}
           {(!trashData.data || trashData.data.length === 0) && (
-            <p className="text-xs text-gray-400 col-span-2 text-center py-2">カレンダー画像をアップロードして登録</p>
+            <p className="text-xs text-gray-400 col-span-2 text-center py-2">画像をアップロードして登録</p>
           )}
         </div>
       </section>
 
-      {/* お知らせセクション (変更なし) */}
+      {/* お知らせセクション */}
       <section className="mb-6">
         <h2 className="font-semibold mb-3">📢 管理組合からのお知らせ</h2>
         <div className="space-y-3">
@@ -97,7 +70,7 @@ export default async function ResidentDashboard({ params }: Props) {
         </div>
       </section>
 
-      {/* ハイパーローカル広告セクション (ハイブリッド表示に修正) */}
+      {/* 広告セクション */}
       <section>
         <h2 className="font-semibold mb-3 text-gray-800">📍 近隣のお得な情報</h2>
         <div className="grid grid-cols-1 gap-4">
@@ -106,24 +79,16 @@ export default async function ResidentDashboard({ params }: Props) {
               key={ad.id || `external-${index}`} 
               className={`overflow-hidden rounded-lg bg-white shadow-sm border ${ad.isExternal ? 'border-gray-100 opacity-90' : 'border-blue-200 ring-1 ring-blue-100'}`}
             >
-              {/* 自社広告のみ画像を表示（外部データはプレースホルダーまたは非表示） */}
               {!ad.isExternal && ad.image_url && (
                 <img src={ad.image_url} alt={ad.title} className="w-full h-32 object-cover" />
               )}
-              
               <div className="p-3">
                 <div className="flex justify-between items-start mb-1">
                   <h3 className="font-bold text-sm text-gray-800">{ad.title || ad.name}</h3>
-                  {/* 自社広告には目立つバッジを付与 */}
-                  {!ad.isExternal && (
-                    <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full font-bold">
-                      地元店舗限定
-                    </span>
-                  )}
-                  {ad.isExternal && (
-                    <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-                      周辺情報
-                    </span>
+                  {!ad.isExternal ? (
+                    <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full font-bold">地元店舗限定</span>
+                  ) : (
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">周辺情報</span>
                   )}
                 </div>
                 <p className="text-xs text-gray-600 line-clamp-2">{ad.content || ad.address}</p>
@@ -135,28 +100,3 @@ export default async function ResidentDashboard({ params }: Props) {
     </main>
   );
 }
-
-// アイコン用に lucide-react をインポート (package.jsonに追加済み)
-import { Camera } from 'lucide-react';
-
-// ... (既存のコードのゴミ出しセクション内)
-<section className="mb-6 p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-  <div className="flex justify-between items-center mb-3">
-    <h2 className="font-semibold flex items-center">🗑 今日のゴミ出し</h2>
-    {/* 投稿用隠しinput */}
-    <label className="cursor-pointer bg-blue-600 text-white p-2 rounded-full shadow-md hover:bg-blue-700 transition">
-      <Camera size={20} />
-      <input 
-        type="file" 
-        accept="image/*" 
-        capture="environment" 
-        className="hidden" 
-        onChange={async (e) => {
-          /* ここに後述のアップロードロジックを実装 */
-          alert('画像を解析してポイントを付与します！');
-        }}
-      />
-    </label>
-  </div>
-  {/* ...以下、既存の表示ロジック */}
-</section>
