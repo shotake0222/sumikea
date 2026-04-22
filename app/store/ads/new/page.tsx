@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import AdminLayout from '@/components/AdminLayout';
+// エラー箇所を相対パスに修正
+import { supabase } from '../../../lib/supabase';
+import AdminLayout from '../../../components/AdminLayout';
 
 export default function StoreAdCreatePage() {
   const [radius, setRadius] = useState(1000); // デフォルト1km
@@ -20,8 +21,9 @@ export default function StoreAdCreatePage() {
 
   const fetchTargetPreview = async () => {
     setLoading(true);
+    // get_properties_in_radius RPCを呼び出す
     const { data } = await supabase.rpc('get_properties_in_radius', {
-      store_id: 'CURRENT_STORE_ID', 
+      store_id: 'CURRENT_STORE_ID', // 実際はログイン中の店舗IDをセット
       radius_meters: radius
     });
     
@@ -47,7 +49,7 @@ export default function StoreAdCreatePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* 左側：設定フォーム */}
           <div className="space-y-6">
-            {/* 既存の半径設定カード */}
+            {/* 半径設定カード */}
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">配信エリア（半径）</label>
               <input 
@@ -63,18 +65,20 @@ export default function StoreAdCreatePage() {
               </div>
             </div>
 
-            {/* 追加：スケジュール設定カード */}
+            {/* スケジュール設定カード */}
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">配信スケジュール</label>
               
               <div className="flex gap-2 p-1 bg-slate-50 rounded-2xl">
                 <button 
+                  type="button"
                   onClick={() => setScheduleType('SPECIFIC_DATE')}
                   className={`flex-1 py-3 rounded-xl text-[10px] font-bold transition ${scheduleType === 'SPECIFIC_DATE' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}
                 >
                   日付指定
                 </button>
                 <button 
+                  type="button"
                   onClick={() => setScheduleType('GARBAGE_DAY')}
                   className={`flex-1 py-3 rounded-xl text-[10px] font-bold transition ${scheduleType === 'GARBAGE_DAY' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}
                 >
@@ -88,6 +92,7 @@ export default function StoreAdCreatePage() {
                     {['可燃ゴミ', '不燃ゴミ', '資源ゴミ', 'ペットボトル'].map((type) => (
                       <button
                         key={type}
+                        type="button"
                         onClick={() => toggleGarbageType(type)}
                         className={`flex items-center gap-3 p-4 border rounded-2xl transition text-left ${selectedGarbageTypes.includes(type) ? 'border-blue-600 bg-blue-50/50' : 'border-slate-100 hover:bg-slate-50'}`}
                       >
@@ -99,7 +104,7 @@ export default function StoreAdCreatePage() {
                     ))}
                   </div>
                   <p className="text-[9px] text-blue-500 bg-blue-50 p-4 rounded-2xl leading-relaxed font-bold">
-                    💡 住民が朝のゴミ出し報告を行うタイミングで、アプリのトップにあなたの広告が優先表示されます。
+                    💡 住民が朝のゴミ出し報告を行うタイミングで、広告が優先表示されます。
                   </p>
                 </div>
               ) : (
@@ -119,7 +124,7 @@ export default function StoreAdCreatePage() {
             </div>
           </div>
 
-          {/* 右側：配信対象プレビュー（既存のまま） */}
+          {/* 右側：配信対象プレビュー */}
           <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white space-y-6 relative overflow-hidden h-fit sticky top-8">
             <div className="relative z-10">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Target Insights</p>
