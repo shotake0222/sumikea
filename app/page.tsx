@@ -7,7 +7,7 @@ export default function HomePage() {
       <p className="text-gray-500 mb-8 text-center">物件単位の生活インフラ情報アプリ</p>
       
       <div className="w-full space-y-4">
-        <Link href="/admin/properties" className="block w-full bg-blue-600 text-white text-center py-4 rounded-xl font-bold shadow-lg">
+        <Link href="/properties" className="block w-full bg-blue-600 text-white text-center py-4 rounded-xl font-bold shadow-lg">
           管理者ページ（物件登録）
         </Link>
         <Link href="/shop/post" className="block w-full bg-orange-500 text-white text-center py-4 rounded-xl font-bold shadow-lg">
