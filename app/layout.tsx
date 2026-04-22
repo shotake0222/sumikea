@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-import './globals.css' // 必要に応じて
+<!--import './globals.css' // 必要に応じて -->
 
 export const metadata = {
   title: 'sumikea - 住民ダッシュボード',
