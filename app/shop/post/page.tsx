@@ -1,8 +1,10 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+// 修正前: import { supabase } from '@/lib/supabase';
+import { supabase } from '../../../lib/supabase'; // 3階層上の lib を指定
 
 export default function ShopPostPage() {
+  // ... (以下、元のコードと同じ)
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);

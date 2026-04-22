@@ -1,4 +1,6 @@
-import { supabase } from './supabase';
+// src/lib/upload.ts
+// 修正前: import { supabase } from './supabase';
+import { supabase } from '../lib/supabase'; // 同階層または明示的な相対パス
 
 export const uploadImage = async (file: File, folder: string) => {
   const fileName = `${folder}/${Date.now()}_${file.name}`;
