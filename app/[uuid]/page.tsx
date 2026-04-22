@@ -2,14 +2,64 @@
 import ResidentLayout from '../../components/ResidentLayout';
 import TrashUploadButton from '../../components/TrashUploadButton';
 import AdModal from '../../components/AdModal';
+import OnboardingModal from '../../components/OnboardingModal'; // 追記
 import { brandConfig } from '../../lib/brand';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 
 export default function ResidentDashboard({ property, trashData, localAds }: any) {
   const [showAd, setShowAd] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false); // 追記
+  const [user, setUser] = useState<any>(null); // 追記
+
+  // --- 【追記】初回ログイン判定ロジック ---
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUser(user);
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_onboarded')
+          .eq('id', user.id)
+          .single();
+
+        if (!profile || !profile.is_onboarded) {
+          setShowOnboarding(true);
+        }
+      }
+    };
+    checkUser();
+  }, []);
+  // ---------------------------------------
+
+  // --- 閲覧数カウントアップロジック ---
+  const incrementViewCount = async (adId: string) => {
+    try {
+      await supabase.rpc('increment_ad_view', { ad_id: adId });
+    } catch (e) {
+      console.error('Failed to count view', e);
+    }
+  };
+
+  useEffect(() => {
+    if (localAds && localAds.length > 0) {
+      localAds.forEach((ad: any) => incrementViewCount(ad.id));
+    }
+  }, [localAds]);
+  // ---------------------------------------
 
   return (
     <ResidentLayout>
+      {/* オンボーディングモーダル */}
+      {showOnboarding && user && (
+        <OnboardingModal 
+          userId={user.id} 
+          propertyId={property.uuid} 
+          onComplete={() => setShowOnboarding(false)} 
+        />
+      )}
+
       {showAd && localAds.length > 0 && (
         <AdModal ad={localAds[0]} onClose={() => setShowAd(false)} />
       )}

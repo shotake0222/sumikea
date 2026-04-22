@@ -9,18 +9,28 @@ export default function ShopPostPage() {
   const [myStore, setMyStore] = useState<any>(null);
   const [allowedProperties, setAllowedProperties] = useState<any[]>([]);
   
+  const [recentAds, setRecentAds] = useState<any[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [storeName, setStoreName] = useState('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
+  
+  const [expiresAt, setExpiresAt] = useState(
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+
   const [loading, setLoading] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [isMultiPost, setIsMultiPost] = useState(false);
   const [nearbyProperties, setNearbyProperties] = useState<any[]>([]);
 
-  // マルチテナント・初期化処理
+  // --- 【修正】距離計算ヘルパー（約1km = 0.01度） ---
+  const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    return Math.sqrt(Math.pow(lat1 - lat2, 2) + Math.pow(lng1 - lng2, 2));
+  };
+
   useEffect(() => {
     const initializePortal = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -29,7 +39,7 @@ export default function ShopPostPage() {
         return;
       }
 
-      // 店舗情報の取得
+      // 店舗情報を取得（DBに追加したlat, lngを含む）
       const { data: storeData } = await supabase
         .from('stores')
         .select('*')
@@ -40,33 +50,53 @@ export default function ShopPostPage() {
         setMyStore(storeData);
         setStoreName(storeData.name);
 
-        // 配信許可されている物件のみ取得
         const { data: permissionData } = await supabase
           .from('store_property_permissions')
           .select('properties(uuid, name, lat, lng)')
           .eq('store_id', storeData.id);
         
         if (permissionData) {
-          setAllowedProperties(permissionData.map((d: any) => d.properties));
+          const props = permissionData.map((d: any) => d.properties);
+          
+          // --- 【修正】1km制限（カニバリ防止）のフィルタリング ---
+          const filteredProps = props.filter((p: any) => {
+            // 店舗または物件に座標がない場合は、運営の許可を優先して表示
+            if (!storeData.lat || !storeData.lng || !p.lat || !p.lng) return true;
+            return getDistance(storeData.lat, storeData.lng, p.lat, p.lng) <= 0.01;
+          });
+          
+          setAllowedProperties(filteredProps);
         }
+
+        const { data: adsData } = await supabase
+          .from('local_ads')
+          .select('id, title, view_count, created_at, expires_at')
+          .eq('store_id', storeData.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (adsData) setRecentAds(adsData);
       }
     };
     initializePortal();
   }, [router]);
 
+  // --- 【修正】店舗の実際の座標を使用した周辺検索 ---
   const handleNearbySearch = async () => {
-    // ショップの座標は本来myStoreから取得するが、デモ用に固定値
-    const shopLat = 35.698; 
-    const shopLng = 139.413;
+    if (!myStore?.lat || !myStore?.lng) {
+      alert('店舗の位置情報が設定されていません。運営にお問い合わせください。');
+      return;
+    }
+
     const filtered = allowedProperties.filter(p => {
       if (!p.lat || !p.lng) return false;
-      const dist = Math.sqrt(Math.pow(p.lat - shopLat, 2) + Math.pow(p.lng - shopLng, 2));
-      return dist < 0.005; 
+      const dist = getDistance(myStore.lat, myStore.lng, p.lat, p.lng);
+      return dist < 0.005; // 周辺500m以内
     });
     setNearbyProperties(filtered);
     setIsMultiPost(true);
   };
 
+  // --- 以降の handleAIGenerate, handleSubmit, return は元コードを維持 ---
   const handleAIGenerate = async () => {
     const displayPropName = isMultiPost 
       ? (nearbyProperties[0]?.name || "周辺") 
@@ -99,13 +129,13 @@ export default function ShopPostPage() {
     setLoading(true);
     const insertData = targetIds.map(uuid => ({
       store_name: storeName,
-      store_id: myStore.id, // マルチテナント識別子
+      store_id: myStore.id,
       title, 
       content, 
       property_id: uuid,
       coupon_code: couponCode,
       link_url: linkUrl,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: new Date(`${expiresAt}T23:59:59`).toISOString(),
       view_count: 0
     }));
 
@@ -152,7 +182,7 @@ export default function ShopPostPage() {
 
               {!isMultiPost ? (
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">配信先物件（許可済み）</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">配信先物件（半径1km以内）</label>
                   <select 
                     className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm focus:ring-2 focus:ring-blue-600 outline-none"
                     value={selectedPropertyId}
@@ -209,7 +239,7 @@ export default function ShopPostPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">クーポンコード</label>
                   <input className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm font-mono uppercase" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} placeholder="SAVE10" />
@@ -217,6 +247,10 @@ export default function ShopPostPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">詳細URL</label>
                   <input className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..." />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">掲載終了日</label>
+                  <input type="date" className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} required />
                 </div>
               </div>
 
@@ -230,8 +264,32 @@ export default function ShopPostPage() {
           </div>
         </div>
 
-        {/* 右側：プレビュー */}
         <div className="w-full lg:w-80 space-y-6">
+          <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">配信状況 (直近5件)</h2>
+            <div className="space-y-4">
+              {recentAds.map(ad => {
+                const isExpired = ad.expires_at ? new Date(ad.expires_at) < new Date() : false;
+                return (
+                  <div key={ad.id} className="flex justify-between items-center border-b border-slate-50 pb-2">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-slate-700 truncate w-32">{ad.title}</p>
+                      {isExpired ? (
+                        <span className="text-[8px] font-black bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full uppercase">Expired</span>
+                      ) : (
+                        <span className="text-[8px] font-black bg-green-50 text-green-600 px-2 py-0.5 rounded-full uppercase">Active</span>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-black text-blue-600">{ad.view_count}<span className="text-[8px] ml-0.5 text-slate-400">views</span></p>
+                    </div>
+                  </div>
+                );
+              })}
+              {recentAds.length === 0 && <p className="text-[10px] text-slate-300">配信履歴がありません</p>}
+            </div>
+          </div>
+
           <div className="sticky top-24 bg-slate-900 rounded-[3rem] p-4 pt-12 pb-8 shadow-2xl relative border-[6px] border-slate-800">
             <div className="absolute top-4 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-800 rounded-full"></div>
             <p className="text-[10px] text-center text-slate-500 font-bold mb-6 uppercase tracking-tighter">Smartphone Preview</p>
