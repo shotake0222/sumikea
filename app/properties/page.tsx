@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
-// 修正前: import { supabase } from '../../../lib/supabase';
-import { supabase } from '../lib/supabase'; // ../ は1つだけでOK
+// 修正前: import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 export default function AdminPropertyPage() {
   const [name, setName] = useState('');
