@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../../lib/supabase';
-import AdminLayout from '../../../../components/AdminLayout';
+// 正しい相対パス（3階層戻る：admin/dashboard/page.tsx -> ルートへ）
+import { supabase } from '../../../lib/supabase';
+import AdminLayout from '../../../components/AdminLayout';
 
 export default function SuperAdminDashboard() {
   const [stats, setStats] = useState({ totalAds: 0, totalViews: 0, totalProperties: 0 });
@@ -26,25 +27,26 @@ export default function SuperAdminDashboard() {
   }, []);
 
   const fetchStats = async () => {
-    const { count: pCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
-    const { count: aCount } = await supabase.from('local_ads').select('*', { count: 'exact', head: true });
-    const { data: ads } = await supabase.from('local_ads').select('view_count');
-    const totalViews = ads?.reduce((sum, ad) => sum + (ad.view_count || 0), 0) || 0;
+    try {
+      const { count: pCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
+      const { count: aCount } = await supabase.from('local_ads').select('*', { count: 'exact', head: true });
+      const { data: ads } = await supabase.from('local_ads').select('view_count');
+      const totalViews = ads?.reduce((sum, ad) => sum + (ad.view_count || 0), 0) || 0;
 
-    setStats({ totalAds: aCount || 0, totalViews, totalProperties: pCount || 0 });
+      setStats({ totalAds: aCount || 0, totalViews, totalProperties: pCount || 0 });
 
-    const { data: props } = await supabase
-      .from('properties')
-      .select(`uuid, name, management_id, ad_view_logs(count)`);
-    
-    if (props) setPropertyList(props);
+      const { data: props } = await supabase
+        .from('properties')
+        .select(`uuid, name, management_id, ad_view_logs(count)`);
+      
+      if (props) setPropertyList(props);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const fetchManagementUsers = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name')
-      .eq('role', 'MANAGEMENT');
+    const { data } = await supabase.from('profiles').select('id, name').eq('role', 'MANAGEMENT');
     if (data) setManagementUsers(data);
   };
 
@@ -135,7 +137,7 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
 
-        {/* 物件リスト：エラー回避処理を追加 */}
+        {/* 物件管理 ＆ 権限アサイン */}
         <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100">
           <h2 className="text-xl font-black text-slate-800 mb-6">🏢 物件管理 ＆ 権限アサイン</h2>
           <div className="overflow-x-auto">
@@ -159,7 +161,6 @@ export default function SuperAdminDashboard() {
                         onChange={(e) => handleAssignManagement(p.uuid, e.target.value)}
                       >
                         <option value="">未割当（運営直轄）</option>
-                        {/* 修正：managementUsersが未定義でもクラッシュしないように?.を追加 */}
                         {managementUsers?.map(user => (
                           <option key={user.id} value={user.id}>{user?.name || 'Unknown'}</option>
                         ))}
