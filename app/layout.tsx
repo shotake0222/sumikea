@@ -1,4 +1,5 @@
-import "./globals.css"; // これで上のファイルを読み込みます
+// app/layout.tsx の冒頭
+import "./globals.css";
 
 export const metadata = {
   title: 'sumikea',
