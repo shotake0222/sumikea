@@ -1,5 +1,7 @@
-import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+// @/lib/... ではなく相対パスで指定
+import { supabase } from '../../../../../lib/supabase'; // 階層に合わせて調整
+// もしくは、一度これまでの設定を信じて以下を試す
+import { supabase } from '@/lib/supabase';
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const propertyId = params.id
