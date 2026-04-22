@@ -1,4 +1,4 @@
-import './globals.css'; // この1行が抜けていたため、デザインが適用されていませんでした
+import "@/app/globals.css"; // @/ を使った指定
 
 export const metadata = {
   title: 'sumikea - 住民ダッシュボード',
