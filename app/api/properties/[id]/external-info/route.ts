@@ -1,45 +1,49 @@
 import { NextResponse } from 'next/server';
-// 修正前: import { supabase } from '@/lib/supabase';
-import { supabase } from '../../../../../lib/supabase'; // 5階層上にある lib フォルダを指定
+import { supabase } from '../../../../../lib/supabase';
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const propertyId = params.id
+  const propertyId = params.id;
 
-  // 1. キャッシュの確認 (1日以内のデータがあればそれを返す)
+  // 1. キャッシュ確認（24時間以内）
   const { data: cache } = await supabase
     .from('external_ads_cache')
     .select('*')
     .eq('property_id', propertyId)
     .gt('updated_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-    .single()
+    .single();
 
-  if (cache) return NextResponse.json(cache.content)
+  if (cache) return NextResponse.json(cache.content);
 
-  // 2. 物件の座標を取得
+  // 2. 物件の緯度経度を取得
   const { data: property } = await supabase
     .from('properties')
-    .select('location') // 緯度経度
+    .select('location_lat, location_lng')
     .eq('id', propertyId)
-    .single()
+    .single();
 
-  // 3. Google Places API 呼び出し (周辺のスーパー/ドラッグストアを検索)
-  const googleUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${property.location}&radius=500&type=supermarket&key=${process.env.GOOGLE_MAPS_API_KEY}`
-  const res = await fetch(googleUrl)
-  const googleData = await res.json()
+  if (!property) return NextResponse.json([]);
 
-  const simplifiedData = googleData.results.map((place: any) => ({
+  // 3. Google Places API 呼び出し
+  // ※VercelのEnvironment Variablesに GOOGLE_MAPS_API_KEY を追加してください
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${property.location_lat},${property.location_lng}&radius=1000&type=supermarket&key=${apiKey}`;
+  
+  const res = await fetch(url);
+  const googleData = await res.json();
+
+  const results = googleData.results?.slice(0, 5).map((place: any) => ({
     name: place.name,
     address: place.vicinity,
     place_id: place.place_id,
     source: 'google'
-  }))
+  })) || [];
 
-  // 4. キャッシュに保存して返却
+  // 4. キャッシュ保存
   await supabase.from('external_ads_cache').upsert({
     property_id: propertyId,
-    content: simplifiedData,
+    content: results,
     updated_at: new Date().toISOString()
-  })
+  });
 
-  return NextResponse.json(simplifiedData)
+  return NextResponse.json(results);
 }

@@ -1,6 +1,34 @@
 import { supabase } from '../../lib/supabase'; // 相対パスに変更
 import { notFound } from 'next/navigation';
+// インポート追加
+import { uploadImage } from '../../lib/upload'; 
 
+// ... onChangeの中身
+onChange={async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    // 1. 画像アップロード
+    const imageUrl = await uploadImage(file, 'trash-calendars');
+    
+    // 2. OCR Edge Functionの呼び出し
+    // ※SupabaseのURLは環境に合わせて変更してください
+    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-trash-ocr`, {
+      method: 'POST',
+      body: JSON.stringify({ 
+        imageUrl, 
+        propertyId: property.id, 
+        userId: 'GUEST' // ログインなしの場合はGUEST等
+      }),
+    });
+
+    alert('投稿ありがとうございます！解析が終わるとカレンダーが更新されます。');
+  } catch (err) {
+    console.error(err);
+    alert('アップロードに失敗しました');
+  }
+}}
 interface Props {
   params: { uuid: string };
 }
