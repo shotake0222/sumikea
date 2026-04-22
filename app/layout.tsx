@@ -1,6 +1,5 @@
 // app/layout.tsx
-// sがあるかないか、両方試せるように一応 sなしを推奨します（画像でそう見えたため）
-import "./[uuid]/global.css"; 
+// インポート文はすべて削除
 
 export const metadata = {
   title: 'sumikea',
@@ -14,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body className="antialiased text-slate-800 bg-slate-50">
+      <body>
         {children}
       </body>
     </html>
