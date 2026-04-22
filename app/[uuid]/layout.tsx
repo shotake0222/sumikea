@@ -1,11 +1,10 @@
 // app/[uuid]/layout.tsx
-import "./global.css"; // 同じフォルダにあるので "./" でOK
+import "./globals.css"; // 's' を付けて再試行
 
 export default function PropertyLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // <html> や <body> はルート（app/layout.tsx）に任せるので、中身だけにします
   return <>{children}</>;
 }

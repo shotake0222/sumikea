@@ -1,5 +1,5 @@
 // app/layout.tsx
-import "./[uuid]/global.css"; // ルートから [uuid] フォルダ内を参照
+import "./[uuid]/globals.css"; // 's' を付けて再試行
 
 export const metadata = {
   title: 'sumikea',
