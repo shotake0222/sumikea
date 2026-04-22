@@ -40,9 +40,24 @@ export default function AdminPropertyPage() {
         .select()
         .single();
 
-      if (!error && data) {
-        setGeneratedUrl(`${window.location.origin}/${data.uuid}`);
-        setName(''); setAddress('');
+     if (!error && data) {
+        // デバッグ用：ブラウザのコンソールに中身を表示させる
+        console.log("保存されたデータ:", data);
+        
+        // uuid があればそれを使う、なければ id を使う（保険）
+        const path = data.uuid || data.id;
+        
+        if (path) {
+          setGeneratedUrl(`${window.location.origin}/${path}`);
+          setName(''); 
+          setAddress('');
+        } else {
+          alert('IDが取得できませんでした。DBのカラム名を確認してください。');
+        }
+      } else if (error) {
+        console.error("Supabaseエラー:", error);
+        alert(`登録失敗: ${error.message}`);
+      }
       }
     } catch (err) {
       alert('登録中にエラーが発生しました');
