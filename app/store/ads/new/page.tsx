@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-// エラー箇所を相対パスに修正
-import { supabase } from '../../../lib/supabase';
-import AdminLayout from '../../../components/AdminLayout';
+// 正しい相対パス（4階層戻る）に修正
+import { supabase } from '../../../../lib/supabase';
+import AdminLayout from '../../../../components/AdminLayout';
 
 export default function StoreAdCreatePage() {
   const [radius, setRadius] = useState(1000); // デフォルト1km
