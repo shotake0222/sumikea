@@ -1,23 +1,35 @@
 'use client';
-import { useState } from 'react';
-// 修正前: import { supabase } from '@/lib/supabase';
-import { supabase } from '../../../lib/supabase'; // 3階層上の lib を指定
+import { useState, useEffect } from 'react';
+import { supabase } from '../../../lib/supabase';
 
 export default function ShopPostPage() {
-  // ... (以下、元のコードと同じ)
+  const [properties, setProperties] = useState<any[]>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 物件リストを読み込む
+  useEffect(() => {
+    const fetchProperties = async () => {
+      const { data } = await supabase.from('properties').select('id, name');
+      if (data) setProperties(data);
+    };
+    fetchProperties();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedPropertyId) return alert('物件を選択してください');
+    
     setLoading(true);
-
-    // 実際は店舗に紐づくproperty_idをセッション等から取得
-    const property_id = 'YOUR_PROPERTY_ID'; 
-
     const { error } = await supabase.from('local_ads').insert([
-      { title, content, property_id, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }
+      { 
+        title, 
+        content, 
+        property_id: selectedPropertyId,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() 
+      }
     ]);
 
     if (!error) {
@@ -29,32 +41,26 @@ export default function ShopPostPage() {
 
   return (
     <div className="max-w-md mx-auto p-6 bg-white min-h-screen">
-      <h1 className="text-xl font-bold mb-6">📢 店舗チラシ・クーポン投稿</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <h1 className="text-xl font-bold mb-6 border-b pb-2">📢 店舗広告・クーポン投稿</h1>
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="block text-sm font-medium">タイトル（20文字以内）</label>
-          <input 
-            className="w-full border p-2 rounded" 
-            value={title} 
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="例：本日限定たまご半額！"
+          <label className="text-sm font-medium">配信先の物件を選択</label>
+          <select 
+            className="w-full border p-3 rounded mt-1 bg-gray-50"
+            value={selectedPropertyId}
+            onChange={(e) => setSelectedPropertyId(e.target.value)}
             required
-          />
+          >
+            <option value="">物件を選択してください</option>
+            {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium">詳細内容</label>
-          <textarea 
-            className="w-full border p-2 rounded h-32" 
-            value={content} 
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="クーポンコード：SUMIKEA2026"
-          />
-        </div>
+        {/* ...前回のタイトル・内容のinput... */}
         <button 
           disabled={loading}
-          className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold"
+          className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-lg"
         >
-          {loading ? '送信中...' : 'この内容で配信する'}
+          {loading ? '送信中...' : 'この物件に配信する'}
         </button>
       </form>
     </div>
