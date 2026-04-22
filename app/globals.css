@@ -2,3 +2,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* 動作確認用：もしCSSが読み込まれていれば、背景が赤くなります */
+/* 確認できたら下の3行は消してOKです */
+body {
+  background-color: #f8fafc !important; 
+}
