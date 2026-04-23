@@ -2,12 +2,15 @@
 
 import { useState, Suspense } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 function LoginContent() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  // 表示確認用に dbRole を state に昇格
+  const [displayRole, setDisplayRole] = useState<string | null>(null);
   
   const searchParams = useSearchParams();
   const typeParam = searchParams.get('type')?.toLowerCase();
@@ -26,46 +29,36 @@ function LoginContent() {
     }
 
     const user = data.user;
-    const dbRole = user?.user_metadata?.role;
+    // ✅ ロールの正規化（メタデータから確実に取得）
+    const dbRole = user?.user_metadata?.role?.toUpperCase();
+    setDisplayRole(dbRole);
 
-    // --- 【決定版】ルーティング判定ロジック ---
-    // 1. まず「どの入り口（typeParam）から来たか」を最優先して遷移先を決める
-    // 2. ただし、そのページに入る権限があるか（本人ロール or ADMIN）を各ページ側でチェックする
-    
+    // --- 【完全修正版】ルーティング判定 ---
     let targetPath = '';
 
-    // URLのパラメータに基づいて遷移先を決定
-    if (typeParam === 'user') {
-      targetPath = '/resident/dashboard';
+    // ✅ ADMIN は全知全能：typeParam に合わせてどこへでも行けるようにする
+    if (dbRole === 'ADMIN') {
+      if (typeParam === 'user') targetPath = '/resident/dashboard';
+      else if (typeParam === 'manager') targetPath = '/management/notices';
+      else if (typeParam === 'posting') targetPath = '/posting/dashboard';
+      else if (typeParam === 'shop') targetPath = '/shop/post';
+      else targetPath = '/properties'; // デフォルトは物件管理
     } 
-    else if (typeParam === 'manager') {
-      targetPath = '/management/notices';
-    } 
-    else if (typeParam === 'posting') {
-      targetPath = '/posting/dashboard';
-    } 
-    else if (typeParam === 'shop') {
-      targetPath = '/shop/post';
-    } 
-    else if (typeParam === 'admin') {
-      targetPath = '/properties';
-    } 
+    // ✅ 一般ロールの振り分け
+    else if (dbRole === 'MANAGER') targetPath = '/management/notices';
+    else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
+    else if (dbRole === 'SHOP') targetPath = '/shop/post';
+    else if (dbRole === 'USER') targetPath = '/resident/dashboard';
     else {
-      // パラメータがない場合は、DBのロールに従ってデフォルトの場所へ
-      if (dbRole === 'ADMIN') targetPath = '/properties';
-      else if (dbRole === 'MANAGER') targetPath = '/management/notices';
-      else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
-      else if (dbRole === 'SHOP') targetPath = '/shop/post';
-      else if (dbRole === 'USER') targetPath = '/resident/dashboard';
-      else targetPath = '/properties';
+      targetPath = '/resident/dashboard'; // 最終フォールバック
     }
 
-    if (targetPath) {
-      // ブラウザレベルで確実に遷移
-      window.location.href = targetPath;
-    } else {
-      setLoading(false);
-    }
+    // ✅ next/navigation の router.push を使い、少し待機してから遷移（確実に認証を通す）
+    setTimeout(() => {
+      // window.location.href よりも router.push の方が Next.js では安定します
+      router.push(targetPath);
+      router.refresh(); // セッションを確実に反映
+    }, 100);
   };
 
   return (
@@ -73,7 +66,7 @@ function LoginContent() {
       <div className="text-center mb-10">
         <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
         <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">
-          {typeParam ? `${typeParam} Portal` : 'Partner Portal'}
+          {typeParam ? `${typeParam} Portal` : 'Login Console'}
         </p>
       </div>
 
@@ -114,8 +107,8 @@ function LoginContent() {
         </button>
       </form>
 
-      <div className="mt-4 text-[8px] text-slate-300 text-center uppercase tracking-tighter">
-        Attempting Entry As: {typeParam || dbRole || 'unknown'}
+      <div className="mt-4 text-[8px] text-slate-400 text-center uppercase tracking-widest font-bold">
+        Role: <span className="text-orange-500">{displayRole || 'Searching...'}</span>
       </div>
     </div>
   );
