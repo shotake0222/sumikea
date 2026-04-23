@@ -26,11 +26,6 @@ export default function ShopPostPage() {
   const [isMultiPost, setIsMultiPost] = useState(false);
   const [nearbyProperties, setNearbyProperties] = useState<any[]>([]);
 
-  // --- 【修正】距離計算ヘルパー（約1km = 0.01度） ---
-  const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    return Math.sqrt(Math.pow(lat1 - lat2, 2) + Math.pow(lng1 - lng2, 2));
-  };
-
   useEffect(() => {
     const initializePortal = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -39,7 +34,7 @@ export default function ShopPostPage() {
         return;
       }
 
-      // 店舗情報を取得（DBに追加したlat, lngを含む）
+      // 1. 店舗情報を取得
       const { data: storeData } = await supabase
         .from('stores')
         .select('*')
@@ -50,24 +45,30 @@ export default function ShopPostPage() {
         setMyStore(storeData);
         setStoreName(storeData.name);
 
-        const { data: permissionData } = await supabase
-          .from('store_property_permissions')
-          .select('properties(uuid, name, lat, lng)')
-          .eq('store_id', storeData.id);
-        
-        if (permissionData) {
-          const props = permissionData.map((d: any) => d.properties);
-          
-          // --- 【修正】1km制限（カニバリ防止）のフィルタリング ---
-          const filteredProps = props.filter((p: any) => {
-            // 店舗または物件に座標がない場合は、運営の許可を優先して表示
-            if (!storeData.lat || !storeData.lng || !p.lat || !p.lng) return true;
-            return getDistance(storeData.lat, storeData.lng, p.lat, p.lng) <= 0.01;
+        // 2. 正確な半径1km以内の物件をDB(PostGIS)から取得
+        if (storeData.lat && storeData.lng) {
+          const { data: nearbyData } = await supabase.rpc('get_properties_within_radius', {
+            target_lat: storeData.lat,
+            target_lng: storeData.lng,
+            radius_meters: 1000 // 1km制限
           });
-          
-          setAllowedProperties(filteredProps);
+
+          // 3. 運営が許可した物件リスト(permissions)を取得
+          const { data: permissionData } = await supabase
+            .from('store_property_permissions')
+            .select('property_id')
+            .eq('store_id', storeData.id);
+
+          const allowedIds = permissionData?.map(d => d.property_id) || [];
+
+          if (nearbyData) {
+            // 「1km以内」かつ「運営の許可がある」物件だけを配信先リストにする
+            const filteredProps = nearbyData.filter((p: any) => allowedIds.includes(p.uuid));
+            setAllowedProperties(filteredProps);
+          }
         }
 
+        // 直近の配信履歴を取得
         const { data: adsData } = await supabase
           .from('local_ads')
           .select('id, title, view_count, created_at, expires_at')
@@ -80,23 +81,28 @@ export default function ShopPostPage() {
     initializePortal();
   }, [router]);
 
-  // --- 【修正】店舗の実際の座標を使用した周辺検索 ---
+  // 周辺500m一括検索
   const handleNearbySearch = async () => {
     if (!myStore?.lat || !myStore?.lng) {
-      alert('店舗の位置情報が設定されていません。運営にお問い合わせください。');
+      alert('店舗の位置情報が設定されていません。');
       return;
     }
 
-    const filtered = allowedProperties.filter(p => {
-      if (!p.lat || !p.lng) return false;
-      const dist = getDistance(myStore.lat, myStore.lng, p.lat, p.lng);
-      return dist < 0.005; // 周辺500m以内
+    const { data: nearby, error } = await supabase.rpc('get_properties_within_radius', {
+      target_lat: myStore.lat,
+      target_lng: myStore.lng,
+      radius_meters: 500 // 一括配信はより狭い500m圏内
     });
-    setNearbyProperties(filtered);
+
+    if (error) {
+      alert('検索エラー: ' + error.message);
+      return;
+    }
+    
+    setNearbyProperties(nearby || []);
     setIsMultiPost(true);
   };
 
-  // --- 以降の handleAIGenerate, handleSubmit, return は元コードを維持 ---
   const handleAIGenerate = async () => {
     const displayPropName = isMultiPost 
       ? (nearbyProperties[0]?.name || "周辺") 
@@ -107,7 +113,7 @@ export default function ShopPostPage() {
     setAiGenerating(true);
     const templates = [
       { t: `【${displayPropName}限定】${storeName}の特別優待`, c: `いつも${displayPropName}にお住まいの皆様へ。感謝を込めて限定クーポンをお届けします。` },
-      { t: `住民様だけのシークレットセール`, c: `本日より${storeName}にて、指定マンションにお住まいの方限定の割引を実施中！` },
+      { t: `住民様だけのシークレットセール`, c: `本日より${storeName}にて、${displayPropName}にお住まいの方限定の割引を実施中！` },
       { t: `【地域密着】${storeName}よりお知らせ`, c: `${displayPropName}から徒歩圏内の当店で、住民様限定の特典をご用意しました。` }
     ];
     const random = templates[Math.floor(Math.random() * templates.length)];
