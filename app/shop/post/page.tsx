@@ -21,20 +21,29 @@ export default function ShopPostPage() {
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // 初期状態を権限チェックのためにtrueに
+  const [isSubmitLoading, setIsSubmitLoading] = useState(false); // 送信時のローディング用
   const [aiGenerating, setAiGenerating] = useState(false);
   const [isMultiPost, setIsMultiPost] = useState(false);
   const [nearbyProperties, setNearbyProperties] = useState<any[]>([]);
 
   useEffect(() => {
     const initializePortal = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
+      // 1. セキュリティガード: ログイン状態と権限(Role)の確認
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        router.push('/login?type=shop');
         return;
       }
 
-      // 1. 店舗情報を取得
+      // Role が SHOP でない場合はログインへ飛ばす
+      if (user.user_metadata?.role !== 'SHOP') {
+        router.push('/login?type=shop');
+        return;
+      }
+
+      // 2. 店舗情報を取得
       const { data: storeData } = await supabase
         .from('stores')
         .select('*')
@@ -45,7 +54,7 @@ export default function ShopPostPage() {
         setMyStore(storeData);
         setStoreName(storeData.name);
 
-        // 2. 正確な半径1km以内の物件をDB(PostGIS)から取得
+        // 3. 正確な半径1km以内の物件をDB(PostGIS)から取得
         if (storeData.lat && storeData.lng) {
           const { data: nearbyData } = await supabase.rpc('get_properties_within_radius', {
             target_lat: storeData.lat,
@@ -53,7 +62,7 @@ export default function ShopPostPage() {
             radius_meters: 1000 // 1km制限
           });
 
-          // 3. 運営が許可した物件リスト(permissions)を取得
+          // 4. 運営が許可した物件リスト(permissions)を取得
           const { data: permissionData } = await supabase
             .from('store_property_permissions')
             .select('property_id')
@@ -77,6 +86,7 @@ export default function ShopPostPage() {
           .limit(5);
         if (adsData) setRecentAds(adsData);
       }
+      setLoading(false); // すべての準備が整ったら表示
     };
     initializePortal();
   }, [router]);
@@ -132,7 +142,7 @@ export default function ShopPostPage() {
     const targetIds = isMultiPost ? nearbyProperties.map(p => p.uuid) : [selectedPropertyId];
     if (targetIds.length === 0 || !targetIds[0]) return alert('配信先の物件を選択してください');
     
-    setLoading(true);
+    setIsSubmitLoading(true);
     const insertData = targetIds.map(uuid => ({
       store_name: storeName,
       store_id: myStore.id,
@@ -151,9 +161,26 @@ export default function ShopPostPage() {
     } else {
       alert(`${targetIds.length}件の物件へ配信完了しました！`);
       setTitle(''); setContent(''); setCouponCode(''); setLinkUrl('');
+      // 履歴を再読み込み
+      const { data } = await supabase.from('local_ads').select('id, title, view_count, created_at, expires_at').eq('store_id', myStore.id).order('created_at', { ascending: false }).limit(5);
+      if (data) setRecentAds(data);
     }
-    setLoading(false);
+    setIsSubmitLoading(false);
   };
+
+  // 権限チェック中
+  if (loading) {
+    return (
+      <AdminLayout userType="SHOP">
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-slate-500 font-bold">店舗権限を確認中...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout userType="SHOP">
@@ -261,38 +288,54 @@ export default function ShopPostPage() {
               </div>
 
               <button 
-                disabled={loading || !myStore}
+                disabled={isSubmitLoading || !myStore}
                 className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-xl shadow-slate-200 transition active:scale-[0.98] mt-4"
               >
-                {loading ? '配信中...' : isMultiPost ? '対象物件へ一括ポスティング' : 'デジタルポスティングを実行'}
+                {isSubmitLoading ? '配信中...' : isMultiPost ? '対象物件へ一括ポスティング' : 'デジタルポスティングを実行'}
               </button>
             </form>
           </div>
         </div>
 
         <div className="w-full lg:w-80 space-y-6">
-          <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">配信状況 (直近5件)</h2>
-            <div className="space-y-4">
+          <div className="bg-slate-900 rounded-[2.5rem] p-6 shadow-xl border border-slate-800 text-white">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-ping"></div>
+              <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Real-time Analytics</h2>
+            </div>
+            <div className="space-y-6">
               {recentAds.map(ad => {
                 const isExpired = ad.expires_at ? new Date(ad.expires_at) < new Date() : false;
                 return (
-                  <div key={ad.id} className="flex justify-between items-center border-b border-slate-50 pb-2">
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-slate-700 truncate w-32">{ad.title}</p>
+                  <div key={ad.id} className="space-y-3 pb-4 border-b border-slate-800 last:border-0">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-slate-200 truncate w-32">{ad.title}</p>
+                        <p className="text-[9px] text-slate-500">{new Date(ad.created_at).toLocaleDateString()}</p>
+                      </div>
                       {isExpired ? (
-                        <span className="text-[8px] font-black bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full uppercase">Expired</span>
+                        <span className="text-[8px] font-black bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full uppercase">Expired</span>
                       ) : (
-                        <span className="text-[8px] font-black bg-green-50 text-green-600 px-2 py-0.5 rounded-full uppercase">Active</span>
+                        <span className="text-[8px] font-black bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full uppercase">Active</span>
                       )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-black text-blue-600">{ad.view_count}<span className="text-[8px] ml-0.5 text-slate-400">views</span></p>
+                    
+                    <div className="bg-slate-800/50 rounded-xl p-3 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Verified Reach</span>
+                        <span className="text-sm font-black text-blue-400">{ad.view_count || 0}<span className="text-[9px] ml-0.5 text-slate-500">views</span></span>
+                      </div>
+                      <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-blue-500 h-full transition-all duration-1000" 
+                          style={{ width: `${Math.min((ad.view_count || 0) * 10, 100)}%` }}
+                        ></div>
+                      </div>
                     </div>
                   </div>
                 );
               })}
-              {recentAds.length === 0 && <p className="text-[10px] text-slate-300">配信履歴がありません</p>}
+              {recentAds.length === 0 && <p className="text-[10px] text-slate-500 text-center py-4">配信履歴がありません</p>}
             </div>
           </div>
 
