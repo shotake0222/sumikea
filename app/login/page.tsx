@@ -40,10 +40,10 @@ function LoginContent() {
       return;
     }
 
-    // 2. メタデータ + DB(profiles) の両方からロールを特定（最も確実な方法）
+    // 2. メタデータ + DB(profiles) の両方からロールを特定
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, property_id')
       .eq('id', authData.user.id)
       .single();
 
@@ -52,11 +52,10 @@ function LoginContent() {
     
     console.log("✅ Identity Verified. Role:", dbRole);
 
-    // 3. ルーティング判定
+    // 3. ルーティング判定（[uuid]衝突回避バージョン）
     let targetPath = '';
 
     if (dbRole === 'ADMIN') {
-      // ADMINはクエリパラメータ（type）に合わせてどこへでも行ける
       if (typeParam === 'user') targetPath = '/resident/dashboard';
       else if (typeParam === 'manager') targetPath = '/management/notices';
       else if (typeParam === 'posting') targetPath = '/posting/dashboard';
@@ -66,14 +65,19 @@ function LoginContent() {
     else if (dbRole === 'MANAGER') targetPath = '/management/notices';
     else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
     else if (dbRole === 'SHOP') targetPath = '/shop/post';
-    else if (dbRole === 'USER') targetPath = '/resident/dashboard';
-    else targetPath = '/resident/setup'; // ロールはあるが紐付けがない場合
+    else if (dbRole === 'USER') {
+      // 🚩 [重要] [uuid] が /p/[uuid] に移動したことを想定
+      targetPath = profile?.property_id ? `/p/${profile.property_id}` : '/resident/dashboard';
+    }
+    else {
+      targetPath = '/properties';
+    }
 
     console.log("📍 Redirecting to:", targetPath);
 
-    // 4. セッションの永続化を待ってから確実に遷移
-    // router.push ではなく、あえて window.location を使い、
-    // かつセッションがセットされるための十分な猶予（800ms）を持たせます。
+    // 4. セッションの書き込みとルーティングの安定化
+    // window.location.href を使うことで、Next.jsのステートを一度リセットし
+    // Supabaseのセッションを確実にブラウザに認識させます。
     setTimeout(() => {
       window.location.href = targetPath;
     }, 800);
