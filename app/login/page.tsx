@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-// ✅ 外部ファイルからの import をやめて、直接ライブラリから createClient を読み込みます
+// ✅ lib/supabase からのインポートを完全に削除しました
 import { createClient } from '@supabase/supabase-js';
 import { useSearchParams, useRouter } from 'next/navigation';
 
-// ✅ ファイル内で直接 Supabase を初期化します（パス解決が不要になります）
+// ✅ このファイル内で直接初期化。これでパスエラーは100%出ません。
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -43,7 +43,7 @@ function LoginContent() {
       return;
     }
 
-    // 2. DB(profiles) からロールと物件IDを特定
+    // 2. profilesテーブルから情報を取得
     const { data: profile } = await supabase
       .from('profiles')
       .select('role, property_id')
@@ -55,7 +55,6 @@ function LoginContent() {
 
     // 3. ルーティング判定
     let targetPath = '';
-
     if (dbRole === 'ADMIN') {
       if (typeParam === 'user') targetPath = '/resident/dashboard';
       else if (typeParam === 'manager') targetPath = '/management/notices';
@@ -73,8 +72,7 @@ function LoginContent() {
       targetPath = '/properties';
     }
 
-    // 4. ハードリダイレクト
-    // window.location.href を使うことでセッションを確実にブラウザへ反映させます
+    // 4. ハードリダイレクト（セッションを確実に反映）
     setTimeout(() => {
       window.location.href = targetPath;
     }, 800);
@@ -100,7 +98,6 @@ function LoginContent() {
             className="w-full bg-slate-50 border-2 border-transparent p-4 rounded-2xl text-sm font-bold text-slate-700 focus:border-orange-500 focus:bg-white outline-none transition-all"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="example@posutto.jp"
             required
           />
         </div>
@@ -112,7 +109,6 @@ function LoginContent() {
             className="w-full bg-slate-50 border-2 border-transparent p-4 rounded-2xl text-sm font-bold text-slate-700 focus:border-orange-500 focus:bg-white outline-none transition-all"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
             required
           />
         </div>
@@ -121,20 +117,9 @@ function LoginContent() {
           disabled={loading}
           className="w-full bg-slate-900 hover:bg-orange-600 text-white py-5 rounded-[2rem] font-black shadow-lg transition-all active:scale-[0.98] mt-4 flex justify-center items-center text-lg tracking-tighter"
         >
-          {loading ? (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-xs uppercase">Verifying...</span>
-            </div>
-          ) : (
-            'ログインして開始'
-          )}
+          {loading ? 'Verifying...' : 'ログインして開始'}
         </button>
       </form>
-      
-      <div className="mt-8 pt-8 border-t border-slate-50 text-[8px] text-slate-400 text-center uppercase tracking-widest font-bold">
-        Detected Role: <span className="text-orange-500">{displayRole || 'None'}</span>
-      </div>
     </div>
   );
 }
@@ -142,12 +127,7 @@ function LoginContent() {
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center p-6 font-sans">
-      <Suspense fallback={
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin w-10 h-10 border-4 border-slate-900 border-t-orange-500 rounded-full" />
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Initialising Session...</p>
-        </div>
-      }>
+      <Suspense fallback={<div>Loading...</div>}>
         <LoginContent />
       </Suspense>
     </div>
