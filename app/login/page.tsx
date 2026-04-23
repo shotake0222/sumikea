@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-import { supabase } from '../../lib/supabase';
+// ✅ 修正：パスを ../../ から ../ へ変更。
+// もし tsconfig の設定が有効なら '@/lib/supabase' でも通ります。
+import { supabase } from '../lib/supabase';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 function LoginContent() {
@@ -52,7 +54,7 @@ function LoginContent() {
     
     console.log("✅ Identity Verified. Role:", dbRole);
 
-    // 3. ルーティング判定（[uuid]衝突回避バージョン）
+    // 3. ルーティング判定
     let targetPath = '';
 
     if (dbRole === 'ADMIN') {
@@ -66,7 +68,7 @@ function LoginContent() {
     else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
     else if (dbRole === 'SHOP') targetPath = '/shop/post';
     else if (dbRole === 'USER') {
-      // 🚩 [重要] [uuid] が /p/[uuid] に移動したことを想定
+      // 物件IDがある場合は [uuid] 動的ルートへ、ない場合はデフォルトダッシュボードへ
       targetPath = profile?.property_id ? `/p/${profile.property_id}` : '/resident/dashboard';
     }
     else {
@@ -75,9 +77,8 @@ function LoginContent() {
 
     console.log("📍 Redirecting to:", targetPath);
 
-    // 4. セッションの書き込みとルーティングの安定化
-    // window.location.href を使うことで、Next.jsのステートを一度リセットし
-    // Supabaseのセッションを確実にブラウザに認識させます。
+    // 4. セッション確定のためのハードリダイレクト
+    // ブラウザにクッキーを確実にセットさせるため location.href を使用
     setTimeout(() => {
       window.location.href = targetPath;
     }, 800);
