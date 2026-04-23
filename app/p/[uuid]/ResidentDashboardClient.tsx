@@ -1,6 +1,6 @@
 'use client';
 
-import ResidentLayout from '../../components/ResidentLayout';
+import { ResidentLayout } from '../../../components/ResidentLayout';
 import { useState, useEffect } from 'react';
 import { TrashUploadButton } from '../../../components/TrashUploadButton';
 import { AdModal } from '../../../components/AdModal';
