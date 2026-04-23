@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { adSchema } from '../lib/validations';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { adSchema } from '../../../lib/validations'; // Zodスキーマをインポート
 
 export default function ManagementNoticePage() {
   const router = useRouter();
