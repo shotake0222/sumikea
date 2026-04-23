@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-// ✅ 修正：パスを ../../ から ../ へ変更。
-// もし tsconfig の設定が有効なら '@/lib/supabase' でも通ります。
-import { supabase } from '../lib/supabase';
+// ✅ 修正：'@/' を使うことでプロジェクトのルート（または src）から直接 lib を指定します。
+// これならディレクトリの深さが変わっても迷子になりません。
+import { supabase } from '@/lib/supabase'; 
 import { useSearchParams, useRouter } from 'next/navigation';
 
 function LoginContent() {
@@ -68,7 +68,6 @@ function LoginContent() {
     else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
     else if (dbRole === 'SHOP') targetPath = '/shop/post';
     else if (dbRole === 'USER') {
-      // 物件IDがある場合は [uuid] 動的ルートへ、ない場合はデフォルトダッシュボードへ
       targetPath = profile?.property_id ? `/p/${profile.property_id}` : '/resident/dashboard';
     }
     else {
@@ -78,7 +77,6 @@ function LoginContent() {
     console.log("📍 Redirecting to:", targetPath);
 
     // 4. セッション確定のためのハードリダイレクト
-    // ブラウザにクッキーを確実にセットさせるため location.href を使用
     setTimeout(() => {
       window.location.href = targetPath;
     }, 800);
