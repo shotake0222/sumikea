@@ -1,34 +1,29 @@
 'use client';
 
-import  ResidentLayout  from '../../../components/ResidentLayout';
-import  useState, useEffect  from 'react';
-import  TrashUploadButton from '../../../components/TrashUploadButton';
-import  AdModal  from '../../../components/AdModal';
-import  OnboardingModal  from '../../../components/OnboardingModal';
-import  supabase  from '../../../lib/supabase';
+// 修正：from を波括弧の外に出しました
+import { ResidentLayout } from '../../../components/ResidentLayout';
+import { useState, useEffect } from 'react';
+import { TrashUploadButton } from '../../../components/TrashUploadButton';
+import { AdModal } from '../../../components/AdModal';
+import { OnboardingModal } from '../../../components/OnboardingModal';
+import { supabase } from '../../../lib/supabase';
 
 export default function ResidentDashboard({ property, trashData = [], localAds = [] }: any) {
-  // すべての Hooks (useState) はコンポーネントの最上部で呼び出す
   const [showAd, setShowAd] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // すべての Hooks (useEffect) も早期リターンの前に呼び出す
   useEffect(() => {
-    // もし property が無効な場合は、セッションチェックなどの無駄な処理を走らせない
     if (!property || !property.uuid || property.uuid === 'favicon.ico') {
       setLoading(false);
       return;
     }
 
     const checkUser = async () => {
-      // 1. まず現在のセッションを確認
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      
       let currentUser = authUser;
 
-      // 2. セッションがなければ1秒待機（Vercel等の反映遅延対策）
       if (!currentUser) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         const { data: { user: retryUser } } = await supabase.auth.getUser();
@@ -36,14 +31,12 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
       }
 
       if (!currentUser) {
-        // それでもいなければログイン画面へ
         window.location.href = '/login';
         return;
       }
 
       setUser(currentUser);
 
-      // 3. オンボーディング状態の取得
       const { data: profile } = await supabase
         .from('profiles')
         .select('is_onboarded')
@@ -74,7 +67,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     }
   };
 
-  // --- 【超重要】ガードレール（早期リターン）は、すべての Hooks の定義後に配置 ---
+  // Hooks の後にガードを置く（React のルール遵守）
   if (!property || !property.uuid || property.uuid === 'favicon.ico') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
@@ -83,7 +76,6 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     );
   }
 
-  // --- ローディング状態の描画 ---
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -92,7 +84,6 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     );
   }
 
-  // --- メインコンテンツの描画 ---
   return (
     <ResidentLayout>
       {showOnboarding && user && (
@@ -108,7 +99,6 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
       )}
 
       <div className="px-4 pt-6 space-y-6 pb-24">
-        {/* 物件情報カード */}
         <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-[2rem] p-6 text-white shadow-xl shadow-blue-200">
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-1">Welcome Home</p>
           <h1 className="text-2xl font-black mb-1">{property?.name || '物件名未設定'}</h1>
@@ -117,7 +107,6 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
           </p>
         </div>
 
-        {/* ゴミ出しセクション */}
         <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
           <div className="flex justify-between items-end mb-4">
             <div>
@@ -144,7 +133,6 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
           </div>
         </section>
 
-        {/* 広告セクション */}
         <section>
           <div className="flex items-center justify-between px-1 mb-4">
             <h2 className="text-lg font-black text-slate-800">周辺のお得情報</h2>
