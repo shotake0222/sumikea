@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase'; // ../ から ../../ に修正
+import { supabase } from '../lib/supabase'; // 画像を確認し、../lib/supabase に確定しました
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -25,17 +25,21 @@ export default function LoginPage() {
     // 2. ユーザーのメタデータから役割（role）を取得
     const role = data.user?.user_metadata?.role;
 
+    // デバッグ用（どのロールで判定されたかコンソールで確認可能）
+    console.log("Login Role:", role);
+
     // 3. 役割に応じて飛ばす先を厳密に分ける
     if (role === 'ADMIN') {
       router.push('/properties');
     } else if (role === 'MANAGER') {
-      router.push('/management/notice');
+      router.push('/management/notices'); // 画像では管理画面が notices (複数形) なので合わせました
     } else if (role === 'POSTING') {
       router.push('/posting/dashboard');
     } else if (role === 'SHOP') {
       router.push('/shop/post');
     } else {
-      router.push('/');
+      // 住民画面(USER)は画像にある resident/dashboard か、トップページへ
+      router.push('/resident/dashboard');
     }
 
     setLoading(false);
