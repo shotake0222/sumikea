@@ -11,7 +11,6 @@ function LoginContent() {
   
   const router = useRouter();
   const searchParams = useSearchParams();
-  // 小文字に統一して判定ミスを防ぐ
   const type = searchParams.get('type')?.toLowerCase();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -26,19 +25,31 @@ function LoginContent() {
       return;
     }
 
-    // 1. DBから実際のユーザー権限（role）を取得
+    // DB上の権限を取得
     const role = data.user?.user_metadata?.role;
 
-    // デバッグ用：どっちの判定が動いているかコンソールで確認
-    console.log("Debug Info - Type Parameter:", type);
-    console.log("Debug Info - User Role:", role);
-
-    // 2. リダイレクト判定（優先順位を整理）
-    // 「roleがUSER」または「URLにtype=userがある」場合は住民ダッシュボードへ
-    if (role === 'USER' || type === 'user') {
+    // スプレッドシートの定義に基づいた厳密な条件分岐
+    // 1. 住民 (USER)
+    if (type === 'user' || role === 'USER') {
       router.push('/resident/dashboard');
-    } 
-    // それ以外（ADMIN, MANAGER）は物件管理へ
+    }
+    // 2. 管理会社 (MANAGER)
+    else if (type === 'manager' || role === 'MANAGER') {
+      router.push('/management/notices');
+    }
+    // 3. 運営 (ADMIN)
+    else if (type === 'admin' || role === 'ADMIN') {
+      router.push('/properties');
+    }
+    // 4. ポスティング業者 (POSTING)
+    else if (type === 'posting' || role === 'POSTING') {
+      router.push('/posting/dashboard');
+    }
+    // 5. 近隣店舗 (SHOP)
+    else if (type === 'shop' || role === 'SHOP') {
+      router.push('/shop/post');
+    }
+    // どれにも当てはまらない場合の安全策
     else {
       router.push('/properties');
     }
@@ -97,7 +108,12 @@ export default function LoginPage() {
       className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6"
       style={{ lineHeight: '1.25' }}
     >
-      <Suspense fallback={<div className="animate-spin w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full" />}>
+      <Suspense fallback={
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading...</p>
+        </div>
+      }>
         <LoginContent />
       </Suspense>
 
