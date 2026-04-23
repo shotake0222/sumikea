@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import Link from 'next/link'; // インポートを追加
 
 export default function ResidentDashboard() {
   const [propertyInfo, setPropertyInfo] = useState<any>(null);
@@ -11,9 +12,20 @@ export default function ResidentDashboard() {
   useEffect(() => {
     const fetchResidentData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
-      const propertyId = user.user_metadata.property_id;
+      // ユーザーのメタデータから物件IDを取得
+      const propertyId = user.user_metadata?.property_id;
+
+      // 🚨 ガード処理：propertyId が取得できない、または "undefined" (文字列) の場合はクエリをスキップ
+      if (!propertyId || propertyId === "undefined") {
+        console.warn("物件IDが設定されていないため、情報取得をスキップしました。");
+        setLoading(false);
+        return;
+      }
 
       // 物件専用情報の取得
       const { data: info } = await supabase
@@ -57,7 +69,7 @@ export default function ResidentDashboard() {
           <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Utility Usage</h2>
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
             <div className="flex justify-between items-end gap-2 h-32">
-              {/* 簡易的なグラフ表示（実際はRecharts等を使用推奨） */}
+              {/* 簡易的なグラフ表示 */}
               {utilityData.map((d: any, i: number) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-2">
                   <div className="w-full bg-blue-100 rounded-t-lg relative" style={{ height: `${(d.electricity_kwh / 500) * 100}%` }}>
@@ -101,7 +113,6 @@ export default function ResidentDashboard() {
       <div className="px-6 pb-10">
         <h2 className="text-xs font-black text-orange-500 uppercase tracking-widest mb-4 ml-2">Neighborhood Deals</h2>
         <div className="bg-orange-50 p-4 rounded-[2rem] border border-orange-100">
-          {/* ここにポスティング会社が送信したデジタル広告を表示 */}
           <p className="text-[11px] font-bold text-orange-800 leading-relaxed">
             【住民限定】近隣の「立川ベーカリー」にて、この画面提示で10%OFF！
           </p>
