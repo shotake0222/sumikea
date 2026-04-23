@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase'; // 2つ上
+import AdminLayout from '../../components/AdminLayout'; // 2つ上
 import { useRouter } from 'next/navigation';
-import AdminLayout from '../components/AdminLayout';
 
 export default function AdminPropertiesPage() {
   const router = useRouter();

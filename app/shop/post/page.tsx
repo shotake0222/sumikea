@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
-import AdminLayout from '../../../components/AdminLayout';
+import { supabase } from '../../../lib/supabase'; // 3つ上
+import AdminLayout from '../../../components/AdminLayout'; // 3つ上
 import { useRouter } from 'next/navigation';
 
 export default function ShopPostPage() {
