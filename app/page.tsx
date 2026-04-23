@@ -13,7 +13,6 @@ export default function ManagementNoticePage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // React Hook Formの設定
   const { register, handleSubmit, setValue, formState: { errors }, reset } = useForm({
     resolver: zodResolver(adSchema),
     defaultValues: {
@@ -26,25 +25,42 @@ export default function ManagementNoticePage() {
 
   useEffect(() => {
     const fetchAuthAndData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      // 1. セッションチェック
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       
-      // MANAGER または ADMIN 以外はログイン画面へリダイレクト
-      if (!user || (user.user_metadata?.role !== 'MANAGER' && user.user_metadata?.role !== 'ADMIN')) {
+      if (!user) {
+        router.push('/login?type=manager');
+        return;
+      }
+
+      const role = user.user_metadata?.role;
+      
+      // ADMINまたはMANAGER以外を弾く
+      if (role !== 'MANAGER' && role !== 'ADMIN') {
         router.push('/login?type=manager');
         return;
       }
       
-      // 管理会社（またはADMIN）が担当している物件リストを取得
-      // ADMINの場合は全物件を取得するロジックに拡張も可能ですが、現状のクエリを維持
-      const { data } = await supabase
+      // 2. 物件データの取得
+      const { data, error } = await supabase
         .from('property_managers')
         .select('property_id, properties(name)')
         .eq('user_id', user.id);
       
       if (data && data.length > 0) {
         setManagedProperties(data);
-        // 最初の物件をデフォルト値としてセット
         setValue('property_id', data[0].property_id);
+      } else {
+        // デバッグ用：物件に紐付いていないADMINの場合、全物件から1つ仮に持ってくる
+        if (role === 'ADMIN') {
+          const { data: allProps } = await supabase.from('properties').select('id, name').limit(1);
+          if (allProps && allProps.length > 0) {
+            const mockData = [{ property_id: allProps[0].id, properties: { name: allProps[0].name } }];
+            setManagedProperties(mockData);
+            setValue('property_id', allProps[0].id);
+          }
+        }
       }
       setLoading(false);
     };
@@ -58,7 +74,6 @@ export default function ManagementNoticePage() {
       title: values.title,
       content: values.content,
       category: values.category,
-      // 1週間後の有効期限を設定
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     });
 
@@ -66,7 +81,7 @@ export default function ManagementNoticePage() {
       alert('エラーが発生しました: ' + error.message);
     } else {
       alert('住民への公式告知をデジタル投函しました。');
-      reset({ ...values, title: '', content: '' }); // 入力欄のみリセット
+      reset({ ...values, title: '', content: '' });
     }
     setIsSubmitting(false);
   };
@@ -91,23 +106,24 @@ export default function ManagementNoticePage() {
         </header>
 
         <form onSubmit={handleSubmit(onSubmit)} className="bg-white rounded-[2.5rem] p-6 md:p-10 shadow-xl border border-slate-200 space-y-6">
-          
-          {/* 物件選択 */}
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">対象の物件</label>
             <select 
               {...register('property_id')}
               className="w-full bg-slate-100 border-none p-4 rounded-2xl font-bold text-slate-700 focus:ring-2 focus:ring-blue-600 outline-none appearance-none"
             >
-              {managedProperties.map((p: any) => (
-                <option key={p.property_id} value={p.property_id}>{p.properties.name}</option>
-              ))}
+              {managedProperties.length > 0 ? (
+                managedProperties.map((p: any) => (
+                  <option key={p.property_id} value={p.property_id}>{p.properties?.name || '名称不明物件'}</option>
+                ))
+              ) : (
+                <option value="">担当物件がありません</option>
+              )}
             </select>
             {errors.property_id && <p className="text-red-500 text-[10px] font-bold ml-1">{errors.property_id.message as string}</p>}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* カテゴリ選択 */}
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">告知の優先度</label>
               <select 
@@ -120,7 +136,6 @@ export default function ManagementNoticePage() {
               </select>
             </div>
 
-            {/* タイトル入力 */}
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">タイトル</label>
               <input 
@@ -132,7 +147,6 @@ export default function ManagementNoticePage() {
             </div>
           </div>
 
-          {/* 本文入力 */}
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">詳細内容</label>
             <textarea 
@@ -144,20 +158,12 @@ export default function ManagementNoticePage() {
           </div>
 
           <button 
-            disabled={isSubmitting}
+            disabled={isSubmitting || managedProperties.length === 0}
             className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-xl transition active:scale-95 disabled:opacity-50"
           >
             {isSubmitting ? 'デジタル投函中...' : 'デジタル掲示板に公開する'}
           </button>
         </form>
-
-        <div className="mt-8 p-6 bg-blue-50 rounded-[2rem] border border-blue-100">
-          <h3 className="text-xs font-black text-blue-700 uppercase tracking-widest mb-2">💡 管理会社のメリット</h3>
-          <p className="text-[11px] text-blue-600 leading-relaxed font-medium">
-            ここに投稿した内容は、住民専用ページ（デジタルポスト）の一番上に固定されます。
-            紙の掲示板を貼り替えるために物件を訪問するコストをゼロにし、即座に情報を伝達できます。
-          </p>
-        </div>
       </div>
     </div>
   );
