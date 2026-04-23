@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase'; // 3つ上
-import AdminLayout from '../../../components/AdminLayout'; // 3つ上
+import { supabase } from '../../../lib/supabase';
+import AdminLayout from '../../../components/AdminLayout';
 import { useRouter } from 'next/navigation';
 
 export default function ShopPostPage() {
@@ -21,24 +21,23 @@ export default function ShopPostPage() {
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
 
-  const [loading, setLoading] = useState(true); // 初期状態を権限チェックのためにtrueに
-  const [isSubmitLoading, setIsSubmitLoading] = useState(false); // 送信時のローディング用
+  const [loading, setLoading] = useState(true);
+  const [isSubmitLoading, setIsSubmitLoading] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [isMultiPost, setIsMultiPost] = useState(false);
   const [nearbyProperties, setNearbyProperties] = useState<any[]>([]);
 
   useEffect(() => {
     const initializePortal = async () => {
-      // 1. セキュリティガード: ログイン状態と権限(Role)の確認
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      const role = user?.user_metadata?.role;
+      const { data: { user } } = await supabase.auth.getUser();
       
-      if (authError || !user) {
+      if (!user) {
         router.push('/login?type=shop');
         return;
       }
 
-      // ✅ 修正: ADMIN または SHOP ロール以外はログインへ
+      // ✅ ロールの正規化
+      const role = user?.user_metadata?.role?.toUpperCase();
       const isAuthorized = role === 'ADMIN' || role === 'SHOP';
 
       if (!isAuthorized) {
@@ -46,36 +45,46 @@ export default function ShopPostPage() {
         return;
       }
 
-      // 2. 店舗情報を取得
-      // 管理者の場合は最初の店舗、SHOPの場合は自分の店舗を取得
+      // 1. 店舗情報を取得
       let storeQuery = supabase.from('stores').select('*');
       if (role === 'SHOP') {
         storeQuery = storeQuery.eq('owner_id', user.id);
       }
       
-      const { data: storeData } = await storeQuery.limit(1).single();
+      // ADMINの場合は「最初の店舗」を取得、SHOPの場合は「自分の店舗」を取得
+      const { data: storeData, error: storeError } = await storeQuery.limit(1).maybeSingle();
       
-      if (storeData) {
-        setMyStore(storeData);
-        setStoreName(storeData.name);
+      let currentStore = storeData;
 
-        // 3. 正確な半径1km以内の物件をDB(PostGIS)から取得
-        if (storeData.lat && storeData.lng) {
+      // ✅ ADMINかつ店舗データが一つもない場合のフォールバック
+      if (!currentStore && role === 'ADMIN') {
+        currentStore = {
+          id: 'admin-preview-id',
+          name: '管理者プレビュー店舗',
+          lat: 35.6895, // デフォルト位置（東京周辺など）
+          lng: 139.6917
+        };
+      }
+
+      if (currentStore) {
+        setMyStore(currentStore);
+        setStoreName(currentStore.name);
+
+        // 2. 近隣物件の取得
+        if (currentStore.lat && currentStore.lng) {
           const { data: nearbyData } = await supabase.rpc('get_properties_within_radius', {
-            target_lat: storeData.lat,
-            target_lng: storeData.lng,
-            radius_meters: 1000 // 1km制限
+            target_lat: currentStore.lat,
+            target_lng: currentStore.lng,
+            radius_meters: 1000
           });
 
-          // ✅ 管理者の場合は全近隣物件、SHOPの場合は許可済み物件を取得
           if (role === 'ADMIN') {
             setAllowedProperties(nearbyData || []);
           } else {
-            // 4. 運営が許可した物件リスト(permissions)を取得
             const { data: permissionData } = await supabase
               .from('store_property_permissions')
               .select('property_id')
-              .eq('store_id', storeData.id);
+              .eq('store_id', currentStore.id);
 
             const allowedIds = permissionData?.map(d => d.property_id) || [];
             if (nearbyData) {
@@ -85,38 +94,32 @@ export default function ShopPostPage() {
           }
         }
 
-        // 直近の配信履歴を取得
-        const { data: adsData } = await supabase
-          .from('local_ads')
-          .select('id, title, view_count, created_at, expires_at')
-          .eq('store_id', storeData.id)
-          .order('created_at', { ascending: false })
-          .limit(5);
-        if (adsData) setRecentAds(adsData);
+        // 3. 配信履歴の取得 (ダミーIDの場合はスキップ)
+        if (currentStore.id !== 'admin-preview-id') {
+          const { data: adsData } = await supabase
+            .from('local_ads')
+            .select('id, title, view_count, created_at, expires_at')
+            .eq('store_id', currentStore.id)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          if (adsData) setRecentAds(adsData);
+        }
       }
-      setLoading(false); // すべての準備が整ったら表示
+      setLoading(false);
     };
     initializePortal();
   }, [router]);
 
-  // 周辺500m一括検索
   const handleNearbySearch = async () => {
     if (!myStore?.lat || !myStore?.lng) {
       alert('店舗の位置情報が設定されていません。');
       return;
     }
-
-    const { data: nearby, error } = await supabase.rpc('get_properties_within_radius', {
+    const { data: nearby } = await supabase.rpc('get_properties_within_radius', {
       target_lat: myStore.lat,
       target_lng: myStore.lng,
-      radius_meters: 500 // 一括配信はより狭い500m圏内
+      radius_meters: 500
     });
-
-    if (error) {
-      alert('検索エラー: ' + error.message);
-      return;
-    }
-    
     setNearbyProperties(nearby || []);
     setIsMultiPost(true);
   };
@@ -127,15 +130,12 @@ export default function ShopPostPage() {
       : (allowedProperties.find(p => p.uuid === selectedPropertyId)?.name || "物件");
     
     if (!storeName) return alert('店舗名を入力してください');
-    
     setAiGenerating(true);
     const templates = [
       { t: `【${displayPropName}限定】${storeName}の特別優待`, c: `いつも${displayPropName}にお住まいの皆様へ。感謝を込めて限定クーポンをお届けします。` },
-      { t: `住民様だけのシークレットセール`, c: `本日より${storeName}にて、${displayPropName}にお住まいの方限定の割引を実施中！` },
-      { t: `【地域密着】${storeName}よりお知らせ`, c: `${displayPropName}から徒歩圏内の当店で、住民様限定の特典をご用意しました。` }
+      { t: `住民様だけのシークレットセール`, c: `本日より${storeName}にて、${displayPropName}にお住まいの方限定の割引を実施中！` }
     ];
     const random = templates[Math.floor(Math.random() * templates.length)];
-    
     setTimeout(() => {
       setTitle(random.t);
       setContent(random.c);
@@ -145,7 +145,9 @@ export default function ShopPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!myStore) return alert('店舗セッションが有効ではありません');
+    if (!myStore || myStore.id === 'admin-preview-id') {
+      return alert('プレビューモードでは送信できません。実在する店舗アカウントでログインしてください。');
+    }
 
     const targetIds = isMultiPost ? nearbyProperties.map(p => p.uuid) : [selectedPropertyId];
     if (targetIds.length === 0 || !targetIds[0]) return alert('配信先の物件を選択してください');
@@ -169,21 +171,19 @@ export default function ShopPostPage() {
     } else {
       alert(`${targetIds.length}件の物件へ配信完了しました！`);
       setTitle(''); setContent(''); setCouponCode(''); setLinkUrl('');
-      // 履歴を再読み込み
       const { data } = await supabase.from('local_ads').select('id, title, view_count, created_at, expires_at').eq('store_id', myStore.id).order('created_at', { ascending: false }).limit(5);
       if (data) setRecentAds(data);
     }
     setIsSubmitLoading(false);
   };
 
-  // 権限チェック中
   if (loading) {
     return (
       <AdminLayout userType="SHOP">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-slate-500 font-bold">店舗権限を確認中...</p>
+            <p className="text-slate-500 font-bold tracking-widest uppercase text-[10px]">Verifying Authority...</p>
           </div>
         </div>
       </AdminLayout>
@@ -327,47 +327,10 @@ export default function ShopPostPage() {
                         <span className="text-[8px] font-black bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full uppercase">Active</span>
                       )}
                     </div>
-                    
-                    <div className="bg-slate-800/50 rounded-xl p-3 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Verified Reach</span>
-                        <span className="text-sm font-black text-blue-400">{ad.view_count || 0}<span className="text-[9px] ml-0.5 text-slate-500">views</span></span>
-                      </div>
-                      <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-blue-500 h-full transition-all duration-1000" 
-                          style={{ width: `${Math.min((ad.view_count || 0) * 10, 100)}%` }}
-                        ></div>
-                      </div>
-                    </div>
                   </div>
                 );
               })}
               {recentAds.length === 0 && <p className="text-[10px] text-slate-500 text-center py-4">配信履歴がありません</p>}
-            </div>
-          </div>
-
-          <div className="sticky top-24 bg-slate-900 rounded-[3rem] p-4 pt-12 pb-8 shadow-2xl relative border-[6px] border-slate-800">
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-800 rounded-full"></div>
-            <p className="text-[10px] text-center text-slate-500 font-bold mb-6 uppercase tracking-tighter">Smartphone Preview</p>
-            <div className="bg-slate-50 rounded-[2rem] overflow-hidden min-h-[400px]">
-              <div className="bg-white p-5 m-3 rounded-2xl shadow-sm border border-slate-100">
-                <span className="text-[9px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded mb-2 inline-block uppercase">
-                  {storeName || 'Store Name'}
-                </span>
-                <h3 className="text-sm font-black text-slate-800 leading-tight mb-2">
-                  {title || 'ここに見出しが表示されます'}
-                </h3>
-                <p className="text-[11px] text-slate-500 line-clamp-3 mb-4">
-                  {content || '住民の興味を引く内容を書きましょう。'}
-                </p>
-                {couponCode && (
-                  <div className="bg-slate-900 text-white p-2 rounded-xl text-center">
-                    <p className="text-[8px] opacity-60 uppercase">Code</p>
-                    <p className="text-xs font-mono font-bold tracking-widest uppercase">{couponCode}</p>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>

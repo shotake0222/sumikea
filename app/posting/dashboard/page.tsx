@@ -21,9 +21,11 @@ export default function PostingDigitalDashboard() {
   useEffect(() => {
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      const role = user?.user_metadata?.role;
       
-      // ✅ 修正：ADMIN または POSTING ロール以外はログインへ（管理者も入れるように）
+      // ✅ 修正：roleの大文字変換で判定ミスを防止
+      const role = user?.user_metadata?.role?.toUpperCase();
+      
+      // ✅ 修正：ADMIN または POSTING ロール以外はログインへ
       const isAuthorized = role === 'ADMIN' || role === 'POSTING';
 
       if (!user || !isAuthorized) {
@@ -31,11 +33,10 @@ export default function PostingDigitalDashboard() {
         return;
       }
 
-      // 物件リスト取得ロジックの調整
       let props = [];
 
       if (role === 'ADMIN') {
-        // ✅ 管理者の場合は全物件を取得
+        // ✅ 修正：管理者の場合は全物件を取得し、データ構造をPOSTING用(propertiesネスト)に合わせる
         const { data: allProps } = await supabase
           .from('properties')
           .select('id, name, address');
@@ -106,7 +107,6 @@ export default function PostingDigitalDashboard() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* 左側：送信フォーム */}
           <div className="lg:col-span-2">
             <form onSubmit={handleSubmit(onSendAd)} className="bg-white rounded-[3rem] p-8 md:p-12 shadow-xl border border-slate-200 space-y-6">
               <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
@@ -119,12 +119,14 @@ export default function PostingDigitalDashboard() {
                   <select 
                     {...register('property_id')}
                     className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                    defaultValue=""
                   >
                     <option value="" disabled>物件を選択してください</option>
                     {targetProperties.map((p: any, index: number) => (
                       <option key={p.property_id || index} value={p.property_id}>{p.properties?.name}</option>
                     ))}
                   </select>
+                  {errors.property_id && <p className="text-red-500 text-[10px] font-bold mt-1">物件を選択してください</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -157,7 +159,6 @@ export default function PostingDigitalDashboard() {
             </form>
           </div>
 
-          {/* 右側：インサイト */}
           <div className="space-y-6">
             <div className="bg-slate-900 rounded-[3rem] p-8 text-white shadow-2xl relative overflow-hidden">
               <h3 className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em] mb-8">Digital Reach Insight</h3>

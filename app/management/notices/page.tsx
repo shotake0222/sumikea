@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase'; // 階層に合わせて調整
+import { supabase } from '../../../lib/supabase';
 import { useRouter } from 'next/navigation';
 
 export default function ManagementNoticePage() {
@@ -16,31 +16,32 @@ export default function ManagementNoticePage() {
   useEffect(() => {
     const fetchAuthAndData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      const role = user?.user_metadata?.role;
       
-      // ✅ セキュリティガード修正: ADMIN または MANAGER なら許可する
+      // ✅ 修正1: roleの取得と大文字変換（揺れ防止）
+      const role = user?.user_metadata?.role?.toUpperCase();
       const isAuthorized = role === 'ADMIN' || role === 'MANAGER';
       
       if (!user || !isAuthorized) {
-        // 権限がない場合は、パラメータ付きで戻す
+        // パラメータが原因でループしないよう慎重にリダイレクト
         router.push('/login?type=manager');
         return;
       }
       
-      // 物件リストの取得ロジック
       let propertyList = [];
 
       if (role === 'ADMIN') {
-        // 管理者の場合は全物件を取得できるようにする
+        // ✅ 修正2: ADMINの場合のデータ構造を MANAGER 取得時（property_id, properties: {name}）に完全に合わせる
         const { data: allProps } = await supabase
           .from('properties')
           .select('id, name');
         
         if (allProps) {
-          propertyList = allProps.map(p => ({ property_id: p.id, properties: { name: p.name } }));
+          propertyList = allProps.map(p => ({ 
+            property_id: p.id, 
+            properties: { name: p.name } 
+          }));
         }
       } else {
-        // 管理会社（MANAGER）の場合は担当物件のみ取得
         const { data: managerProps } = await supabase
           .from('property_managers')
           .select('property_id, properties(name)')
@@ -49,8 +50,9 @@ export default function ManagementNoticePage() {
         if (managerProps) propertyList = managerProps;
       }
       
-      if (propertyList.length > 0) {
+      if (propertyList && propertyList.length > 0) {
         setManagedProperties(propertyList);
+        // 初期値をセット
         setSelectedProperty(propertyList[0].property_id);
       }
       
@@ -69,7 +71,6 @@ export default function ManagementNoticePage() {
       title,
       content,
       category,
-      // 1週間後に自動で非表示にする設定
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     });
 
@@ -112,7 +113,9 @@ export default function ManagementNoticePage() {
             >
               <option value="" disabled>物件を選択してください</option>
               {managedProperties.map((p: any, index: number) => (
-                <option key={p.property_id || index} value={p.property_id}>{p.properties?.name || '不明な物件'}</option>
+                <option key={p.property_id || index} value={p.property_id}>
+                  {p.properties?.name || '不明な物件'}
+                </option>
               ))}
             </select>
           </div>
@@ -160,14 +163,6 @@ export default function ManagementNoticePage() {
             {isSubmitting ? '掲示板を更新中...' : 'デジタル掲示板に投稿する'}
           </button>
         </form>
-
-        <div className="mt-8 p-6 bg-blue-50 rounded-[2rem] border border-blue-100">
-          <h3 className="text-xs font-black text-blue-700 uppercase tracking-widest mb-2">💡 管理会社のメリット</h3>
-          <p className="text-[11px] text-blue-600 leading-relaxed font-medium">
-            ここに投稿した内容は、住民専用ページの一番上に「重要なお知らせ」として固定されます。
-            紙の掲示板を差し替える手間を減らし、外出中の住民にも確実に情報を届けることができます。
-          </p>
-        </div>
       </div>
     </div>
   );

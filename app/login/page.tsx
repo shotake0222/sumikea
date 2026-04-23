@@ -10,8 +10,6 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   
   const searchParams = useSearchParams();
-  
-  // URLの ?type= の値を取得
   const typeParam = searchParams.get('type')?.toLowerCase();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -28,39 +26,42 @@ function LoginContent() {
     }
 
     const user = data.user;
-    const dbRole = user?.user_metadata?.role; // DBに保存されている本当のロール
+    const dbRole = user?.user_metadata?.role;
 
-    // --- 【修正後】ルーティング判定ロジック ---
-    // 優先順位 1: ADMINなら、どの入り口から来ても管理者ページへ
-    // 優先順位 2: それ以外は、DBのロールに基づいて正しく振り分ける
+    // --- 【決定版】ルーティング判定ロジック ---
+    // 1. まず「どの入り口（typeParam）から来たか」を最優先して遷移先を決める
+    // 2. ただし、そのページに入る権限があるか（本人ロール or ADMIN）を各ページ側でチェックする
     
     let targetPath = '';
 
-    if (dbRole === 'ADMIN') {
-      targetPath = '/properties';
-    } 
-    else if (dbRole === 'MANAGER') {
-      targetPath = '/management/notices';
-    } 
-    else if (dbRole === 'POSTING') {
-      targetPath = '/posting/dashboard';
-    } 
-    else if (dbRole === 'SHOP') {
-      targetPath = '/shop/post';
-    } 
-    else if (dbRole === 'USER') {
+    // URLのパラメータに基づいて遷移先を決定
+    if (typeParam === 'user') {
       targetPath = '/resident/dashboard';
     } 
+    else if (typeParam === 'manager') {
+      targetPath = '/management/notices';
+    } 
+    else if (typeParam === 'posting') {
+      targetPath = '/posting/dashboard';
+    } 
+    else if (typeParam === 'shop') {
+      targetPath = '/shop/post';
+    } 
+    else if (typeParam === 'admin') {
+      targetPath = '/properties';
+    } 
     else {
-      // どのロールにも当てはまらない場合、URLのtypeを補助的に使う
-      if (typeParam === 'manager') targetPath = '/management/notices';
-      else if (typeParam === 'posting') targetPath = '/posting/dashboard';
-      else if (typeParam === 'shop') targetPath = '/shop/post';
-      else if (typeParam === 'user') targetPath = '/resident/dashboard';
+      // パラメータがない場合は、DBのロールに従ってデフォルトの場所へ
+      if (dbRole === 'ADMIN') targetPath = '/properties';
+      else if (dbRole === 'MANAGER') targetPath = '/management/notices';
+      else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
+      else if (dbRole === 'SHOP') targetPath = '/shop/post';
+      else if (dbRole === 'USER') targetPath = '/resident/dashboard';
       else targetPath = '/properties';
     }
 
     if (targetPath) {
+      // ブラウザレベルで確実に遷移
       window.location.href = targetPath;
     } else {
       setLoading(false);
@@ -114,7 +115,7 @@ function LoginContent() {
       </form>
 
       <div className="mt-4 text-[8px] text-slate-300 text-center uppercase tracking-tighter">
-        Detected Type: {typeParam || 'none'}
+        Attempting Entry As: {typeParam || dbRole || 'unknown'}
       </div>
     </div>
   );
