@@ -1,9 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/**/*.{js,ts,jsx,tsx,mdx}", // もしsrcディレクトリを使っている場合は必須です
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",      // ここ！
+    "./components/**/*.{js,ts,jsx,tsx,mdx}", // ここ！
+    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {},
