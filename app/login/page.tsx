@@ -1,18 +1,23 @@
 'use client';
+
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase'; // appの上の階層（ルート）にあるlibを参照
-import { useRouter } from 'next/navigation';
+import { supabase } from '../../lib/supabase';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const type = searchParams.get('type');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
+    // 1. ログイン実行
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
@@ -21,19 +26,13 @@ export default function LoginPage() {
       return;
     }
 
-    const role = data.user?.user_metadata?.role;
-
-    // 画像のフォルダ構造に基づいたリダイレクト先
-    if (role === 'ADMIN') {
-      router.push('/properties');
-    } else if (role === 'MANAGER') {
-      router.push('/management/notices');
-    } else if (role === 'POSTING') {
-      router.push('/posting/dashboard');
-    } else if (role === 'SHOP') {
-      router.push('/shop/post');
-    } else {
+    // 2. クエリパラメータ 'type' に基づいた条件分岐
+    if (type === 'user') {
+      // ?type=user の場合は住民ダッシュボードへ
       router.push('/resident/dashboard');
+    } else {
+      // それ以外（managerなど）は物件管理一覧へ
+      router.push('/properties');
     }
 
     setLoading(false);
@@ -47,7 +46,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-xl shadow-slate-200/50 border border-slate-100">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
-          <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">Partner Portal</p>
+          <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">
+            {type === 'user' ? 'Resident Portal' : 'Partner Portal'}
+          </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
