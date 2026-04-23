@@ -1,11 +1,11 @@
 'use client';
 
-import { ResidentLayout } from '../../../components/ResidentLayout';
-import { useState, useEffect } from 'react';
-import { TrashUploadButton } from '../../../components/TrashUploadButton';
-import { AdModal } from '../../../components/AdModal';
-import { OnboardingModal } from '../../../components/OnboardingModal';
-import { supabase } from '../../../lib/supabase';
+import  ResidentLayout  from '../../../components/ResidentLayout';
+import  useState, useEffect  from 'react';
+import  TrashUploadButton from '../../../components/TrashUploadButton';
+import  AdModal  from '../../../components/AdModal';
+import  OnboardingModal  from '../../../components/OnboardingModal';
+import  supabase  from '../../../lib/supabase';
 
 export default function ResidentDashboard({ property, trashData = [], localAds = [] }: any) {
   // すべての Hooks (useState) はコンポーネントの最上部で呼び出す

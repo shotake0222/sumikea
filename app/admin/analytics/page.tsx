@@ -35,7 +35,8 @@ export default function AnalyticsPage() {
   }, []);
 
   return (
-    <AdminLayout userType="ADMIN">
+    // 修正後（許可されている名前に合わせる）
+     <AdminLayout userType="OWNER">
       <div className="space-y-8">
         <h1 className="text-3xl font-black text-slate-800 tracking-tighter">📊 配信パフォーマンス分析</h1>
         
