@@ -2,14 +2,12 @@
 
 import { useState, Suspense } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 function LoginContent() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  // 表示確認用に dbRole を state に昇格
   const [displayRole, setDisplayRole] = useState<string | null>(null);
   
   const searchParams = useSearchParams();
@@ -20,6 +18,7 @@ function LoginContent() {
     if (loading) return; 
     setLoading(true);
     
+    // 1. サインイン実行
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
@@ -28,37 +27,34 @@ function LoginContent() {
       return;
     }
 
-    const user = data.user;
-    // ✅ ロールの正規化（メタデータから確実に取得）
+    // 2. 確実に最新のユーザー情報を取得（Authの反映待ちを防ぐ）
+    const { data: { user } } = await supabase.auth.getUser();
     const dbRole = user?.user_metadata?.role?.toUpperCase();
     setDisplayRole(dbRole);
 
-    // --- 【完全修正版】ルーティング判定 ---
     let targetPath = '';
 
-    // ✅ ADMIN は全知全能：typeParam に合わせてどこへでも行けるようにする
+    // 3. ルーティング判定（ADMIN最強ルール）
     if (dbRole === 'ADMIN') {
       if (typeParam === 'user') targetPath = '/resident/dashboard';
       else if (typeParam === 'manager') targetPath = '/management/notices';
       else if (typeParam === 'posting') targetPath = '/posting/dashboard';
       else if (typeParam === 'shop') targetPath = '/shop/post';
-      else targetPath = '/properties'; // デフォルトは物件管理
+      else targetPath = '/properties';
     } 
-    // ✅ 一般ロールの振り分け
     else if (dbRole === 'MANAGER') targetPath = '/management/notices';
     else if (dbRole === 'POSTING') targetPath = '/posting/dashboard';
     else if (dbRole === 'SHOP') targetPath = '/shop/post';
     else if (dbRole === 'USER') targetPath = '/resident/dashboard';
-    else {
-      targetPath = '/resident/dashboard'; // 最終フォールバック
-    }
+    else targetPath = '/properties';
 
-    // ✅ next/navigation の router.push を使い、少し待機してから遷移（確実に認証を通す）
-    setTimeout(() => {
-      // window.location.href よりも router.push の方が Next.js では安定します
-      router.push(targetPath);
-      router.refresh(); // セッションを確実に反映
-    }, 100);
+    // 4. 【重要】フルリロードを伴う遷移
+    // これにより遷移先のページが最新のセッションを確実に読み込みます
+    if (targetPath) {
+      window.location.href = targetPath;
+    } else {
+      setLoading(false);
+    }
   };
 
   return (
