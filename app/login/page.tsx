@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '../lib/supabase'; // パスが ../lib であることを確認してください
+import { supabase } from '../../lib/supabase'; // ../ から ../../ に修正
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -27,19 +27,14 @@ export default function LoginPage() {
 
     // 3. 役割に応じて飛ばす先を厳密に分ける
     if (role === 'ADMIN') {
-      // 管理者は全物件管理画面へ
       router.push('/properties');
     } else if (role === 'MANAGER') {
-      // 管理会社は公式告知（掲示板）画面へ
       router.push('/management/notice');
     } else if (role === 'POSTING') {
-      // ポスティング会社はデジタル投函ダッシュボードへ
       router.push('/posting/dashboard');
     } else if (role === 'SHOP') {
-      // 店舗は投稿画面へ
       router.push('/shop/post');
     } else {
-      // 一般ユーザー（USER）はトップページへ
       router.push('/');
     }
 
