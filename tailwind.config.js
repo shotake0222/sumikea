@@ -6,11 +6,7 @@ module.exports = {
     "./lib/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {
-      colors: {
-        posutto: '#2563eb',
-      },
-    },
+    extend: {},
   },
   plugins: [],
 }
