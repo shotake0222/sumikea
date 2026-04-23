@@ -3,106 +3,170 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { adSchema } from '../../../lib/validations';
 
 export default function PostingDigitalDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [targetProperties, setTargetProperties] = useState<any[]>([]);
-  const [pendingAds, setPendingAds] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 配信フォーム用の設定（Zod連携）
+  const { register, handleSubmit, formState: { errors }, reset } = useForm({
+    resolver: zodResolver(adSchema)
+  });
 
   useEffect(() => {
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
+      // POSTINGロール以外はログインへ
       if (!user || user.user_metadata?.role !== 'POSTING') {
         router.push('/login?type=posting');
         return;
       }
 
-      // 1. ポスティング会社が「送信権限」を持つ物件を取得
+      // ポスティング会社がデジタル投函権限を持つ物件を取得
       const { data: props } = await supabase
-        .from('property_managers') // 権限テーブル（MANAGERと共用または別設定）
+        .from('property_managers')
         .select('property_id, properties(name, address)')
         .eq('user_id', user.id);
       
-      // 2. まだ送信（公開）されていない承認待ち広告などを取得
-      // ※ここでは仮に直近の配信ログを表示
       setTargetProperties(props || []);
       setLoading(false);
     };
     initialize();
   }, [router]);
 
-  if (loading) return <div className="p-8 text-center font-bold">デジタル投函システム起動中...</div>;
+  const onSendAd = async (data: any) => {
+    setIsSubmitting(true);
+    const { error } = await supabase.from('digital_flyers').insert({
+      property_id: data.property_id,
+      title: data.title,
+      content: data.content,
+      status: 'published' // 即時配信
+    });
+
+    if (error) {
+      alert('送信エラー: ' + error.message);
+    } else {
+      alert('デジタル投函が完了しました！住民の端末に反映されます。');
+      reset();
+    }
+    setIsSubmitting(false);
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen bg-slate-50">
+      <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8" style={{ lineHeight: '1.25' }}>
-      <div className="max-w-5xl mx-auto">
-        <header className="mb-10 flex justify-between items-start">
+      <div className="max-w-6xl mx-auto">
+        <header className="mb-10 flex justify-between items-end">
           <div>
-            <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full uppercase tracking-widest">Digital Dispatcher</span>
-            <h1 className="text-3xl font-black text-slate-800 mt-2 tracking-tighter">デジタルポスティング実行画面</h1>
-            <p className="text-slate-500 text-sm mt-1">物理的な投函作業をデジタル送信に置き換えます。</p>
+            <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full uppercase tracking-widest">
+              Digital Dispatcher
+            </span>
+            <h1 className="text-3xl font-black text-slate-800 mt-2 tracking-tighter">デジタル投函コンソール</h1>
+            <p className="text-slate-500 text-sm mt-1">
+              物理的な配布なしで、担当物件の全住民へダイレクトに情報を送信します。
+            </p>
           </div>
-          <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-slate-200 text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase">送信可能物件</p>
-            <p className="text-2xl font-black text-indigo-600">{targetProperties.length} <span className="text-sm">棟</span></p>
+          <div className="hidden md:block bg-white px-8 py-4 rounded-[2rem] shadow-sm border border-slate-200 text-right">
+            <p className="text-[10px] font-black text-slate-400 uppercase">配信可能ポータル</p>
+            <p className="text-3xl font-black text-indigo-600">{targetProperties.length} <span className="text-sm">物件</span></p>
           </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* 左側：物件リストと送信状況 */}
-          <div className="lg:col-span-2 space-y-6">
-            <h2 className="text-lg font-black text-slate-800 ml-2">担当物件のデジタル受信箱状況</h2>
-            <div className="grid grid-cols-1 gap-4">
-              {targetProperties.map((p: any) => (
-                <div key={p.property_id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center justify-between hover:border-indigo-300 transition group">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-2xl group-hover:bg-indigo-50">🏢</div>
-                    <div>
-                      <h3 className="font-black text-slate-800">{p.properties.name}</h3>
-                      <p className="text-[10px] text-slate-400 font-bold">{p.properties.address}</p>
-                    </div>
-                  </div>
-                  <button className="bg-slate-900 text-white text-[10px] font-black px-6 py-3 rounded-full hover:bg-indigo-600 transition active:scale-95">
-                    広告を送信する
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* 左側：送信フォーム */}
+          <div className="lg:col-span-2">
+            <form onSubmit={handleSubmit(onSendAd)} className="bg-white rounded-[3rem] p-8 md:p-12 shadow-xl border border-slate-200 space-y-6">
+              <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+                <span className="text-2xl">⚡️</span> 即時投函エディタ
+              </h2>
 
-          {/* 右側：クイック統計と操作 */}
-          <div className="space-y-6">
-            <div className="bg-indigo-900 rounded-[3rem] p-8 text-white shadow-xl relative overflow-hidden">
-              <div className="relative z-10">
-                <h3 className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-6">Digital Reach Score</h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs font-bold opacity-80">本日の総送信数</p>
-                    <p className="text-3xl font-black">1,240 <span className="text-xs font-normal">住民</span></p>
-                  </div>
-                  <div className="w-full bg-white/10 h-1 rounded-full">
-                    <div className="bg-indigo-400 h-full w-[70%]"></div>
-                  </div>
-                  <p className="text-[10px] font-medium opacity-60">※前日比 +12% のリーチ増加</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">宛先物件</label>
+                  <select 
+                    {...register('property_id')}
+                    className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {targetProperties.map((p: any) => (
+                      <option key={p.property_id} value={p.property_id}>{p.properties.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">広告・案内タイトル</label>
+                  <input 
+                    {...register('title')}
+                    placeholder="例：駅前カフェ 住民限定クーポン"
+                    className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  {errors.title && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.title.message as string}</p>}
                 </div>
               </div>
-              <div className="absolute -right-4 -bottom-4 text-9xl opacity-10 italic font-black">DIGITAL</div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">配信内容</label>
+                <textarea 
+                  {...register('content')}
+                  placeholder="住民がメリットを感じる内容を入力してください..."
+                  className="w-full bg-slate-50 border-none p-4 rounded-3xl h-40 font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+                {errors.content && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.content.message as string}</p>}
+              </div>
+
+              <button 
+                disabled={isSubmitting}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-3xl font-black shadow-lg shadow-indigo-200 transition active:scale-[0.98] disabled:opacity-50"
+              >
+                {isSubmitting ? 'データを送信中...' : 'デジタル投函を実行する'}
+              </button>
+            </form>
+          </div>
+
+          {/* 右側：インサイト */}
+          <div className="space-y-6">
+            <div className="bg-slate-900 rounded-[3rem] p-8 text-white shadow-2xl relative overflow-hidden">
+              <h3 className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em] mb-8">Digital Reach Insight</h3>
+              <div className="space-y-6 relative z-10">
+                <div>
+                  <p className="text-xs font-bold opacity-60">本日の総投函数</p>
+                  <p className="text-4xl font-black">2,840 <span className="text-xs font-normal">端末</span></p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold opacity-60">開封率 (平均)</p>
+                  <p className="text-4xl font-black text-indigo-400">42.8 <span className="text-xs font-normal">%</span></p>
+                </div>
+              </div>
+              <div className="absolute -right-6 -bottom-6 text-9xl font-black opacity-5 italic">DATA</div>
             </div>
 
-            <div className="bg-white rounded-[2.5rem] p-6 border border-slate-200">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4">ポスティング会社 業務フロー</h4>
-              <ul className="text-[11px] space-y-3 font-bold text-slate-600">
-                <li className="flex gap-2">
-                  <span className="text-indigo-500">01.</span> 店舗から届いた広告案を確認
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-indigo-500">02.</span> 物件ごとの属性に合わせて選別
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-indigo-500">03.</span> デジタル「送信」で全住民へ届ける
-                </li>
+            <div className="bg-white rounded-[2.5rem] p-6 border border-slate-200 shadow-sm">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Digital Posting Flow</h4>
+              <ul className="space-y-4">
+                {[
+                  { n: '01', t: '店舗から依頼を受理', c: 'デジタルデータの入稿を確認' },
+                  { n: '02', t: '物件セグメント', c: '属性に合ったマンションを選択' },
+                  { n: '03', t: '一斉配信', c: '「送信」ボタンで投函完了' },
+                ].map((item) => (
+                  <li key={item.n} className="flex gap-4">
+                    <span className="text-indigo-600 font-black text-sm">{item.n}</span>
+                    <div>
+                      <p className="text-[11px] font-black text-slate-800 leading-tight">{item.t}</p>
+                      <p className="text-[10px] text-slate-400 font-bold">{item.c}</p>
+                    </div>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>
