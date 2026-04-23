@@ -2,162 +2,221 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { useRouter } from 'next/navigation'; // useRouterを追加
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function ResidentDashboard() {
   const router = useRouter();
+  const [profile, setProfile] = useState<any>(null);
   const [propertyInfo, setPropertyInfo] = useState<any>(null);
+  const [notices, setNotices] = useState<any[]>([]);
   const [utilityData, setUtilityData] = useState<any>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchResidentData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        router.push('/login?type=user');
-        return;
-      }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          router.push('/login?type=user');
+          return;
+        }
 
-      const role = user.user_metadata?.role;
-      setUserRole(role);
+        // 1. プロフィールと物件情報の取得
+        const { data: prof, error: profError } = await supabase
+          .from('profiles')
+          .select('*, properties(*)')
+          .eq('id', user.id)
+          .single();
 
-      // ✅ セキュリティガード修正: ADMIN または USER ロール以外はログインへ
-      const isAuthorized = role === 'ADMIN' || role === 'USER';
-      if (!isAuthorized) {
-        router.push('/login?type=user');
-        return;
-      }
+        // 物件が紐付いていない場合はセットアップ画面へ強制リダイレクト
+        if (profError || !prof?.property_id) {
+          router.push('/resident/setup');
+          return;
+        }
 
-      // ユーザーのメタデータから物件IDを取得
-      let propertyId = user.user_metadata?.property_id;
+        setProfile(prof);
+        setUserRole(prof.role);
 
-      // ✅ ADMINの場合、property_idがなければテスト用に最初の物件IDを取得する
-      if (role === 'ADMIN' && (!propertyId || propertyId === "undefined")) {
-        const { data: firstProp } = await supabase.from('properties').select('id').limit(1).single();
-        if (firstProp) propertyId = firstProp.id;
-      }
+        // 2. 掲示板データの取得とパーソナライズ
+        const now = new Date().toISOString();
+        const { data: rawNotices } = await supabase
+          .from('property_notifications')
+          .select('*')
+          .eq('property_id', prof.property_id)
+          .or(`expires_at.gt.${now},is_permanent.eq.true`);
 
-      // 🚨 ガード処理：依然としてpropertyIdがない場合はスキップ
-      if (!propertyId || propertyId === "undefined") {
-        console.warn("物件IDが特定できないため、情報取得をスキップしました。");
+        // --- パーソナライズ・ロジック ---
+        const sortedNotices = (rawNotices || []).map(notice => {
+          let score = 0;
+          // 緊急度は最優先
+          if (notice.category === 'urgent') score += 1000;
+          // ペット飼育者に関連
+          if (prof.has_pet && (notice.title + notice.content).includes('ペット')) score += 100;
+          // 車利用に関連
+          if (prof.primary_transport === 'car' && (notice.title + notice.content).includes('駐車場')) score += 80;
+          // 在宅ワークに関連
+          if (prof.lifestyle_tags?.includes('remote') && (notice.title + notice.content).includes('工事')) score += 60;
+          
+          return { ...notice, score };
+        }).sort((a, b) => b.score - a.score);
+
+        setNotices(sortedNotices);
+
+        // 3. 生活情報（ゴミの日等）の取得
+        const { data: livingInfo } = await supabase
+          .from('property_living_info')
+          .select('*')
+          .eq('property_id', prof.property_id)
+          .single();
+        
+        // 4. インフラ使用量データ
+        const { data: utils } = await supabase
+          .from('resident_utilities')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('usage_month', { ascending: false })
+          .limit(6);
+
+        setPropertyInfo(livingInfo);
+        setUtilityData(utils || []);
+      } catch (err) {
+        console.error('Data fetch error:', err);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      // 物件専用情報の取得
-      const { data: info } = await supabase
-        .from('property_living_info')
-        .select('*')
-        .eq('property_id', propertyId)
-        .single();
-      
-      // 直近のインフラ使用量取得
-      // (ADMINの場合は全件から、USERの場合は自分のデータのみ)
-      let utilityQuery = supabase.from('resident_utilities').select('*');
-      if (role !== 'ADMIN') {
-        utilityQuery = utilityQuery.eq('user_id', user.id);
-      }
-      
-      const { data: utils } = await utilityQuery
-        .order('usage_month', { ascending: false })
-        .limit(6);
-
-      setPropertyInfo(info);
-      setUtilityData(utils || []);
-      setLoading(false);
     };
+
     fetchResidentData();
   }, [router]);
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+      <div className="w-10 h-10 border-4 border-slate-900 border-t-blue-500 rounded-full animate-spin"></div>
     </div>
   );
 
   return (
-    <div className="max-w-md mx-auto bg-slate-50 min-h-screen pb-20" style={{ lineHeight: '1.25' }}>
-      {/* ヒーローセクション：物件名と重要告知 */}
-      <div className="bg-blue-600 p-8 rounded-b-[3rem] text-white shadow-lg">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full uppercase tracking-widest">
-            {userRole === 'ADMIN' ? 'Admin Preview' : 'Resident Only'}
-          </span>
+    <div className="max-w-md mx-auto bg-[#F8FAFC] min-h-screen pb-32 font-sans overflow-x-hidden">
+      
+      {/* ヒーロー：物件名とステータス */}
+      <div className="bg-slate-900 p-10 rounded-b-[3.5rem] text-white shadow-2xl relative overflow-hidden">
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+              {profile?.properties?.name} Official
+            </span>
+          </div>
+          <h1 className="text-4xl font-black tracking-tighter italic">
+            {profile?.room_number ? `${profile.room_number}号室` : 'My Page'}
+          </h1>
         </div>
-        <h1 className="text-2xl font-black mt-2 tracking-tighter">
-          {propertyInfo?.display_name || 'スカイハイツ立川'}
-        </h1>
-        <div className="mt-6 p-4 bg-white/10 rounded-2xl backdrop-blur-md border border-white/10">
-          <p className="text-[10px] font-black uppercase opacity-60">Next Garbage Day</p>
-          <p className="text-lg font-bold">
-            {propertyInfo?.next_garbage_info || '明日 4/24(金) は 「燃えるゴミ」 です'}
-          </p>
-        </div>
+        {/* 装飾用デザイン要素 */}
+        <div className="absolute right-[-5%] top-[-10%] w-56 h-56 bg-blue-600 rounded-full opacity-20 blur-[80px]"></div>
       </div>
 
-      <div className="p-6 space-y-8">
-        {/* インフラ状況の可視化 */}
-        <section>
-          <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Utility Usage</h2>
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-            {utilityData.length > 0 ? (
-              <div className="flex justify-between items-end gap-2 h-32">
-                {utilityData.map((d: any, i: number) => (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-blue-100 rounded-t-lg relative" style={{ height: `${Math.min((d.electricity_kwh / 500) * 100, 100)}%` }}>
-                      <div className="absolute -top-6 left-0 right-0 text-[8px] text-center font-bold text-blue-600">{d.electricity_kwh}kwh</div>
-                    </div>
-                    <span className="text-[8px] font-black text-slate-400 uppercase">{new Date(d.usage_month).getMonth() + 1}月</span>
-                  </div>
-                ))}
+      <div className="p-6 space-y-8 -mt-8">
+        
+        {/* クイックアクション：ゴミカレンダー */}
+        <Link href="/resident/trash">
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-xl shadow-slate-200/50 flex items-center justify-between border border-white active:scale-[0.97] transition-all">
+            <div>
+              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Next Garbage Day</p>
+              <p className="text-xl font-black text-slate-800">
+                {propertyInfo?.next_garbage_info || '明日は「燃えるゴミ」'}
+              </p>
+            </div>
+            <div className="bg-slate-900 w-14 h-14 flex items-center justify-center rounded-[1.5rem] text-2xl shadow-lg shadow-slate-200">
+              🗑️
+            </div>
+          </div>
+        </Link>
+
+        {/* パーソナライズ掲示板フィード */}
+        <section className="space-y-4">
+          <div className="flex justify-between items-end px-2">
+            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Personalized Feed</h2>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase italic">For You</span>
+          </div>
+          
+          <div className="space-y-4">
+            {notices.length === 0 ? (
+              <div className="bg-white p-10 rounded-[2.5rem] text-center border-2 border-dashed border-slate-200">
+                <p className="text-slate-400 text-xs font-bold">現在、重要なお知らせはありません。</p>
               </div>
             ) : (
-              <div className="h-32 flex items-center justify-center text-[10px] text-slate-400 font-bold uppercase italic">
-                No Data Available
-              </div>
+              notices.map((notice) => (
+                <article key={notice.id} 
+                  className={`bg-white p-6 rounded-[2.5rem] shadow-sm border-l-8 transition-all hover:shadow-md
+                    ${notice.category === 'urgent' ? 'border-red-500' : 'border-blue-500'}`}
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase
+                      ${notice.category === 'urgent' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                      {notice.category === 'urgent' ? 'Important' : 'Notice'}
+                    </span>
+                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
+                      {new Date(notice.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900 leading-tight mb-2">{notice.title}</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-3 mb-4">{notice.content}</p>
+                  
+                  {notice.pdf_url && (
+                    <a href={notice.pdf_url} target="_blank" className="inline-flex items-center gap-2 text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-xl">
+                      📎 VIEW DOCUMENT
+                    </a>
+                  )}
+                </article>
+              ))
             )}
           </div>
         </section>
 
-        {/* 物件書類・契約関連 */}
+        {/* 分析：光熱費グラフ（既存ロジックのマージ） */}
         <section>
-          <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Documents</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <button className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center gap-2 active:scale-95 transition">
-              <span className="text-2xl">📄</span>
-              <span className="text-[10px] font-black text-slate-700">管理規約PDF</span>
-            </button>
-            <button className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center gap-2 active:scale-95 transition">
-              <span className="text-2xl">🔌</span>
-              <span className="text-[10px] font-black text-slate-700">インフラ契約</span>
-            </button>
+          <div className="flex items-center gap-2 mb-4 ml-2">
+            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Utility Analytics</h2>
+          </div>
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+            <div className="flex justify-between items-end gap-3 h-24">
+              {utilityData.length > 0 ? utilityData.map((d: any, i: number) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
+                  <div className="w-full bg-slate-100 rounded-t-xl relative transition-all group-hover:bg-blue-100" 
+                    style={{ height: `${Math.min((d.electricity_kwh / 500) * 100, 100)}%` }}>
+                  </div>
+                  <span className="text-[8px] font-black text-slate-400">{new Date(d.usage_month).getMonth() + 1}月</span>
+                </div>
+              )) : (
+                <p className="text-[10px] text-slate-300 w-full text-center pb-8">No usage data yet</p>
+              )}
+            </div>
           </div>
         </section>
-
-        {/* お問い合わせフォームへのリンク */}
-        <section className="pt-4">
-          <Link href="/resident/support" className="flex items-center justify-between w-full bg-slate-900 text-white p-6 rounded-[2rem] shadow-xl active:scale-95 transition">
-            <div className="text-left">
-              <p className="text-[10px] font-black opacity-60 uppercase">Support Center</p>
-              <p className="font-bold">管理者へのお問い合わせ</p>
-            </div>
-            <span className="text-2xl">💬</span>
-          </Link>
-        </section>
       </div>
 
-      {/* 下部に店舗広告を「ついで」に見せるセクション */}
-      <div className="px-6 pb-10">
-        <h2 className="text-xs font-black text-orange-500 uppercase tracking-widest mb-4 ml-2">Neighborhood Deals</h2>
-        <div className="bg-orange-50 p-4 rounded-[2rem] border border-orange-100">
-          <p className="text-[11px] font-bold text-orange-800 leading-relaxed">
-            【住民限定】近隣の「立川ベーカリー」にて、この画面提示で10%OFF！
-          </p>
-        </div>
-      </div>
+      {/* フローティング・タブバー */}
+      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[85%] h-20 bg-slate-900/90 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-8 border border-white/10">
+        <button className="text-blue-500 flex flex-col items-center gap-1">
+          <span className="text-2xl">📢</span>
+          <span className="text-[7px] font-black uppercase tracking-widest text-white">Board</span>
+        </button>
+        <Link href="/resident/trash" className="text-slate-500 flex flex-col items-center gap-1">
+          <span className="text-2xl opacity-40">🗓️</span>
+          <span className="text-[7px] font-black uppercase tracking-widest">Calendar</span>
+        </Link>
+        <button className="text-slate-500 flex flex-col items-center gap-1">
+          <span className="text-2xl opacity-40">📦</span>
+          <span className="text-[7px] font-black uppercase tracking-widest">Parcel</span>
+        </button>
+        <button className="text-slate-500 flex flex-col items-center gap-1">
+          <span className="text-2xl opacity-40">⚙️</span>
+          <span className="text-[7px] font-black uppercase tracking-widest">Menu</span>
+        </button>
+      </nav>
     </div>
   );
 }
