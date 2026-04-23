@@ -11,7 +11,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   // ロゴ画像のパス（publicフォルダに logo.png 等を置いた場合）
-  const logoPath = "/logo.png"; 
+  const logoPath = "./logo.png"; 
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +60,6 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
-          <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">Digital Posting Service</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
