@@ -1,4 +1,5 @@
-import './globals.css'; // ← ★一番上で読み込んでいるか確認
+// app/layout.tsx の一番上
+import './globals.css'; // globals.cssはappフォルダ内に残っているので、これで正解です
 import type { Metadata } from 'next';
 // ...他のimport文
 
