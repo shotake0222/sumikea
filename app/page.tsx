@@ -28,13 +28,14 @@ export default function ManagementNoticePage() {
     const fetchAuthAndData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // MANAGERロール以外はログイン画面へリダイレクト
-      if (!user || user.user_metadata?.role !== 'MANAGER') {
+      // MANAGER または ADMIN 以外はログイン画面へリダイレクト
+      if (!user || (user.user_metadata?.role !== 'MANAGER' && user.user_metadata?.role !== 'ADMIN')) {
         router.push('/login?type=manager');
         return;
       }
       
-      // 管理会社が担当している物件リストを取得
+      // 管理会社（またはADMIN）が担当している物件リストを取得
+      // ADMINの場合は全物件を取得するロジックに拡張も可能ですが、現状のクエリを維持
       const { data } = await supabase
         .from('property_managers')
         .select('property_id, properties(name)')
