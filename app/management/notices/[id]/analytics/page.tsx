@@ -33,8 +33,10 @@ export default function NoticeAnalyticsPage() {
       const readRate = totalResidents ? Math.round((readCount / totalResidents) * 100) : 0;
 
       // 3. 属性別の既読分析（例：ペット飼育者の既読率）
-      const petOwnersRead = reads?.filter(r => r.profiles?.has_pet).length || 0;
-
+      const petOwnersRead = reads?.filter(r => {
+      const profile = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+      return profile?.has_pet;
+    }).length || 0;
       setStats({ totalResidents, readCount, readRate, petOwnersRead });
       setLoading(false);
     };
