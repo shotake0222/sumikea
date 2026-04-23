@@ -4,7 +4,6 @@ import { useState, Suspense } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-// useSearchParams を使用する実際のコンテンツ部分
 function LoginContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -12,7 +11,8 @@ function LoginContent() {
   
   const router = useRouter();
   const searchParams = useSearchParams();
-  const type = searchParams.get('type');
+  // 小文字に統一して判定ミスを防ぐ
+  const type = searchParams.get('type')?.toLowerCase();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +26,20 @@ function LoginContent() {
       return;
     }
 
-    // クエリパラメータに基づいたリダイレクト
-    if (type === 'user') {
+    // 1. DBから実際のユーザー権限（role）を取得
+    const role = data.user?.user_metadata?.role;
+
+    // デバッグ用：どっちの判定が動いているかコンソールで確認
+    console.log("Debug Info - Type Parameter:", type);
+    console.log("Debug Info - User Role:", role);
+
+    // 2. リダイレクト判定（優先順位を整理）
+    // 「roleがUSER」または「URLにtype=userがある」場合は住民ダッシュボードへ
+    if (role === 'USER' || type === 'user') {
       router.push('/resident/dashboard');
-    } else {
+    } 
+    // それ以外（ADMIN, MANAGER）は物件管理へ
+    else {
       router.push('/properties');
     }
 
@@ -81,19 +91,13 @@ function LoginContent() {
   );
 }
 
-// ページ全体を Suspense でラップしてエクスポート
 export default function LoginPage() {
   return (
     <div 
       className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6"
       style={{ lineHeight: '1.25' }}
     >
-      <Suspense fallback={
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading...</p>
-        </div>
-      }>
+      <Suspense fallback={<div className="animate-spin w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full" />}>
         <LoginContent />
       </Suspense>
 
