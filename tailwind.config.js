@@ -2,11 +2,15 @@
 module.exports = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    // もし他の場所にもファイルがあるなら追加
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        posutto: '#2563eb', // 今日決めたブルーを定義しておくと便利です
+      },
+    },
   },
   plugins: [],
 }
