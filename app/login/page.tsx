@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, Suspense, useEffect } from 'react';
+import { useState, Suspense } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 function LoginContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const router = useRouter();
   const searchParams = useSearchParams();
   
   // URLの ?type= の値を取得
@@ -17,6 +16,7 @@ function LoginContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // 二重送信防止
     setLoading(true);
     
     // ログイン実行
@@ -28,15 +28,11 @@ function LoginContent() {
       return;
     }
 
-    // ログイン成功後、最新のユーザー情報を取得
+    // ログイン成功後、ユーザー情報を取得
     const user = data.user;
     const dbRole = user?.user_metadata?.role;
 
-    // デバッグ用ログ（ブラウザのコンソールで確認可能）
-    console.log('Login Success:', { typeParam, dbRole });
-
-    // --- スプレッドシート定義に基づくルーティング ---
-    
+    // --- スプレッドシート定義に基づくルーティング判定 ---
     let targetPath = '';
 
     if (typeParam === 'user' || dbRole === 'USER') {
@@ -55,15 +51,18 @@ function LoginContent() {
       targetPath = '/properties';
     }
     else {
+      // 判定不能な場合はデフォルトで properties へ
       targetPath = '/properties';
     }
 
-    // 🚨 強制的に遷移させるための処理
-    // router.push が効かない場合に備え、window.location.href を使う選択肢もあります
-    router.refresh(); // キャッシュをクリア
-    router.push(targetPath);
-
-    setLoading(false);
+    // 🚨 【重要】遷移の確実性を上げるための修正
+    // Next.jsのキャッシュや内部ルーターの競合を避けるため、window.location を使用します。
+    // これにより、ブラウザレベルでページがリロード・遷移され、確実に新しいページが読み込まれます。
+    if (targetPath) {
+      window.location.href = targetPath;
+    } else {
+      setLoading(false);
+    }
   };
 
   return (
@@ -102,13 +101,16 @@ function LoginContent() {
 
         <button 
           disabled={loading}
-          className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-lg transition active:scale-[0.98] mt-4"
+          className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-lg transition active:scale-[0.98] mt-4 flex justify-center items-center"
         >
-          {loading ? '認証中...' : 'ログイン'}
+          {loading ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            'ログイン'
+          )}
         </button>
       </form>
 
-      {/* デバッグ用：現在の判定を表示（開発中のみ） */}
       <div className="mt-4 text-[8px] text-slate-300 text-center uppercase tracking-tighter">
         Detected Type: {typeParam || 'none'}
       </div>
