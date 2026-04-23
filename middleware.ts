@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname === '/favicon.ico') {
+  if (request.nextUrl.pathname.includes('favicon.ico')) {
     return new NextResponse(null, { status: 200 });
   }
   return NextResponse.next();
