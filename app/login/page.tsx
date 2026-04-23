@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-// ✅ 修正：'@/' を使うことでプロジェクトのルート（または src）から直接 lib を指定します。
-// これならディレクトリの深さが変わっても迷子になりません。
-import { supabase } from '@/lib/supabase'; 
+// ✅ 修正：3つ上（../../../）を試します。
+// プロジェクトルート > app > login > page.tsx という構造ならこれが正解のはずです。
+import { supabase } from '../../../lib/supabase'; 
 import { useSearchParams, useRouter } from 'next/navigation';
 
 function LoginContent() {
@@ -21,8 +21,6 @@ function LoginContent() {
     if (loading) return; 
     setLoading(true);
     
-    console.log("🚀 Login Attempt Started:", email);
-    
     // 1. サインイン実行
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ 
       email, 
@@ -30,7 +28,6 @@ function LoginContent() {
     });
     
     if (authError) {
-      console.error("❌ Auth Error:", authError.message);
       alert('ログインに失敗しました: ' + authError.message);
       setLoading(false);
       return;
@@ -42,7 +39,7 @@ function LoginContent() {
       return;
     }
 
-    // 2. メタデータ + DB(profiles) の両方からロールを特定
+    // 2. ロール特定
     const { data: profile } = await supabase
       .from('profiles')
       .select('role, property_id')
@@ -51,12 +48,9 @@ function LoginContent() {
 
     const dbRole = (profile?.role || authData.user.user_metadata?.role || 'USER').toUpperCase();
     setDisplayRole(dbRole);
-    
-    console.log("✅ Identity Verified. Role:", dbRole);
 
     // 3. ルーティング判定
     let targetPath = '';
-
     if (dbRole === 'ADMIN') {
       if (typeParam === 'user') targetPath = '/resident/dashboard';
       else if (typeParam === 'manager') targetPath = '/management/notices';
@@ -74,9 +68,7 @@ function LoginContent() {
       targetPath = '/properties';
     }
 
-    console.log("📍 Redirecting to:", targetPath);
-
-    // 4. セッション確定のためのハードリダイレクト
+    // 4. ハードリダイレクト
     setTimeout(() => {
       window.location.href = targetPath;
     }, 800);
@@ -123,20 +115,9 @@ function LoginContent() {
           disabled={loading}
           className="w-full bg-slate-900 hover:bg-orange-600 text-white py-5 rounded-[2rem] font-black shadow-lg transition-all active:scale-[0.98] mt-4 flex justify-center items-center text-lg tracking-tighter"
         >
-          {loading ? (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-xs uppercase">Verifying...</span>
-            </div>
-          ) : (
-            'ログインして開始'
-          )}
+          {loading ? 'Verifying...' : 'ログインして開始'}
         </button>
       </form>
-
-      <div className="mt-8 pt-8 border-t border-slate-50 text-[8px] text-slate-400 text-center uppercase tracking-widest font-bold">
-        Detected Role: <span className="text-orange-500">{displayRole || 'None'}</span>
-      </div>
     </div>
   );
 }
@@ -144,12 +125,7 @@ function LoginContent() {
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center p-6 font-sans">
-      <Suspense fallback={
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin w-10 h-10 border-4 border-slate-900 border-t-orange-500 rounded-full" />
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Initialising Session...</p>
-        </div>
-      }>
+      <Suspense fallback={<div>Loading...</div>}>
         <LoginContent />
       </Suspense>
     </div>
