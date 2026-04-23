@@ -16,10 +16,9 @@ function LoginContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading) return; // 二重送信防止
+    if (loading) return; 
     setLoading(true);
     
-    // ログイン実行
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
@@ -28,36 +27,39 @@ function LoginContent() {
       return;
     }
 
-    // ログイン成功後、ユーザー情報を取得
     const user = data.user;
-    const dbRole = user?.user_metadata?.role;
+    const dbRole = user?.user_metadata?.role; // DBに保存されている本当のロール
 
-    // --- スプレッドシート定義に基づくルーティング判定 ---
+    // --- 【修正後】ルーティング判定ロジック ---
+    // 優先順位 1: ADMINなら、どの入り口から来ても管理者ページへ
+    // 優先順位 2: それ以外は、DBのロールに基づいて正しく振り分ける
+    
     let targetPath = '';
 
-    if (typeParam === 'user' || dbRole === 'USER') {
-      targetPath = '/resident/dashboard';
-    }
-    else if (typeParam === 'manager' || dbRole === 'MANAGER') {
+    if (dbRole === 'ADMIN') {
+      targetPath = '/properties';
+    } 
+    else if (dbRole === 'MANAGER') {
       targetPath = '/management/notices';
-    }
-    else if (typeParam === 'posting' || dbRole === 'POSTING') {
+    } 
+    else if (dbRole === 'POSTING') {
       targetPath = '/posting/dashboard';
-    }
-    else if (typeParam === 'shop' || dbRole === 'SHOP') {
+    } 
+    else if (dbRole === 'SHOP') {
       targetPath = '/shop/post';
-    }
-    else if (typeParam === 'admin' || dbRole === 'ADMIN') {
-      targetPath = '/properties';
-    }
+    } 
+    else if (dbRole === 'USER') {
+      targetPath = '/resident/dashboard';
+    } 
     else {
-      // 判定不能な場合はデフォルトで properties へ
-      targetPath = '/properties';
+      // どのロールにも当てはまらない場合、URLのtypeを補助的に使う
+      if (typeParam === 'manager') targetPath = '/management/notices';
+      else if (typeParam === 'posting') targetPath = '/posting/dashboard';
+      else if (typeParam === 'shop') targetPath = '/shop/post';
+      else if (typeParam === 'user') targetPath = '/resident/dashboard';
+      else targetPath = '/properties';
     }
 
-    // 🚨 【重要】遷移の確実性を上げるための修正
-    // Next.jsのキャッシュや内部ルーターの競合を避けるため、window.location を使用します。
-    // これにより、ブラウザレベルでページがリロード・遷移され、確実に新しいページが読み込まれます。
     if (targetPath) {
       window.location.href = targetPath;
     } else {
