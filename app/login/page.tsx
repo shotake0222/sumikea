@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -19,6 +19,7 @@ function LoginContent() {
     e.preventDefault();
     setLoading(true);
     
+    // ログイン実行
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
@@ -27,35 +28,40 @@ function LoginContent() {
       return;
     }
 
-    // データベース上の Role を取得
-    const dbRole = data.user?.user_metadata?.role;
+    // ログイン成功後、最新のユーザー情報を取得
+    const user = data.user;
+    const dbRole = user?.user_metadata?.role;
 
-    // --- スプレッドシートの定義に基づくリダイレクト判定 ---
+    // デバッグ用ログ（ブラウザのコンソールで確認可能）
+    console.log('Login Success:', { typeParam, dbRole });
+
+    // --- スプレッドシート定義に基づくルーティング ---
     
-    // 1. 住民 (USER)
+    let targetPath = '';
+
     if (typeParam === 'user' || dbRole === 'USER') {
-      router.push('/resident/dashboard');
+      targetPath = '/resident/dashboard';
     }
-    // 2. 管理会社 (MANAGER)
     else if (typeParam === 'manager' || dbRole === 'MANAGER') {
-      router.push('/management/notices');
+      targetPath = '/management/notices';
     }
-    // 3. ポスティング業者 (POSTING)
     else if (typeParam === 'posting' || dbRole === 'POSTING') {
-      router.push('/posting/dashboard');
+      targetPath = '/posting/dashboard';
     }
-    // 4. 近隣店舗 (SHOP)
     else if (typeParam === 'shop' || dbRole === 'SHOP') {
-      router.push('/shop/post');
+      targetPath = '/shop/post';
     }
-    // 5. 運営管理 (ADMIN) -> shotake0222@gmail.com など
     else if (typeParam === 'admin' || dbRole === 'ADMIN') {
-      router.push('/properties');
+      targetPath = '/properties';
     }
-    // どれにも該当しない場合のフォールバック（ADMINページへ）
     else {
-      router.push('/properties');
+      targetPath = '/properties';
     }
+
+    // 🚨 強制的に遷移させるための処理
+    // router.push が効かない場合に備え、window.location.href を使う選択肢もあります
+    router.refresh(); // キャッシュをクリア
+    router.push(targetPath);
 
     setLoading(false);
   };
@@ -65,7 +71,7 @@ function LoginContent() {
       <div className="text-center mb-10">
         <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
         <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">
-          {typeParam === 'user' ? 'Resident Portal' : 'Partner Portal'}
+          {typeParam ? `${typeParam} Portal` : 'Partner Portal'}
         </p>
       </div>
 
@@ -101,6 +107,11 @@ function LoginContent() {
           {loading ? '認証中...' : 'ログイン'}
         </button>
       </form>
+
+      {/* デバッグ用：現在の判定を表示（開発中のみ） */}
+      <div className="mt-4 text-[8px] text-slate-300 text-center uppercase tracking-tighter">
+        Detected Type: {typeParam || 'none'}
+      </div>
     </div>
   );
 }
