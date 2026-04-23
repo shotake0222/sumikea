@@ -23,6 +23,8 @@ export default function HomePage() {
           router.push('/properties'); // ポスティング会社（運営）用
         } else if (role === 'SHOP') {
           router.push('/shop/post'); // 広告出稿店舗用
+        } else if (role === 'MANAGER') {
+          router.push('/manager/dashboard'); // 【追加】管理会社用
         }
         // 住民(USER)の場合はそのままトップページで広告を見る
       }
@@ -54,9 +56,22 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* 【ビジネス入口】店舗や運営は「パートナー」として入り口を分ける */}
+          {/* 【ビジネス入口】店舗・運営・管理会社は「パートナー」として入り口を分ける */}
           <div className="pt-8 border-t border-gray-200">
             <h2 className="text-[10px] font-black text-center text-gray-300 uppercase tracking-widest mb-6">Business Partners</h2>
+            <div className="grid grid-cols-1 gap-4 mb-4">
+              {/* 【追加】管理会社入口（重要度が高いため目立たせる） */}
+              <Link href="/login?type=manager" className="group">
+                <div className="bg-white p-4 rounded-2xl flex items-center gap-4 group-hover:bg-blue-50 transition border border-gray-100 group-hover:border-blue-200 shadow-sm">
+                  <span className="text-2xl">📑</span>
+                  <div className="text-left">
+                    <span className="text-[10px] font-black text-slate-400 group-hover:text-blue-600 block leading-none mb-1 uppercase">Property Manager</span>
+                    <span className="text-sm font-bold text-slate-700">管理会社ログイン</span>
+                  </div>
+                </div>
+              </Link>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <Link href="/login?type=shop" className="group">
                 <div className="bg-slate-100 p-4 rounded-2xl text-center group-hover:bg-orange-50 transition border border-transparent group-hover:border-orange-100">
