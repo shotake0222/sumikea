@@ -18,10 +18,13 @@ function LoginContent() {
     if (loading) return; 
     setLoading(true);
     
+    console.log("🚀 Login Attempt Started:", email);
+    
     // 1. サインイン実行
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
+      console.error("❌ Auth Error:", error.message);
       alert('ログインに失敗しました: ' + error.message);
       setLoading(false);
       return;
@@ -31,6 +34,8 @@ function LoginContent() {
     const { data: { user } } = await supabase.auth.getUser();
     const dbRole = user?.user_metadata?.role?.toUpperCase();
     setDisplayRole(dbRole);
+    
+    console.log("✅ Auth Success. Detected Role:", dbRole);
 
     let targetPath = '';
 
@@ -48,10 +53,14 @@ function LoginContent() {
     else if (dbRole === 'USER') targetPath = '/resident/dashboard';
     else targetPath = '/properties';
 
+    console.log("📍 Redirecting to:", targetPath);
+
     // 4. 【重要】フルリロードを伴う遷移
-    // これにより遷移先のページが最新のセッションを確実に読み込みます
+    // わずかに遅延させることでCookieの書き込みを確実に完了させます
     if (targetPath) {
-      window.location.href = targetPath;
+      setTimeout(() => {
+        window.location.href = targetPath;
+      }, 500);
     } else {
       setLoading(false);
     }
