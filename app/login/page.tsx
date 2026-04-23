@@ -1,10 +1,14 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-// ✅ 修正：3つ上（../../../）を試します。
-// プロジェクトルート > app > login > page.tsx という構造ならこれが正解のはずです。
-import { supabase } from '../../../lib/supabase'; 
+// ✅ インポートをやめて、直接 createClient を使います
+import { createClient } from '@supabase/supabase-js';
 import { useSearchParams, useRouter } from 'next/navigation';
+
+// ✅ ファイル内で直接初期化（これでパス迷子が解消されます）
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 function LoginContent() {
   const [email, setEmail] = useState('');
@@ -68,7 +72,7 @@ function LoginContent() {
       targetPath = '/properties';
     }
 
-    // 4. ハードリダイレクト
+    // 4. ハードリダイレクト（セッションをブラウザに刻むため）
     setTimeout(() => {
       window.location.href = targetPath;
     }, 800);
@@ -125,7 +129,7 @@ function LoginContent() {
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center p-6 font-sans">
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Initialising Session...</div>}>
         <LoginContent />
       </Suspense>
     </div>
