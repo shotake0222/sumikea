@@ -1,13 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
+  // favicon.ico へのリクエストが [uuid] に流れるのを物理的に遮断する
+  async rewrites() {
+    return [
+      {
+        source: '/favicon.ico',
+        destination: '/favicon.ico',
+      },
+    ];
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  // SWCの不整合を回避するための設定
-  swcMinify: true,
+  // 念のため、古いパスへのリダイレクトが残っていないか確認
+  // (もし以前リダイレクト設定を書いていたら、ここを空にする)
 };
 
 export default nextConfig;
