@@ -1,85 +1,170 @@
 'use client';
-import { useState } from 'react';
-import TrashUploadButton from './TrashUploadButton';
-import AdViewLogger from './AdViewLogger';
-import AdModal from './AdModal';
 
-export default function ResidentDashboardClient({ property, trashData, announcements, localAds, externalAds }: any) {
+import ResidentLayout from '../../../components/ResidentLayout';
+import TrashUploadButton from '../../../components/TrashUploadButton';
+import AdModal from '../../../components/AdModal';
+import OnboardingModal from '../../../components/OnboardingModal';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../../lib/supabase';
+
+export default function ResidentDashboard({ property, trashData = [], localAds = [] }: any) {
   const [showAd, setShowAd] = useState(false);
-  
-  // 外部と内部の広告を統合
-  const combinedAds = [
-    ...localAds,
-    ...(Array.isArray(externalAds) ? externalAds : []).map((ad: any) => ({ ...ad, isExternal: true }))
-  ];
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  // ゴミ出し報告が成功した時の処理
-  const handleUploadSuccess = () => {
-    // 擬似的なAI判定時間を演出してから広告を表示
-    setTimeout(() => {
-      setShowAd(true);
-    }, 800);
+  const incrementViewCount = async (adId: string) => {
+    try {
+      await supabase.rpc('increment_ad_view', { ad_id: adId });
+    } catch (e) {
+      console.error('Failed to count view', e);
+    }
   };
 
-  return (
-    <main className="max-w-md mx-auto p-4 bg-gray-50 min-h-screen">
-      <AdViewLogger propertyUuid={property.uuid} ads={localAds} />
+  useEffect(() => {
+    if (!property || !property.uuid || property.uuid === 'favicon.ico') {
+      setLoading(false);
+      return;
+    }
 
-      {/* 広告モーダル（DXの要：ゴミ捨て後に強制表示） */}
-      {showAd && localAds.length > 0 && (
+    const checkUser = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      let currentUser = authUser;
+
+      if (!currentUser) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const { data: { user: retryUser } } = await supabase.auth.getUser();
+        currentUser = retryUser;
+      }
+
+      if (!currentUser) {
+        window.location.href = '/login';
+        return;
+      }
+
+      setUser(currentUser);
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_onboarded')
+        .eq('id', currentUser.id)
+        .single();
+
+      if (!profile || !profile.is_onboarded) {
+        setShowOnboarding(true);
+      }
+      
+      setLoading(false);
+    };
+    
+    checkUser();
+  }, [property]);
+
+  useEffect(() => {
+    if (localAds && localAds.length > 0) {
+      localAds.forEach((ad: any) => incrementViewCount(ad.id));
+    }
+  }, [localAds]);
+
+  if (!property || !property.uuid || property.uuid === 'favicon.ico') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
+        物件情報が見つかりませんでした。
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <ResidentLayout>
+      {showOnboarding && user && (
+        <OnboardingModal 
+          userId={user.id} 
+          propertyId={property.uuid} 
+          onComplete={() => setShowOnboarding(false)} 
+        />
+      )}
+
+      {showAd && localAds && localAds.length > 0 && (
         <AdModal ad={localAds[0]} onClose={() => setShowAd(false)} />
       )}
 
-      <header className="mb-6">
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 -mx-4 -mt-4 p-6 mb-6 rounded-b-3xl shadow-lg">
-          <h1 className="text-2xl font-bold text-white">{property.name}</h1>
-          <p className="text-blue-100 text-sm flex items-center mt-1">📍 {property.address}</p>
+      <div className="px-4 pt-6 space-y-6 pb-24">
+        <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-[2rem] p-6 text-white shadow-xl shadow-blue-200">
+          <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-1">Welcome Home</p>
+          <h1 className="text-2xl font-black mb-1">{property?.name || '物件名未設定'}</h1>
+          <p className="text-xs opacity-90 flex items-center">
+            <span className="mr-1">📍</span> {property?.address || '住所未設定'}
+          </p>
         </div>
-      </header>
 
-      {/* ゴミ出しセクション */}
-      <section className="mb-6 p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="font-bold text-gray-800 flex items-center">🗑 今日のゴミ出し</h2>
-          {/* 成功時イベントをキャッチ */}
-          <TrashUploadButton propertyId={property.uuid} onSuccess={handleUploadSuccess} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {trashData.map((item: any) => (
-            <div key={item.id} className="text-sm p-3 bg-blue-50 text-blue-700 rounded-xl font-medium text-center">
-              {item.day_of_week}: {item.trash_type}
+        <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <h2 className="text-sm font-black text-slate-400 uppercase tracking-tight">Today's Trash</h2>
+              <p className="text-lg font-bold text-slate-800">今日のゴミ出し</p>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* 広告リスト */}
-      <section className="pb-10">
-        <h2 className="font-bold mb-4 text-gray-800 px-1">📍 物件限定のお得情報</h2>
-        <div className="space-y-4">
-          {combinedAds.map((ad, index) => (
-            <div key={ad.id || index} className={`overflow-hidden rounded-2xl bg-white shadow-sm border ${ad.isExternal ? 'border-gray-100' : 'border-orange-100 ring-2 ring-orange-50/50'}`}>
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded inline-block mb-1">
-                      {ad.store_name || '周辺店舗'}
-                    </span>
-                    <h3 className="font-bold text-base text-gray-800 leading-tight">{ad.title || ad.name}</h3>
-                  </div>
+            {/* ここがエラーの箇所。ボタン側の型を直せば通ります */}
+            <TrashUploadButton 
+              propertyId={property.uuid} 
+              onSuccess={() => setShowAd(true)} 
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            {trashData && trashData.length > 0 ? (
+              trashData.map((item: any) => (
+                <div key={item.id} className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 mb-1">{item.day_of_week}</p>
+                  <p className="text-sm font-black text-blue-600">{item.trash_type}</p>
                 </div>
-                <p className="text-xs text-gray-600 mb-3">{ad.content}</p>
-                
-                {!ad.isExternal && ad.coupon_code && (
-                  <div className="bg-yellow-50 border-dashed border-2 border-yellow-200 p-2 rounded-lg text-center mt-2">
-                    <p className="text-lg font-mono font-black text-gray-800">{ad.coupon_code}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
+              ))
+            ) : (
+              <p className="text-xs text-slate-400 col-span-2 text-center py-4 italic">予定はありません</p>
+            )}
+          </div>
+        </section>
+
+        {/* 広告セクション */}
+        <section>
+          <div className="flex items-center justify-between px-1 mb-4">
+            <h2 className="text-lg font-black text-slate-800">周辺のお得情報</h2>
+          </div>
+          
+          <div className="space-y-4">
+            {localAds && localAds.length > 0 ? (
+              localAds.map((ad: any) => (
+                <div key={ad.id} className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm active:scale-[0.98] transition p-5">
+                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded uppercase mb-2 inline-block">
+                    {ad.store_name}
+                  </span>
+                  <h3 className="text-lg font-black text-slate-800 leading-tight mb-2">{ad.title}</h3>
+                  <p className="text-sm text-slate-500 leading-relaxed mb-4">{ad.content}</p>
+                  
+                  {ad.coupon_code && (
+                    <div className="bg-slate-900 rounded-2xl p-4 flex justify-between items-center text-white">
+                      <div>
+                        <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest">Coupon Code</p>
+                        <p className="text-xl font-mono font-black">{ad.coupon_code}</p>
+                      </div>
+                      <div className="text-2xl">✂️</div>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-400 text-center py-10 italic">現在お知らせはありません</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </ResidentLayout>
   );
 }
