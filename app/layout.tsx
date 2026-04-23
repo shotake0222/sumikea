@@ -1,8 +1,12 @@
 import './globals.css';
+import { Metadata } from 'next';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'ぽすっと',
   description: '配信、即完了。',
+  icons: {
+    icon: '/favicon.ico', // faviconのリクエストを明示的にルートへ向ける
+  },
 };
 
 export default function RootLayout({
@@ -13,10 +17,16 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <head>
-        {/* これを追記：ビルドエラーを無視してブラウザで強制的にTailwindを当てる */}
-        <script src="https://cdn.tailwindcss.com"></script>
+        {/* 注意: productionビルドでのエラーを避けるため、
+          本来は tailwind.config.ts を使うべきですが、
+          現状のまま強制適用させるためのCDNは残しつつ、
+          Next.jsのハイドレーションと干渉しにくい位置に配置します。
+        */}
+        <script src="https://cdn.tailwindcss.com" async></script>
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+      </body>
     </html>
   );
 }
