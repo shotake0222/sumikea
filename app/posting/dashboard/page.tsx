@@ -21,18 +21,40 @@ export default function PostingDigitalDashboard() {
   useEffect(() => {
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      const role = user?.user_metadata?.role;
       
-      // POSTINGロール以外はログインへ
-      if (!user || user.user_metadata?.role !== 'POSTING') {
+      // ✅ 修正：ADMIN または POSTING ロール以外はログインへ（管理者も入れるように）
+      const isAuthorized = role === 'ADMIN' || role === 'POSTING';
+
+      if (!user || !isAuthorized) {
         router.push('/login?type=posting');
         return;
       }
 
-      // ポスティング会社がデジタル投函権限を持つ物件を取得
-      const { data: props } = await supabase
-        .from('property_managers')
-        .select('property_id, properties(name, address)')
-        .eq('user_id', user.id);
+      // 物件リスト取得ロジックの調整
+      let props = [];
+
+      if (role === 'ADMIN') {
+        // ✅ 管理者の場合は全物件を取得
+        const { data: allProps } = await supabase
+          .from('properties')
+          .select('id, name, address');
+        
+        if (allProps) {
+          props = allProps.map(p => ({
+            property_id: p.id,
+            properties: { name: p.name, address: p.address }
+          }));
+        }
+      } else {
+        // ポスティング会社（POSTING）の場合は担当物件のみ取得
+        const { data: managerProps } = await supabase
+          .from('property_managers')
+          .select('property_id, properties(name, address)')
+          .eq('user_id', user.id);
+        
+        if (managerProps) props = managerProps;
+      }
       
       setTargetProperties(props || []);
       setLoading(false);
@@ -98,8 +120,9 @@ export default function PostingDigitalDashboard() {
                     {...register('property_id')}
                     className="w-full bg-slate-50 border-none p-4 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    {targetProperties.map((p: any) => (
-                      <option key={p.property_id} value={p.property_id}>{p.properties.name}</option>
+                    <option value="" disabled>物件を選択してください</option>
+                    {targetProperties.map((p: any, index: number) => (
+                      <option key={p.property_id || index} value={p.property_id}>{p.properties?.name}</option>
                     ))}
                   </select>
                 </div>

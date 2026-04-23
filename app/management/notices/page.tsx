@@ -16,23 +16,44 @@ export default function ManagementNoticePage() {
   useEffect(() => {
     const fetchAuthAndData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      const role = user?.user_metadata?.role;
       
-      // セキュリティガード: MANAGERロール以外は追い返す
-      if (!user || user.user_metadata?.role !== 'MANAGER') {
+      // ✅ セキュリティガード修正: ADMIN または MANAGER なら許可する
+      const isAuthorized = role === 'ADMIN' || role === 'MANAGER';
+      
+      if (!user || !isAuthorized) {
+        // 権限がない場合は、パラメータ付きで戻す
         router.push('/login?type=manager');
         return;
       }
       
-      // 管理会社が担当している物件リストを取得
-      const { data } = await supabase
-        .from('property_managers')
-        .select('property_id, properties(name)')
-        .eq('user_id', user.id);
-      
-      if (data) {
-        setManagedProperties(data);
-        if (data.length > 0) setSelectedProperty(data[0].property_id);
+      // 物件リストの取得ロジック
+      let propertyList = [];
+
+      if (role === 'ADMIN') {
+        // 管理者の場合は全物件を取得できるようにする
+        const { data: allProps } = await supabase
+          .from('properties')
+          .select('id, name');
+        
+        if (allProps) {
+          propertyList = allProps.map(p => ({ property_id: p.id, properties: { name: p.name } }));
+        }
+      } else {
+        // 管理会社（MANAGER）の場合は担当物件のみ取得
+        const { data: managerProps } = await supabase
+          .from('property_managers')
+          .select('property_id, properties(name)')
+          .eq('user_id', user.id);
+        
+        if (managerProps) propertyList = managerProps;
       }
+      
+      if (propertyList.length > 0) {
+        setManagedProperties(propertyList);
+        setSelectedProperty(propertyList[0].property_id);
+      }
+      
       setLoading(false);
     };
     fetchAuthAndData();
@@ -62,7 +83,14 @@ export default function ManagementNoticePage() {
     setIsSubmitting(false);
   };
 
-  if (loading) return <div className="p-8 text-center font-bold">権限確認中...</div>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">権限確認中...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -82,8 +110,9 @@ export default function ManagementNoticePage() {
               onChange={(e) => setSelectedProperty(e.target.value)}
               required
             >
-              {managedProperties.map((p: any) => (
-                <option key={p.property_id} value={p.property_id}>{p.properties.name}</option>
+              <option value="" disabled>物件を選択してください</option>
+              {managedProperties.map((p: any, index: number) => (
+                <option key={p.property_id || index} value={p.property_id}>{p.properties?.name || '不明な物件'}</option>
               ))}
             </select>
           </div>

@@ -31,24 +31,29 @@ export default function ShopPostPage() {
     const initializePortal = async () => {
       // 1. セキュリティガード: ログイン状態と権限(Role)の確認
       const { data: { user }, error: authError } = await supabase.auth.getUser();
+      const role = user?.user_metadata?.role;
       
       if (authError || !user) {
         router.push('/login?type=shop');
         return;
       }
 
-      // Role が SHOP でない場合はログインへ飛ばす
-      if (user.user_metadata?.role !== 'SHOP') {
+      // ✅ 修正: ADMIN または SHOP ロール以外はログインへ
+      const isAuthorized = role === 'ADMIN' || role === 'SHOP';
+
+      if (!isAuthorized) {
         router.push('/login?type=shop');
         return;
       }
 
       // 2. 店舗情報を取得
-      const { data: storeData } = await supabase
-        .from('stores')
-        .select('*')
-        .eq('owner_id', user.id)
-        .single();
+      // 管理者の場合は最初の店舗、SHOPの場合は自分の店舗を取得
+      let storeQuery = supabase.from('stores').select('*');
+      if (role === 'SHOP') {
+        storeQuery = storeQuery.eq('owner_id', user.id);
+      }
+      
+      const { data: storeData } = await storeQuery.limit(1).single();
       
       if (storeData) {
         setMyStore(storeData);
@@ -62,18 +67,21 @@ export default function ShopPostPage() {
             radius_meters: 1000 // 1km制限
           });
 
-          // 4. 運営が許可した物件リスト(permissions)を取得
-          const { data: permissionData } = await supabase
-            .from('store_property_permissions')
-            .select('property_id')
-            .eq('store_id', storeData.id);
+          // ✅ 管理者の場合は全近隣物件、SHOPの場合は許可済み物件を取得
+          if (role === 'ADMIN') {
+            setAllowedProperties(nearbyData || []);
+          } else {
+            // 4. 運営が許可した物件リスト(permissions)を取得
+            const { data: permissionData } = await supabase
+              .from('store_property_permissions')
+              .select('property_id')
+              .eq('store_id', storeData.id);
 
-          const allowedIds = permissionData?.map(d => d.property_id) || [];
-
-          if (nearbyData) {
-            // 「1km以内」かつ「運営の許可がある」物件だけを配信先リストにする
-            const filteredProps = nearbyData.filter((p: any) => allowedIds.includes(p.uuid));
-            setAllowedProperties(filteredProps);
+            const allowedIds = permissionData?.map(d => d.property_id) || [];
+            if (nearbyData) {
+              const filteredProps = nearbyData.filter((p: any) => allowedIds.includes(p.uuid));
+              setAllowedProperties(filteredProps);
+            }
           }
         }
 
