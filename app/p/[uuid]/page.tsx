@@ -2,7 +2,7 @@
 
 import { notFound } from 'next/navigation';
 import ResidentDashboard from './ResidentDashboardClient'; // さっき名前を変えたファイルを読み込む
-import { supabase } from '@/lib/supabase'; // ※supabaseのパスはあなたの環境に合わせてください（../../lib/supabase など）
+import { supabase } from '../../../lib/supabase';
 
 export default async function Page({ params }: { params: { uuid: string } }) {
   const { uuid } = params;
