@@ -1,7 +1,14 @@
 'use client';
 import { brandConfig } from '../lib/brand';
 
-export default function AdminLayout({ children, userType }: { children: React.ReactNode, userType: 'SHOP' | 'MANAGER' | 'OWNER' }) {
+// ✅ 修正：userType の型定義に 'ADMIN' を追加
+export default function AdminLayout({ 
+  children, 
+  userType 
+}: { 
+  children: React.ReactNode, 
+  userType: 'ADMIN' | 'SHOP' | 'MANAGER' | 'OWNER' 
+}) {
   return (
     <div className="flex min-h-screen bg-slate-50">
       {/* サイドバー（PC用、モバイル時はハンバーガー） */}
@@ -9,7 +16,8 @@ export default function AdminLayout({ children, userType }: { children: React.Re
         <div className="mb-10">
           <h1 className="text-2xl font-black">{brandConfig.name}</h1>
           <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">
-            {userType === 'SHOP' ? 'Partner Portal' : 'Admin Console'}
+            {/* ADMIN の場合の表示を追加 */}
+            {userType === 'SHOP' ? 'Partner Portal' : userType === 'ADMIN' ? 'System Root' : 'Admin Console'}
           </p>
         </div>
         

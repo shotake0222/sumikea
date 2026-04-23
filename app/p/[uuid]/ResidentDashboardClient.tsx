@@ -1,11 +1,13 @@
 'use client';
 
-// 修正：from を波括弧の外に出しました
-import { ResidentLayout } from '../../../components/ResidentLayout';
+// ✅ 修正：コンポーネントのインポートから波括弧 { } を削除
+// これにより 'Attempted import error' を解消します
+import ResidentLayout from '../../../components/ResidentLayout';
+import TrashUploadButton from '../../../components/TrashUploadButton';
+import AdModal from '../../../components/AdModal';
+import OnboardingModal from '../../../components/OnboardingModal';
+
 import { useState, useEffect } from 'react';
-import { TrashUploadButton } from '../../../components/TrashUploadButton';
-import { AdModal } from '../../../components/AdModal';
-import { OnboardingModal } from '../../../components/OnboardingModal';
 import { supabase } from '../../../lib/supabase';
 
 export default function ResidentDashboard({ property, trashData = [], localAds = [] }: any) {
@@ -14,13 +16,24 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // --- 閲覧数カウントアップロジック ---
+  const incrementViewCount = async (adId: string) => {
+    try {
+      await supabase.rpc('increment_ad_view', { ad_id: adId });
+    } catch (e) {
+      console.error('Failed to count view', e);
+    }
+  };
+
   useEffect(() => {
+    // 1. favicon.ico や不正な物件IDを弾く
     if (!property || !property.uuid || property.uuid === 'favicon.ico') {
       setLoading(false);
       return;
     }
 
     const checkUser = async () => {
+      // 2. セッションの取得（必要に応じてリトライ）
       const { data: { user: authUser } } = await supabase.auth.getUser();
       let currentUser = authUser;
 
@@ -37,6 +50,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
 
       setUser(currentUser);
 
+      // 3. オンボーディング済みかチェック
       const { data: profile } = await supabase
         .from('profiles')
         .select('is_onboarded')
@@ -59,15 +73,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     }
   }, [localAds]);
 
-  const incrementViewCount = async (adId: string) => {
-    try {
-      await supabase.rpc('increment_ad_view', { ad_id: adId });
-    } catch (e) {
-      console.error('Failed to count view', e);
-    }
-  };
-
-  // Hooks の後にガードを置く（React のルール遵守）
+  // --- ガードレール（早期リターン）---
   if (!property || !property.uuid || property.uuid === 'favicon.ico') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
@@ -99,6 +105,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
       )}
 
       <div className="px-4 pt-6 space-y-6 pb-24">
+        {/* 物件情報カード */}
         <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-[2rem] p-6 text-white shadow-xl shadow-blue-200">
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-1">Welcome Home</p>
           <h1 className="text-2xl font-black mb-1">{property?.name || '物件名未設定'}</h1>
@@ -107,6 +114,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
           </p>
         </div>
 
+        {/* ゴミ出しセクション */}
         <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
           <div className="flex justify-between items-end mb-4">
             <div>
@@ -133,6 +141,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
           </div>
         </section>
 
+        {/* 広告セクション */}
         <section>
           <div className="flex items-center justify-between px-1 mb-4">
             <h2 className="text-lg font-black text-slate-800">周辺のお得情報</h2>
