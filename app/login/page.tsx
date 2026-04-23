@@ -11,7 +11,9 @@ function LoginContent() {
   
   const router = useRouter();
   const searchParams = useSearchParams();
-  const type = searchParams.get('type')?.toLowerCase();
+  
+  // URLの ?type= の値を取得
+  const typeParam = searchParams.get('type')?.toLowerCase();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,31 +27,33 @@ function LoginContent() {
       return;
     }
 
-    const role = data.user?.user_metadata?.role;
+    // データベース上の Role を取得
+    const dbRole = data.user?.user_metadata?.role;
 
-    // --- スプレッドシート定義に基づくルーティング（優先順位：パラメータ > DBロール） ---
+    // --- スプレッドシートの定義に基づくリダイレクト判定 ---
     
-    if (type === 'user' || role === 'USER') {
+    // 1. 住民 (USER)
+    if (typeParam === 'user' || dbRole === 'USER') {
       router.push('/resident/dashboard');
-    } 
-    else if (type === 'manager' || role === 'MANAGER') {
-      // 管理会社は /management/notices へ
+    }
+    // 2. 管理会社 (MANAGER)
+    else if (typeParam === 'manager' || dbRole === 'MANAGER') {
       router.push('/management/notices');
-    } 
-    else if (type === 'posting' || role === 'POSTING') {
-      // ポスティング業者は /posting/dashboard へ
+    }
+    // 3. ポスティング業者 (POSTING)
+    else if (typeParam === 'posting' || dbRole === 'POSTING') {
       router.push('/posting/dashboard');
-    } 
-    else if (type === 'shop' || role === 'SHOP') {
-      // 店舗は /shop/post へ
+    }
+    // 4. 近隣店舗 (SHOP)
+    else if (typeParam === 'shop' || dbRole === 'SHOP') {
       router.push('/shop/post');
-    } 
-    else if (type === 'admin' || role === 'ADMIN') {
-      // 運営は /properties へ
+    }
+    // 5. 運営管理 (ADMIN) -> shotake0222@gmail.com など
+    else if (typeParam === 'admin' || dbRole === 'ADMIN') {
       router.push('/properties');
-    } 
+    }
+    // どれにも該当しない場合のフォールバック（ADMINページへ）
     else {
-      // それ以外は安全策として /properties へ
       router.push('/properties');
     }
 
@@ -61,7 +65,7 @@ function LoginContent() {
       <div className="text-center mb-10">
         <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
         <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">
-          {type === 'user' ? 'Resident Portal' : 'Partner Portal'}
+          {typeParam === 'user' ? 'Resident Portal' : 'Partner Portal'}
         </p>
       </div>
 
@@ -107,9 +111,6 @@ export default function LoginPage() {
       <Suspense fallback={<div className="animate-spin w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full" />}>
         <LoginContent />
       </Suspense>
-      <p className="mt-8 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-        © {new Date().getFullYear()} ぽすっと Project
-      </p>
     </div>
   );
 }
