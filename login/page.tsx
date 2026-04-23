@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '../lib/supabase'; // パスが ../lib であることを確認してください
+import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,11 +10,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  // ロゴ画像のパス（publicフォルダに logo.png 等を置いた場合）
+  const logoPath = "./logo.png"; 
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
-    // 1. ログイン実行
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
@@ -22,24 +25,17 @@ export default function LoginPage() {
       return;
     }
 
-    // 2. ユーザーのメタデータから役割（role）を取得
     const role = data.user?.user_metadata?.role;
 
-    // 3. 役割に応じて飛ばす先を厳密に分ける
     if (role === 'ADMIN') {
-      // 管理者は全物件管理画面へ
       router.push('/properties');
     } else if (role === 'MANAGER') {
-      // 管理会社は公式告知（掲示板）画面へ
       router.push('/management/notice');
     } else if (role === 'POSTING') {
-      // ポスティング会社はデジタル投函ダッシュボードへ
       router.push('/posting/dashboard');
     } else if (role === 'SHOP') {
-      // 店舗は投稿画面へ
       router.push('/shop/post');
     } else {
-      // 一般ユーザー（USER）はトップページへ
       router.push('/');
     }
 
@@ -51,18 +47,27 @@ export default function LoginPage() {
       className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6"
       style={{ lineHeight: '1.25' }}
     >
-      <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-xl shadow-slate-200/50 border border-slate-100">
+      <div className="w-full max-w-md bg-white rounded-[3rem] p-10 shadow-2xl shadow-slate-200/60 border border-slate-100">
+        
+        {/* ロゴ・タイトルセクション */}
         <div className="text-center mb-10">
+          <div className="flex justify-center mb-4">
+            {/* ロゴ画像がある場合はこちらを表示（なければテキストのみ） */}
+            <div className="relative w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-200">
+              <span className="text-white text-3xl font-black">P</span>
+              {/* 実際のロゴ画像を使う場合は以下をアンコメント */}
+              {/* <Image src={logoPath} alt="ぽすっと ロゴ" width={64} height={64} className="object-contain" /> */}
+            </div>
+          </div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
-          <p className="text-[10px] text-orange-500 font-black mt-2 uppercase tracking-[0.3em]">Partner Portal</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Account ID (Email)</label>
             <input 
               type="email"
-              className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none"
+              className="w-full bg-slate-50 border-none p-5 rounded-2xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none placeholder:text-slate-300"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="email@example.com"
@@ -74,7 +79,7 @@ export default function LoginPage() {
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Password</label>
             <input 
               type="password"
-              className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none"
+              className="w-full bg-slate-50 border-none p-5 rounded-2xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-orange-500 outline-none placeholder:text-slate-300"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -84,16 +89,19 @@ export default function LoginPage() {
 
           <button 
             disabled={loading}
-            className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-lg transition active:scale-[0.98] mt-4"
+            className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-3xl font-black shadow-xl transition active:scale-[0.98] mt-4 disabled:opacity-50"
           >
-            {loading ? '認証中...' : 'ログイン'}
+            {loading ? '認証中...' : 'パートナーログイン'}
           </button>
         </form>
       </div>
 
-      <p className="mt-8 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-        © {new Date().getFullYear()} ぽすっと Project
-      </p>
+      <div className="mt-10 text-center">
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-loose">
+          © {new Date().getFullYear()} ぽすっと Project<br />
+          Next-Gen Delivery Infrastructure
+        </p>
+      </div>
     </div>
   );
 }
