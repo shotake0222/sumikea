@@ -25,32 +25,31 @@ function LoginContent() {
       return;
     }
 
-    // DB上の権限を取得
     const role = data.user?.user_metadata?.role;
 
-    // スプレッドシートの定義に基づいた厳密な条件分岐
-    // 1. 住民 (USER)
+    // --- スプレッドシート定義に基づくルーティング（優先順位：パラメータ > DBロール） ---
+    
     if (type === 'user' || role === 'USER') {
       router.push('/resident/dashboard');
-    }
-    // 2. 管理会社 (MANAGER)
+    } 
     else if (type === 'manager' || role === 'MANAGER') {
+      // 管理会社は /management/notices へ
       router.push('/management/notices');
-    }
-    // 3. 運営 (ADMIN)
-    else if (type === 'admin' || role === 'ADMIN') {
-      router.push('/properties');
-    }
-    // 4. ポスティング業者 (POSTING)
+    } 
     else if (type === 'posting' || role === 'POSTING') {
+      // ポスティング業者は /posting/dashboard へ
       router.push('/posting/dashboard');
-    }
-    // 5. 近隣店舗 (SHOP)
+    } 
     else if (type === 'shop' || role === 'SHOP') {
+      // 店舗は /shop/post へ
       router.push('/shop/post');
-    }
-    // どれにも当てはまらない場合の安全策
+    } 
+    else if (type === 'admin' || role === 'ADMIN') {
+      // 運営は /properties へ
+      router.push('/properties');
+    } 
     else {
+      // それ以外は安全策として /properties へ
       router.push('/properties');
     }
 
@@ -104,19 +103,10 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <div 
-      className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6"
-      style={{ lineHeight: '1.25' }}
-    >
-      <Suspense fallback={
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading...</p>
-        </div>
-      }>
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-6">
+      <Suspense fallback={<div className="animate-spin w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full" />}>
         <LoginContent />
       </Suspense>
-
       <p className="mt-8 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
         © {new Date().getFullYear()} ぽすっと Project
       </p>
