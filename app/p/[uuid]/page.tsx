@@ -4,7 +4,6 @@ import ResidentLayout from '../../components/ResidentLayout';
 import TrashUploadButton from '../../components/TrashUploadButton';
 import AdModal from '../../components/AdModal';
 import OnboardingModal from '../../components/OnboardingModal';
-import { brandConfig } from '../../lib/brand';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 
@@ -14,50 +13,55 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- 【修正】ガードレール：propertyが存在しない（favicon.ico等で誤作動した）場合は何も出さない ---
-  if (!property || property.uuid === 'favicon.ico') {
-    return null;
+  // --- 【超重要】ガードレール：propertyが未定義のまま処理が進むのを防ぐ ---
+  // これがないと property.name を読みに行った瞬間に 500 エラーで落ちます
+  if (!property || !property.uuid || property.uuid === 'favicon.ico') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
+        物件情報が見つかりませんでした。
+      </div>
+    );
   }
 
-  // --- 初回ログイン判定ロジック（セッション復元待ち付き） ---
   useEffect(() => {
     const checkUser = async () => {
-      // セッションの確立を少し待つ
+      // 1. まず現在のセッションを確認
       const { data: { user: authUser } } = await supabase.auth.getUser();
       
-      if (!authUser) {
-        // セッションがない場合は1秒待って再試行（Vercel等の遅延対策）
+      let currentUser = authUser;
+
+      // 2. セッションがなければ1秒待機（Vercel等の反映遅延対策）
+      if (!currentUser) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         const { data: { user: retryUser } } = await supabase.auth.getUser();
-        if (!retryUser) {
-          // それでもいなければログイン画面へ
-          window.location.href = '/login';
-          return;
-        }
-        setUser(retryUser);
-      } else {
-        setUser(authUser);
+        currentUser = retryUser;
       }
 
-      // プロフィールのオンボーディング状態を確認
-      if (authUser || user) {
-        const targetId = authUser?.id || user?.id;
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_onboarded')
-          .eq('id', targetId)
-          .single();
-
-        if (!profile || !profile.is_onboarded) {
-          setShowOnboarding(true);
-        }
+      if (!currentUser) {
+        // それでもいなければログイン画面へ
+        window.location.href = '/login';
+        return;
       }
+
+      setUser(currentUser);
+
+      // 3. オンボーディング状態の取得
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_onboarded')
+        .eq('id', currentUser.id)
+        .single();
+
+      if (!profile || !profile.is_onboarded) {
+        setShowOnboarding(true);
+      }
+      
       setLoading(false);
     };
+    
     checkUser();
   }, []);
 
-  // --- 閲覧数カウントアップロジック ---
   const incrementViewCount = async (adId: string) => {
     try {
       await supabase.rpc('increment_ad_view', { ad_id: adId });
@@ -82,7 +86,6 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
 
   return (
     <ResidentLayout>
-      {/* オンボーディングモーダル */}
       {showOnboarding && user && (
         <OnboardingModal 
           userId={user.id} 
@@ -96,16 +99,16 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
       )}
 
       <div className="px-4 pt-6 space-y-6 pb-24">
-        {/* 物件情報カード */}
+        {/* 物件情報カード：オプショナルチェイニング (?.) でさらに安全に */}
         <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-[2rem] p-6 text-white shadow-xl shadow-blue-200">
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-1">Welcome Home</p>
-          <h1 className="text-2xl font-black mb-1">{property.name || 'My Residence'}</h1>
+          <h1 className="text-2xl font-black mb-1">{property?.name || '物件名未設定'}</h1>
           <p className="text-xs opacity-90 flex items-center">
-            <span className="mr-1">📍</span> {property.address || 'Address not set'}
+            <span className="mr-1">📍</span> {property?.address || '住所未設定'}
           </p>
         </div>
 
-        {/* ゴミ出しアクション */}
+        {/* ゴミ出しセクション */}
         <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
           <div className="flex justify-between items-end mb-4">
             <div>
@@ -127,7 +130,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
                 </div>
               ))
             ) : (
-              <p className="text-xs text-slate-400 col-span-2 text-center py-4 italic">本日のゴミ出し予定はありません</p>
+              <p className="text-xs text-slate-400 col-span-2 text-center py-4 italic">予定はありません</p>
             )}
           </div>
         </section>
@@ -136,36 +139,31 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
         <section>
           <div className="flex items-center justify-between px-1 mb-4">
             <h2 className="text-lg font-black text-slate-800">周辺のお得情報</h2>
-            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full italic">Only for Residents</span>
           </div>
           
           <div className="space-y-4">
             {localAds && localAds.length > 0 ? (
               localAds.map((ad: any) => (
-                <div key={ad.id} className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm active:scale-[0.98] transition">
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded uppercase">
-                        {ad.store_name}
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-black text-slate-800 leading-tight mb-2">{ad.title}</h3>
-                    <p className="text-sm text-slate-500 leading-relaxed mb-4">{ad.content}</p>
-                    
-                    {ad.coupon_code && (
-                      <div className="bg-slate-900 rounded-2xl p-4 flex justify-between items-center text-white">
-                        <div>
-                          <p className="text-[9px] font-bold opacity-60 uppercase">Coupon Code</p>
-                          <p className="text-xl font-mono font-black tracking-tighter">{ad.coupon_code}</p>
-                        </div>
-                        <div className="h-10 w-10 bg-white/10 rounded-xl flex items-center justify-center">✂️</div>
+                <div key={ad.id} className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm active:scale-[0.98] transition p-5">
+                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded uppercase mb-2 inline-block">
+                    {ad.store_name}
+                  </span>
+                  <h3 className="text-lg font-black text-slate-800 leading-tight mb-2">{ad.title}</h3>
+                  <p className="text-sm text-slate-500 leading-relaxed mb-4">{ad.content}</p>
+                  
+                  {ad.coupon_code && (
+                    <div className="bg-slate-900 rounded-2xl p-4 flex justify-between items-center text-white">
+                      <div>
+                        <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest">Coupon Code</p>
+                        <p className="text-xl font-mono font-black">{ad.coupon_code}</p>
                       </div>
-                    )}
-                  </div>
+                      <div className="text-2xl">✂️</div>
+                    </div>
+                  )}
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-400 text-center py-10">近隣のお得情報はまだありません</p>
+              <p className="text-sm text-slate-400 text-center py-10 italic">現在お知らせはありません</p>
             )}
           </div>
         </section>
