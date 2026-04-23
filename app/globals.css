@@ -1,8 +1,8 @@
-/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ここから下は元々書いてあったコードで大丈夫です */
 /* 動作確認用：もしCSSが読み込まれていれば、背景が赤くなります */
 /* 確認できたら下の3行は消してOKです */
 body {
