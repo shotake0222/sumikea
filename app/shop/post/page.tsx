@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import AdminLayout from '../../../components/AdminLayout';
@@ -6,9 +7,10 @@ import { useRouter } from 'next/navigation';
 
 export default function ShopPostPage() {
   const router = useRouter();
+  
+  // 状態管理
   const [myStore, setMyStore] = useState<any>(null);
   const [allowedProperties, setAllowedProperties] = useState<any[]>([]);
-  
   const [recentAds, setRecentAds] = useState<any[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [storeName, setStoreName] = useState('');
@@ -16,11 +18,11 @@ export default function ShopPostPage() {
   const [content, setContent] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
-  
   const [expiresAt, setExpiresAt] = useState(
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
 
+  // ローディング・UI状態
   const [loading, setLoading] = useState(true);
   const [isSubmitLoading, setIsSubmitLoading] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -29,87 +31,129 @@ export default function ShopPostPage() {
 
   useEffect(() => {
     const initializePortal = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        router.push('/login?type=shop');
-        return;
-      }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          router.push('/login?type=shop');
+          return;
+        }
 
-      // ✅ ロールの正規化
-      const role = user?.user_metadata?.role?.toUpperCase();
-      const isAuthorized = role === 'ADMIN' || role === 'SHOP';
+        // ✅ 修正1: ロールの正規化（大文字に統一し、未定義を防ぐ）
+        const role = user?.user_metadata?.role?.toUpperCase() || 'USER';
+        const isAuthorized = role === 'ADMIN' || role === 'SHOP';
 
-      if (!isAuthorized) {
-        router.push('/login?type=shop');
-        return;
-      }
+        if (!isAuthorized) {
+          console.warn("Unauthorized role attempted access:", role);
+          router.push('/login?type=shop');
+          return;
+        }
 
-      // 1. 店舗情報を取得
-      let storeQuery = supabase.from('stores').select('*');
-      if (role === 'SHOP') {
-        storeQuery = storeQuery.eq('owner_id', user.id);
-      }
-      
-      // ADMINの場合は「最初の店舗」を取得、SHOPの場合は「自分の店舗」を取得
-      const { data: storeData, error: storeError } = await storeQuery.limit(1).maybeSingle();
-      
-      let currentStore = storeData;
+        // 1. 店舗情報を取得
+        let storeQuery = supabase.from('stores').select('*');
+        if (role === 'SHOP') {
+          // SHOPユーザーは自分の所有する店舗のみ
+          storeQuery = storeQuery.eq('owner_id', user.id);
+        }
+        
+        const { data: storeData } = await storeQuery.limit(1).maybeSingle();
+        let currentStore = storeData;
 
-      // ✅ ADMINかつ店舗データが一つもない場合のフォールバック
-      if (!currentStore && role === 'ADMIN') {
-        currentStore = {
-          id: 'admin-preview-id',
-          name: '管理者プレビュー店舗',
-          lat: 35.6895, // デフォルト位置（東京周辺など）
-          lng: 139.6917
-        };
-      }
+        // ✅ 修正2: ADMINかつ店舗データがDBにない場合のフォールバック
+        // これがないと、DB紐付けが未完了のADMINが弾かれたり無限ロードになります
+        if (!currentStore && role === 'ADMIN') {
+          currentStore = {
+            id: 'admin-preview-id',
+            name: '管理者プレビュー店舗',
+            lat: 35.6895,
+            lng: 139.6917
+          };
+        }
 
-      if (currentStore) {
-        setMyStore(currentStore);
-        setStoreName(currentStore.name);
+        // 店舗データがある（またはプレビュー用がある）場合のみ続行
+        if (currentStore) {
+          setMyStore(currentStore);
+          setStoreName(currentStore.name);
 
-        // 2. 近隣物件の取得
-        if (currentStore.lat && currentStore.lng) {
-          const { data: nearbyData } = await supabase.rpc('get_properties_within_radius', {
-            target_lat: currentStore.lat,
-            target_lng: currentStore.lng,
-            radius_meters: 1000
-          });
+          // 2. 物件情報の取得
+          if (currentStore.lat && currentStore.lng) {
+            const { data: nearbyData } = await supabase.rpc('get_properties_within_radius', {
+              target_lat: currentStore.lat,
+              target_lng: currentStore.lng,
+              radius_meters: 1000
+            });
 
-          if (role === 'ADMIN') {
-            setAllowedProperties(nearbyData || []);
-          } else {
-            const { data: permissionData } = await supabase
-              .from('store_property_permissions')
-              .select('property_id')
-              .eq('store_id', currentStore.id);
+            if (role === 'ADMIN') {
+              // ADMINは周辺の全物件を選択可能にする
+              setAllowedProperties(nearbyData || []);
+            } else {
+              // SHOPは許可（permissions）がある物件のみ
+              const { data: permissionData } = await supabase
+                .from('store_property_permissions')
+                .select('property_id')
+                .eq('store_id', currentStore.id);
 
-            const allowedIds = permissionData?.map(d => d.property_id) || [];
-            if (nearbyData) {
-              const filteredProps = nearbyData.filter((p: any) => allowedIds.includes(p.uuid));
-              setAllowedProperties(filteredProps);
+              const allowedIds = permissionData?.map(d => d.property_id) || [];
+              if (nearbyData) {
+                // DBの設計に合わせて uuid または id でフィルタリング
+                const filteredProps = nearbyData.filter((p: any) => 
+                  allowedIds.includes(p.uuid) || allowedIds.includes(p.id)
+                );
+                setAllowedProperties(filteredProps);
+              }
             }
           }
+
+          // 3. 配信履歴の取得 (プレビューIDでない場合のみ)
+          if (currentStore.id !== 'admin-preview-id') {
+            const { data: adsData } = await supabase
+              .from('local_ads')
+              .select('id, title, view_count, created_at, expires_at')
+              .eq('store_id', currentStore.id)
+              .order('created_at', { ascending: false })
+              .limit(5);
+            if (adsData) setRecentAds(adsData);
+          }
+        } else {
+          // SHOP権限で店舗がない場合、エラーを表示してリダイレクト
+          console.error("No store data found for this SHOP user.");
+          router.push('/login?type=shop');
+          return;
         }
 
-        // 3. 配信履歴の取得 (ダミーIDの場合はスキップ)
-        if (currentStore.id !== 'admin-preview-id') {
-          const { data: adsData } = await supabase
-            .from('local_ads')
-            .select('id, title, view_count, created_at, expires_at')
-            .eq('store_id', currentStore.id)
-            .order('created_at', { ascending: false })
-            .limit(5);
-          if (adsData) setRecentAds(adsData);
-        }
+      } catch (err) {
+        console.error("Initialization error:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
+
     initializePortal();
   }, [router]);
 
+  // AIコピー生成ハンドラ
+  const handleAIGenerate = async () => {
+    const displayPropName = isMultiPost 
+      ? (nearbyProperties[0]?.name || "周辺") 
+      : (allowedProperties.find(p => (p.uuid === selectedPropertyId || p.id === selectedPropertyId))?.name || "物件");
+    
+    if (!storeName) return alert('店舗名を入力してください');
+    setAiGenerating(true);
+    
+    const templates = [
+      { t: `【${displayPropName}限定】${storeName}の特別優待`, c: `いつも${displayPropName}にお住まいの皆様へ。感謝を込めて限定クーポンをお届けします。` },
+      { t: `住民様だけのシークレットセール`, c: `本日より${storeName}にて、${displayPropName}にお住まいの方限定の割引を実施中！` }
+    ];
+    const random = templates[Math.floor(Math.random() * templates.length)];
+    
+    setTimeout(() => {
+      setTitle(random.t);
+      setContent(random.c);
+      setAiGenerating(false);
+    }, 600);
+  };
+
+  // 周辺物件一括検索
   const handleNearbySearch = async () => {
     if (!myStore?.lat || !myStore?.lng) {
       alert('店舗の位置情報が設定されていません。');
@@ -124,41 +168,26 @@ export default function ShopPostPage() {
     setIsMultiPost(true);
   };
 
-  const handleAIGenerate = async () => {
-    const displayPropName = isMultiPost 
-      ? (nearbyProperties[0]?.name || "周辺") 
-      : (allowedProperties.find(p => p.uuid === selectedPropertyId)?.name || "物件");
-    
-    if (!storeName) return alert('店舗名を入力してください');
-    setAiGenerating(true);
-    const templates = [
-      { t: `【${displayPropName}限定】${storeName}の特別優待`, c: `いつも${displayPropName}にお住まいの皆様へ。感謝を込めて限定クーポンをお届けします。` },
-      { t: `住民様だけのシークレットセール`, c: `本日より${storeName}にて、${displayPropName}にお住まいの方限定の割引を実施中！` }
-    ];
-    const random = templates[Math.floor(Math.random() * templates.length)];
-    setTimeout(() => {
-      setTitle(random.t);
-      setContent(random.c);
-      setAiGenerating(false);
-    }, 600);
-  };
-
+  // フォーム送信
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myStore || myStore.id === 'admin-preview-id') {
       return alert('プレビューモードでは送信できません。実在する店舗アカウントでログインしてください。');
     }
 
-    const targetIds = isMultiPost ? nearbyProperties.map(p => p.uuid) : [selectedPropertyId];
+    const targetIds = isMultiPost 
+      ? nearbyProperties.map(p => p.uuid || p.id) 
+      : [selectedPropertyId];
+      
     if (targetIds.length === 0 || !targetIds[0]) return alert('配信先の物件を選択してください');
     
     setIsSubmitLoading(true);
-    const insertData = targetIds.map(uuid => ({
+    const insertData = targetIds.map(id => ({
       store_name: storeName,
       store_id: myStore.id,
       title, 
       content, 
-      property_id: uuid,
+      property_id: id,
       coupon_code: couponCode,
       link_url: linkUrl,
       expires_at: new Date(`${expiresAt}T23:59:59`).toISOString(),
@@ -171,7 +200,14 @@ export default function ShopPostPage() {
     } else {
       alert(`${targetIds.length}件の物件へ配信完了しました！`);
       setTitle(''); setContent(''); setCouponCode(''); setLinkUrl('');
-      const { data } = await supabase.from('local_ads').select('id, title, view_count, created_at, expires_at').eq('store_id', myStore.id).order('created_at', { ascending: false }).limit(5);
+      
+      // 履歴を再取得
+      const { data } = await supabase
+        .from('local_ads')
+        .select('id, title, view_count, created_at, expires_at')
+        .eq('store_id', myStore.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
       if (data) setRecentAds(data);
     }
     setIsSubmitLoading(false);
@@ -193,6 +229,7 @@ export default function ShopPostPage() {
   return (
     <AdminLayout userType="SHOP">
       <div className="flex flex-col lg:flex-row gap-8">
+        {/* メイン入力エリア */}
         <div className="flex-1 space-y-6">
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100">
             <div className="flex justify-between items-center mb-8">
@@ -208,6 +245,7 @@ export default function ShopPostPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* 配信モード切替 */}
               <div className="flex p-1.5 bg-slate-100 rounded-2xl w-fit">
                 <button 
                   type="button"
@@ -231,7 +269,9 @@ export default function ShopPostPage() {
                     required={!isMultiPost}
                   >
                     <option value="">配信先を選択してください</option>
-                    {allowedProperties.map(p => <option key={p.uuid} value={p.uuid}>{p.name}</option>)}
+                    {allowedProperties.map(p => (
+                      <option key={p.uuid || p.id} value={p.uuid || p.id}>{p.name}</option>
+                    ))}
                   </select>
                 </div>
               ) : (
@@ -239,7 +279,7 @@ export default function ShopPostPage() {
                   <p className="text-[10px] font-black text-indigo-600 mb-3 uppercase tracking-widest">一括配信対象: {nearbyProperties.length}物件</p>
                   <div className="flex flex-wrap gap-2">
                     {nearbyProperties.map(p => (
-                      <span key={p.uuid} className="text-[10px] bg-white px-3 py-1 rounded-lg border border-indigo-100 text-indigo-800 font-medium">
+                      <span key={p.uuid || p.id} className="text-[10px] bg-white px-3 py-1 rounded-lg border border-indigo-100 text-indigo-800 font-medium">
                         {p.name}
                       </span>
                     ))}
@@ -247,6 +287,7 @@ export default function ShopPostPage() {
                 </div>
               )}
 
+              {/* 店名・タイトル */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">表示店舗名</label>
@@ -270,6 +311,7 @@ export default function ShopPostPage() {
                 </div>
               </div>
 
+              {/* 広告内容 */}
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">広告内容</label>
                 <textarea 
@@ -280,6 +322,7 @@ export default function ShopPostPage() {
                 />
               </div>
 
+              {/* クーポン・URL・期限 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">クーポンコード</label>
@@ -305,6 +348,7 @@ export default function ShopPostPage() {
           </div>
         </div>
 
+        {/* サイドバー：分析・履歴 */}
         <div className="w-full lg:w-80 space-y-6">
           <div className="bg-slate-900 rounded-[2.5rem] p-6 shadow-xl border border-slate-800 text-white">
             <div className="flex items-center gap-2 mb-6">

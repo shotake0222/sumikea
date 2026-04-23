@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -15,55 +16,75 @@ export default function ManagementNoticePage() {
 
   useEffect(() => {
     const fetchAuthAndData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // ✅ 修正1: roleの取得と大文字変換（揺れ防止）
-      const role = user?.user_metadata?.role?.toUpperCase();
-      const isAuthorized = role === 'ADMIN' || role === 'MANAGER';
-      
-      if (!user || !isAuthorized) {
-        // パラメータが原因でループしないよう慎重にリダイレクト
-        router.push('/login?type=manager');
-        return;
-      }
-      
-      let propertyList = [];
-
-      if (role === 'ADMIN') {
-        // ✅ 修正2: ADMINの場合のデータ構造を MANAGER 取得時（property_id, properties: {name}）に完全に合わせる
-        const { data: allProps } = await supabase
-          .from('properties')
-          .select('id, name');
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
         
-        if (allProps) {
-          propertyList = allProps.map(p => ({ 
-            property_id: p.id, 
-            properties: { name: p.name } 
-          }));
+        if (!user) {
+          router.push('/login?type=manager');
+          return;
         }
-      } else {
-        const { data: managerProps } = await supabase
-          .from('property_managers')
-          .select('property_id, properties(name)')
-          .eq('user_id', user.id);
+
+        // ✅ 修正1: Roleの正規化（大文字変換とデフォルト値で判定ミスを防止）
+        const role = user?.user_metadata?.role?.toUpperCase() || 'USER';
+        const isAuthorized = role === 'ADMIN' || role === 'MANAGER';
         
-        if (managerProps) propertyList = managerProps;
+        if (!isAuthorized) {
+          console.warn("Unauthorized role attempted access:", role);
+          router.push('/login?type=manager');
+          return;
+        }
+        
+        let propertyList: any[] = [];
+
+        if (role === 'ADMIN') {
+          // ✅ 修正2: 管理者の場合は全物件を取得
+          const { data: allProps } = await supabase
+            .from('properties')
+            .select('id, name');
+          
+          if (allProps && allProps.length > 0) {
+            propertyList = allProps.map(p => ({ 
+              property_id: p.id, 
+              properties: { name: p.name } 
+            }));
+          } else {
+            // ✅ 修正3：ADMINかつ物件が1件もない場合のフォールバック
+            // これにより、DBが空でもページが表示され、リダイレクトループを防ぎます
+            propertyList = [{
+              property_id: 'admin-preview-prop-id',
+              properties: { name: '管理者プレビュー物件' }
+            }];
+          }
+        } else {
+          // 一般マネージャーは担当物件のみ
+          const { data: managerProps } = await supabase
+            .from('property_managers')
+            .select('property_id, properties(name)')
+            .eq('user_id', user.id);
+          
+          if (managerProps) propertyList = managerProps;
+        }
+        
+        if (propertyList && propertyList.length > 0) {
+          setManagedProperties(propertyList);
+          // 初期値として最初の物件を選択状態にする
+          setSelectedProperty(propertyList[0].property_id);
+        }
+        
+      } catch (err) {
+        console.error("Initialization error:", err);
+      } finally {
+        setLoading(false);
       }
-      
-      if (propertyList && propertyList.length > 0) {
-        setManagedProperties(propertyList);
-        // 初期値をセット
-        setSelectedProperty(propertyList[0].property_id);
-      }
-      
-      setLoading(false);
     };
     fetchAuthAndData();
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProperty) return alert('物件を選択してください');
+    if (!selectedProperty || selectedProperty === 'admin-preview-prop-id') {
+      return alert('有効な物件を選択してください（プレビュー用には投稿できません）。');
+    }
     
     setIsSubmitting(true);
     const { error } = await supabase.from('property_notifications').insert({

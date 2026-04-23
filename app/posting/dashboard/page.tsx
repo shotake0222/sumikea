@@ -20,50 +20,72 @@ export default function PostingDigitalDashboard() {
 
   useEffect(() => {
     const initialize = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // ✅ 修正：roleの大文字変換で判定ミスを防止
-      const role = user?.user_metadata?.role?.toUpperCase();
-      
-      // ✅ 修正：ADMIN または POSTING ロール以外はログインへ
-      const isAuthorized = role === 'ADMIN' || role === 'POSTING';
-
-      if (!user || !isAuthorized) {
-        router.push('/login?type=posting');
-        return;
-      }
-
-      let props = [];
-
-      if (role === 'ADMIN') {
-        // ✅ 修正：管理者の場合は全物件を取得し、データ構造をPOSTING用(propertiesネスト)に合わせる
-        const { data: allProps } = await supabase
-          .from('properties')
-          .select('id, name, address');
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
         
-        if (allProps) {
-          props = allProps.map(p => ({
-            property_id: p.id,
-            properties: { name: p.name, address: p.address }
-          }));
+        if (!user) {
+          router.push('/login?type=posting');
+          return;
         }
-      } else {
-        // ポスティング会社（POSTING）の場合は担当物件のみ取得
-        const { data: managerProps } = await supabase
-          .from('property_managers')
-          .select('property_id, properties(name, address)')
-          .eq('user_id', user.id);
+
+        // ✅ 修正1: ロールの正規化（大文字変換とデフォルト値設定）
+        const role = user?.user_metadata?.role?.toUpperCase() || 'USER';
         
-        if (managerProps) props = managerProps;
+        // ✅ 修正2: ADMIN または POSTING ロール以外はログインへ
+        const isAuthorized = role === 'ADMIN' || role === 'POSTING';
+
+        if (!isAuthorized) {
+          console.warn("Unauthorized role attempted access:", role);
+          router.push('/login?type=posting');
+          return;
+        }
+
+        let props: any[] = [];
+
+        if (role === 'ADMIN') {
+          // ✅ 修正3：管理者の場合は全物件を取得
+          const { data: allProps } = await supabase
+            .from('properties')
+            .select('id, name, address');
+          
+          if (allProps && allProps.length > 0) {
+            props = allProps.map(p => ({
+              property_id: p.id,
+              properties: { name: p.name, address: p.address }
+            }));
+          } else {
+            // ✅ 修正4：ADMINかつ物件が1件もない場合のフォールバック
+            props = [{
+              property_id: 'admin-preview-prop-id',
+              properties: { name: '管理者プレビュー物件', address: '東京都立川市' }
+            }];
+          }
+        } else {
+          // ポスティング会社（POSTING）の場合は担当物件のみ取得
+          const { data: managerProps } = await supabase
+            .from('property_managers')
+            .select('property_id, properties(name, address)')
+            .eq('user_id', user.id);
+          
+          if (managerProps) props = managerProps;
+        }
+        
+        setTargetProperties(props || []);
+      } catch (err) {
+        console.error("Initialization error:", err);
+      } finally {
+        setLoading(false); // 何があっても最後にロードを解除
       }
-      
-      setTargetProperties(props || []);
-      setLoading(false);
     };
     initialize();
   }, [router]);
 
   const onSendAd = async (data: any) => {
+    // プレビュー用IDの場合は送信させない
+    if (data.property_id === 'admin-preview-prop-id') {
+      return alert('プレビュー物件には投函できません。実在する物件データを使用してください。');
+    }
+
     setIsSubmitting(true);
     const { error } = await supabase.from('digital_flyers').insert({
       property_id: data.property_id,
@@ -123,7 +145,7 @@ export default function PostingDigitalDashboard() {
                   >
                     <option value="" disabled>物件を選択してください</option>
                     {targetProperties.map((p: any, index: number) => (
-                      <option key={p.property_id || index} value={p.property_id}>{p.properties?.name}</option>
+                      <option key={p.property_id || index} value={p.property_id}>{p.properties?.name || '名称不明の物件'}</option>
                     ))}
                   </select>
                   {errors.property_id && <p className="text-red-500 text-[10px] font-bold mt-1">物件を選択してください</p>}
@@ -160,6 +182,7 @@ export default function PostingDigitalDashboard() {
           </div>
 
           <div className="space-y-6">
+            {/* スタッツ表示 */}
             <div className="bg-slate-900 rounded-[3rem] p-8 text-white shadow-2xl relative overflow-hidden">
               <h3 className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em] mb-8">Digital Reach Insight</h3>
               <div className="space-y-6 relative z-10">
@@ -175,6 +198,7 @@ export default function PostingDigitalDashboard() {
               <div className="absolute -right-6 -bottom-6 text-9xl font-black opacity-5 italic">DATA</div>
             </div>
 
+            {/* フロー説明 */}
             <div className="bg-white rounded-[2.5rem] p-6 border border-slate-200 shadow-sm">
               <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Digital Posting Flow</h4>
               <ul className="space-y-4">
