@@ -20,13 +20,15 @@ export default function HomePage() {
         const role = session.user.user_metadata?.role; 
         
         if (role === 'ADMIN') {
-          router.push('/properties'); // ポスティング会社（運営）用
+          router.push('/properties'); 
+        } else if (role === 'POSTING') {
+          router.push('/posting/dashboard'); // 【追加】ポスティング会社用
         } else if (role === 'SHOP') {
-          router.push('/shop/post'); // 広告出稿店舗用
+          router.push('/shop/post'); 
         } else if (role === 'MANAGER') {
-          router.push('/manager/dashboard'); // 【追加】管理会社用
+          router.push('/management/notice'); // 既存の管理会社パスへ
         }
-        // 住民(USER)の場合はそのままトップページで広告を見る
+        // RESIDENTの場合は、このページで物件情報や広告を表示
       }
       setLoading(false);
     };
@@ -42,13 +44,16 @@ export default function HomePage() {
   }
 
   return (
-    <div className="max-w-md mx-auto p-8 min-h-screen flex flex-col items-center justify-between bg-gray-50">
+    <div 
+      className="max-w-md mx-auto p-8 min-h-screen flex flex-col items-center justify-between bg-gray-50"
+      style={{ lineHeight: '1.25' }}
+    >
       <div className="flex-1 flex flex-col items-center justify-center w-full">
         <h1 className="text-4xl font-black text-blue-600 mb-2 tracking-tighter">sumikea</h1>
         <p className="text-gray-400 mb-12 text-center text-sm font-medium uppercase tracking-[0.3em]">Smart Life Infrastructure</p>
         
         <div className="w-full space-y-6">
-          {/* 【住民入口】QRコードから来る一般ユーザーはここがメイン */}
+          {/* 【住民入口】RESIDENT */}
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
             <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Resident Access</h2>
             <Link href="/resident/login" className="block w-full bg-blue-600 hover:bg-blue-700 text-white text-center py-4 rounded-2xl font-bold shadow-lg transition active:scale-95">
@@ -56,12 +61,13 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* 【ビジネス入口】店舗・運営・管理会社は「パートナー」として入り口を分ける */}
+          {/* 【ビジネス入口】パートナーセクション */}
           <div className="pt-8 border-t border-gray-200">
             <h2 className="text-[10px] font-black text-center text-gray-300 uppercase tracking-widest mb-6">Business Partners</h2>
-            <div className="grid grid-cols-1 gap-4 mb-4">
-              {/* 【追加】管理会社入口（重要度が高いため目立たせる） */}
-              <Link href="/login?type=manager" className="group">
+            
+            <div className="space-y-3 mb-6">
+              {/* 管理会社入口 (MANAGEMENT) */}
+              <Link href="/login?type=manager" className="group block">
                 <div className="bg-white p-4 rounded-2xl flex items-center gap-4 group-hover:bg-blue-50 transition border border-gray-100 group-hover:border-blue-200 shadow-sm">
                   <span className="text-2xl">📑</span>
                   <div className="text-left">
@@ -70,19 +76,31 @@ export default function HomePage() {
                   </div>
                 </div>
               </Link>
+
+              {/* ポスティング会社入口 (POSTING) */}
+              <Link href="/login?type=posting" className="group block">
+                <div className="bg-white p-4 rounded-2xl flex items-center gap-4 group-hover:bg-orange-50 transition border border-gray-100 group-hover:border-orange-200 shadow-sm">
+                  <span className="text-2xl">🛵</span>
+                  <div className="text-left">
+                    <span className="text-[10px] font-black text-slate-400 group-hover:text-orange-600 block leading-none mb-1 uppercase">Posting Operator</span>
+                    <span className="text-sm font-bold text-slate-700">ポスティング会社ログイン</span>
+                  </div>
+                </div>
+              </Link>
             </div>
 
+            {/* 店舗・運営 (SHOP / ADMIN) */}
             <div className="grid grid-cols-2 gap-4">
               <Link href="/login?type=shop" className="group">
-                <div className="bg-slate-100 p-4 rounded-2xl text-center group-hover:bg-orange-50 transition border border-transparent group-hover:border-orange-100">
+                <div className="bg-slate-100 p-4 rounded-2xl text-center group-hover:bg-emerald-50 transition border border-transparent group-hover:border-emerald-100">
                   <span className="text-lg block mb-1">🏪</span>
-                  <span className="text-[10px] font-black text-slate-500 group-hover:text-orange-600">店舗ログイン</span>
+                  <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-600 uppercase">店舗ログイン</span>
                 </div>
               </Link>
               <Link href="/login?type=admin" className="group">
-                <div className="bg-slate-100 p-4 rounded-2xl text-center group-hover:bg-blue-50 transition border border-transparent group-hover:border-blue-100">
+                <div className="bg-slate-100 p-4 rounded-2xl text-center group-hover:bg-slate-200 transition border border-transparent">
                   <span className="text-lg block mb-1">🏢</span>
-                  <span className="text-[10px] font-black text-slate-500 group-hover:text-blue-600">運営ログイン</span>
+                  <span className="text-[10px] font-black text-slate-500 uppercase">運営ログイン</span>
                 </div>
               </Link>
             </div>
