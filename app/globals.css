@@ -1,8 +1,3 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* 一時的に、確実に色が変わるかテスト */
-html, body {
-  background-color: #2563eb !important; 
-}
