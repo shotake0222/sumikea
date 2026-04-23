@@ -8,22 +8,20 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 
 export default function ResidentDashboard({ property, trashData = [], localAds = [] }: any) {
+  // すべての Hooks (useState) はコンポーネントの最上部で呼び出す
   const [showAd, setShowAd] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- 【超重要】ガードレール：propertyが未定義のまま処理が進むのを防ぐ ---
-  // これがないと property.name を読みに行った瞬間に 500 エラーで落ちます
-  if (!property || !property.uuid || property.uuid === 'favicon.ico') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
-        物件情報が見つかりませんでした。
-      </div>
-    );
-  }
-
+  // すべての Hooks (useEffect) も早期リターンの前に呼び出す
   useEffect(() => {
+    // もし property が無効な場合は、セッションチェックなどの無駄な処理を走らせない
+    if (!property || !property.uuid || property.uuid === 'favicon.ico') {
+      setLoading(false);
+      return;
+    }
+
     const checkUser = async () => {
       // 1. まず現在のセッションを確認
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -60,7 +58,13 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     };
     
     checkUser();
-  }, []);
+  }, [property]);
+
+  useEffect(() => {
+    if (localAds && localAds.length > 0) {
+      localAds.forEach((ad: any) => incrementViewCount(ad.id));
+    }
+  }, [localAds]);
 
   const incrementViewCount = async (adId: string) => {
     try {
@@ -70,12 +74,16 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     }
   };
 
-  useEffect(() => {
-    if (localAds && localAds.length > 0) {
-      localAds.forEach((ad: any) => incrementViewCount(ad.id));
-    }
-  }, [localAds]);
+  // --- 【超重要】ガードレール（早期リターン）は、すべての Hooks の定義後に配置 ---
+  if (!property || !property.uuid || property.uuid === 'favicon.ico') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
+        物件情報が見つかりませんでした。
+      </div>
+    );
+  }
 
+  // --- ローディング状態の描画 ---
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -84,6 +92,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
     );
   }
 
+  // --- メインコンテンツの描画 ---
   return (
     <ResidentLayout>
       {showOnboarding && user && (
@@ -99,7 +108,7 @@ export default function ResidentDashboard({ property, trashData = [], localAds =
       )}
 
       <div className="px-4 pt-6 space-y-6 pb-24">
-        {/* 物件情報カード：オプショナルチェイニング (?.) でさらに安全に */}
+        {/* 物件情報カード */}
         <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-[2rem] p-6 text-white shadow-xl shadow-blue-200">
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-1">Welcome Home</p>
           <h1 className="text-2xl font-black mb-1">{property?.name || '物件名未設定'}</h1>
