@@ -1,32 +1,21 @@
-import './globals.css';
-import { Metadata } from 'next';
+// src/app/layout.tsx
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'ぽすっと',
   description: '配信、即完了。',
+  // icons を空にするか、明示的に指定しない
   icons: {
-    icon: '/favicon.ico', // faviconのリクエストを明示的にルートへ向ける
+    icon: [], 
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja">
       <head>
-        {/* 注意: productionビルドでのエラーを避けるため、
-          本来は tailwind.config.ts を使うべきですが、
-          現状のまま強制適用させるためのCDNは残しつつ、
-          Next.jsのハイドレーションと干渉しにくい位置に配置します。
-        */}
-        <script src="https://cdn.tailwindcss.com" async></script>
+        {/* head内にfaviconをリクエストさせる記述があれば削除 */}
       </head>
-      <body className="antialiased">
-        {children}
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
