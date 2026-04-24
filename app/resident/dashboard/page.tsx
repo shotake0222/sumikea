@@ -30,11 +30,8 @@ export default function ResidentDashboard() {
         return;
       }
 
-      // 【デバッグ用】ADMINメールアドレスの場合は強制的にセットアップへ
-      if (user.email === 'shotake0222@gmail.com') {
-        router.push('/resident/setup');
-        return;
-      }
+      // 修正: メールアドレスによる強制リダイレクトを削除しました。
+      // これによりループが解消され、以下の「物件IDがない場合のみ」の判定が正しく機能します。
 
       const { data: prof, error: profError } = await supabase
         .from('profiles')
@@ -42,6 +39,7 @@ export default function ResidentDashboard() {
         .eq('id', user.id)
         .single();
 
+      // 物件IDが未登録（初回ログイン時やDBリセット時）のみセットアップへ
       if (profError || !prof?.property_id) {
         router.push('/resident/setup');
         return;
@@ -64,7 +62,7 @@ export default function ResidentDashboard() {
         { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
       ]);
 
-      // 3. 今日のゴミ出し用テキストデータの取得 (追加)
+      // 3. 今日のゴミ出し用テキストデータの取得
       const { data: trashData } = await supabase
         .from('trash_schedules')
         .select('*')
