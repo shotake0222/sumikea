@@ -1,80 +1,27 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/request';
 
-export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+export function middleware(req: NextRequest) {
+  const path = req.nextUrl.pathname;
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({ name, value: '', ...options });
-        },
-      },
-    }
-  );
+  // Cookieからセッションの有無を確認（Supabaseの標準的なCookie名）
+  const session = req.cookies.get('sb-access-token') || req.cookies.get('supabase-auth-token');
 
-  const { data: { session } } = await supabase.auth.getSession();
-
-  // 1. 未ログイン時の処理
-  if (!session && !request.nextUrl.pathname.startsWith('/login')) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  // 1. 未ログインの場合：ログインページ以外へのアクセスをログイン画面へリダイレクト
+  if (!session && !path.startsWith('/login')) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
   }
 
-  // 2. ログイン済みの場合のロール別アクセス制御
-  if (session) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', session.user.id)
-      .single();
-
-    const role = (profile?.role || 'USER').toUpperCase();
-    const path = request.nextUrl.pathname;
-
-    // スプレッドシートの定義に基づいたガード
-    if (path.startsWith('/resident') && role !== 'USER' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    if (path.startsWith('/management') && role !== 'MANAGER' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    if (path.startsWith('/posting') && role !== 'POSTING' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    if (path.startsWith('/shop') && role !== 'SHOP' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    if (path.startsWith('/properties') && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+  // 2. ログイン済みの場合：ログインページにアクセスしたら、一旦ダッシュボード（居住者）へ飛ばす
+  if (session && path.startsWith('/login')) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/resident/dashboard';
+    return NextResponse.redirect(url);
   }
 
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {
