@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import { uploadImage } from '../../../lib/upload';
-import { QRCodeSVG } from 'qrcode.react'; // QRコード生成ライブラリをインポート
 
 export default function ManagementNoticePage() {
   const router = useRouter();
@@ -208,11 +207,15 @@ export default function ManagementNoticePage() {
                   </p>
                 </div>
 
-                {/* QRコード (ダッシュボード表示用) */}
+                {/* QRコード (ダッシュボード表示用：imgタグ版) */}
                 <div className="bg-white rounded-[2rem] p-6 flex flex-col items-center justify-center shadow-xl">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-3">App Access QR</p>
                   <div className="p-2 bg-white rounded-lg">
-                    <QRCodeSVG value={USER_LOGIN_URL} size={80} />
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(USER_LOGIN_URL)}`} 
+                      alt="Login QR" 
+                      className="w-[80px] h-[80px]"
+                    />
                   </div>
                 </div>
               </div>
@@ -221,7 +224,7 @@ export default function ManagementNoticePage() {
           </div>
         </section>
 
-        {/* 印刷用レイアウト (QRコードを追加) */}
+        {/* 印刷用レイアウト (QRコードを追加：imgタグ版) */}
         <div className="print-only">
           <div className="print-card">
             <div className="text-center w-full">
@@ -238,7 +241,11 @@ export default function ManagementNoticePage() {
                 <div className="flex flex-col items-center">
                   <p className="text-sm font-black mb-4 uppercase tracking-[0.3em]">① アプリへアクセス</p>
                   <div className="border-[12px] border-black p-4 inline-block bg-white">
-                    <QRCodeSVG value={USER_LOGIN_URL} size={220} />
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(USER_LOGIN_URL)}`} 
+                      alt="Login QR" 
+                      className="w-[220px] h-[220px]"
+                    />
                   </div>
                 </div>
 
