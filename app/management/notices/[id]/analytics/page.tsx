@@ -18,6 +18,12 @@ export default function NoticeAnalyticsPage() {
         .eq('id', id)
         .single();
 
+      if (!notice) return null;
+
+      const { count: totalResidents } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', notice.property_id);
 
 
       // 2. 既読者数とデモグラ情報を結合して取得
