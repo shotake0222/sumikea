@@ -15,7 +15,7 @@ export default function ResidentDashboard() {
   // ゴミカレンダー用ステート
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [uploading, setUploading] = useState(false);
-  const [garbageCalendars, setGarbageCalendars] = useState<any>({}); // { "1": "url", "2": "url"... }
+  const [garbageCalendars, setGarbageCalendars] = useState<any>({}); 
 
   useEffect(() => {
     fetchResidentData();
@@ -29,6 +29,7 @@ export default function ResidentDashboard() {
         return;
       }
 
+      // プロフィール取得（カラム名を明示的に指定）
       const { data: prof, error: profError } = await supabase
         .from('profiles')
         .select('*, properties(*)')
@@ -41,15 +42,19 @@ export default function ResidentDashboard() {
       }
 
       setProfile(prof);
-      // DBに保存されている月別URL（JSONB想定）をセット。なければ空オブジェクト
-      setGarbageCalendars(prof.monthly_garbage_calendars || {});
+      
+      // 重要：データが入っているかログで確認（ブラウザのコンソールで見れます）
+      console.log("取得したプロフィール:", prof);
+      
+      // JSONBカラムから月別データを復元（カラム名が正確か確認してください）
+      const savedCalendars = prof.monthly_garbage_calendars || {};
+      setGarbageCalendars(savedCalendars);
 
-      const now = new Date().toISOString();
+      // 通知取得（エラー回避のため個別に取得）
       const { data: rawNotices } = await supabase
         .from('property_notifications')
         .select('*')
-        .eq('property_id', prof.property_id)
-        .or(`expires_at.gt.${now},is_permanent.eq.true`);
+        .eq('property_id', prof.property_id);
 
       setNotices(rawNotices || []);
 
@@ -65,7 +70,6 @@ export default function ResidentDashboard() {
     }
   };
 
-  // 月別カレンダーアップロード処理
   const handleCalendarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -78,19 +82,17 @@ export default function ResidentDashboard() {
       const fileExt = file.name.split('.').pop();
       const filePath = `garbage/${user.id}/${selectedMonth}_${Date.now()}.${fileExt}`;
 
-      // 1. Storageへアップ
       const { error: uploadError } = await supabase.storage
         .from('user_documents')
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // 2. 公開URL取得
       const { data: { publicUrl } } = supabase.storage
         .from('user_documents')
         .getPublicUrl(filePath);
 
-      // 3. profilesテーブルの monthly_garbage_calendars (JSONBカラム) を更新
+      // 現在のリストに新しいURLを追加
       const updatedCalendars = { ...garbageCalendars, [selectedMonth]: publicUrl };
       
       const { error: updateError } = await supabase
@@ -137,52 +139,58 @@ export default function ResidentDashboard() {
 
       <div className="p-6 space-y-10 -mt-8">
         
-        {/* 月別ゴミカレンダー・アップローダー */}
+        {/* 【ここがカレンダーUI】 */}
         <section className="bg-white rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 border border-white">
           <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">My Garbage Calendar</h2>
-            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">月別登録</span>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">My Calendar</h2>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">ゴミ収集表</span>
           </div>
 
+          {/* 月選択タブ */}
           <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
-            {[...Array(12)].map((_, i) => {
-              const m = i + 1;
+            {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => {
               const isRegistered = !!garbageCalendars[m];
               return (
                 <button
                   key={m}
                   onClick={() => setSelectedMonth(m)}
-                  className={`flex-shrink-0 w-12 h-12 rounded-2xl font-black text-xs transition-all border-2 
-                    ${selectedMonth === m ? 'bg-slate-900 text-white border-slate-900 scale-110' : 
-                      isRegistered ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-50 text-slate-400 border-slate-50'}`}
+                  className={`flex-shrink-0 w-11 h-11 rounded-xl font-black text-xs transition-all border-2 
+                    ${selectedMonth === m ? 'bg-slate-900 text-white border-slate-900' : 
+                      isRegistered ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-50 text-slate-300 border-slate-100'}`}
                 >
-                  {m}月
+                  {m}
                 </button>
               );
             })}
           </div>
 
-          <div className="mt-4 p-4 bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
+          {/* コンテンツエリア */}
+          <div className="mt-4 p-5 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
             {garbageCalendars[selectedMonth] ? (
-              <div className="space-y-3 text-center">
-                <p className="text-[10px] font-bold text-slate-500">{selectedMonth}月のカレンダーは登録済みです</p>
+              <div className="space-y-4 text-center">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  {selectedMonth}月分 登録済み
+                </div>
                 <a 
                   href={garbageCalendars[selectedMonth]} 
                   target="_blank" 
-                  className="inline-block w-full bg-blue-600 text-white text-[10px] font-black py-3 rounded-xl shadow-lg shadow-blue-200"
+                  rel="noreferrer"
+                  className="block w-full bg-slate-900 text-white text-[11px] font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-transform"
                 >
-                  表示して確認する
+                  カレンダーを表示する
                 </a>
-                <label className="block text-[9px] text-blue-500 font-bold cursor-pointer underline">
-                  ファイルを変更する
+                <label className="inline-block text-[10px] font-bold text-blue-500 cursor-pointer hover:underline">
+                  別の画像に変更
                   <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" />
                 </label>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center py-4 cursor-pointer">
-                <span className="text-2xl mb-1">{uploading ? '⏳' : '📤'}</span>
-                <span className="text-[10px] font-black text-slate-500">
-                  {uploading ? 'アップロード中...' : `${selectedMonth}月の表をアップロード`}
+              <label className="flex flex-col items-center justify-center py-6 cursor-pointer group">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 group-active:scale-90 transition-transform">
+                  <span className="text-2xl">{uploading ? '⏳' : '📤'}</span>
+                </div>
+                <span className="text-[11px] font-black text-slate-500 tracking-tighter">
+                  {uploading ? 'アップロード中...' : `${selectedMonth}月のカレンダーをアップ`}
                 </span>
                 <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" disabled={uploading} />
               </label>
@@ -190,29 +198,29 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* デジタルポスティング */}
-        <section className="bg-white rounded-[3rem] shadow-2xl shadow-slate-200 border border-slate-100 overflow-hidden">
+        {/* 掲示板 */}
+        <section className="bg-white rounded-[3rem] shadow-xl shadow-slate-200 border border-slate-100 overflow-hidden">
           <div className="bg-slate-800 h-4 mx-12 mt-8 rounded-full shadow-inner opacity-40"></div>
           <div className="p-8">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 text-center">Digital Post</h2>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 text-center italic">Digital Post</h2>
             {notices.length > 0 ? (
               <div className="space-y-6">
-                <h3 className="text-xl font-black text-slate-900 leading-tight">{notices[0].title}</h3>
+                <h3 className="text-lg font-black text-slate-900 leading-tight">{notices[0].title}</h3>
                 <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem]">{notices[0].content}</p>
               </div>
             ) : (
-              <p className="text-center text-slate-400 text-xs italic py-10">現在、新しい投函物はありません</p>
+              <p className="text-center text-slate-400 text-xs italic py-10">新しいお知らせはありません</p>
             )}
           </div>
         </section>
 
         {/* 近隣店舗広告 */}
         <section className="space-y-4">
-          <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">近隣の店舗情報</h2>
+          <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 italic">Neighborhood</h2>
           <div className="grid grid-cols-1 gap-4">
             {ads.map((ad) => (
-              <div key={ad.id} className="bg-white p-6 rounded-[2.5rem] shadow-md flex items-center gap-6 active:scale-[0.98] transition-all">
-                <div className="w-16 h-16 bg-amber-50 rounded-3xl flex items-center justify-center text-3xl">{ad.emoji}</div>
+              <div key={ad.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm flex items-center gap-6 active:scale-[0.98] transition-all border border-slate-50">
+                <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-2xl">{ad.emoji}</div>
                 <div className="flex-1">
                   <p className="text-[9px] font-black text-amber-600 mb-1">{ad.discount}</p>
                   <h4 className="text-sm font-black text-slate-800">{ad.shop}</h4>
@@ -225,19 +233,23 @@ export default function ResidentDashboard() {
 
       {/* ナビゲーション */}
       <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] h-20 bg-slate-900/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-8 border border-white/10 z-50">
-        <Link href="/resident/dashboard" className="flex flex-col items-center gap-1">
-          <span className="text-2xl">📢</span>
-          <span className="text-[7px] font-black uppercase text-blue-500">掲示板</span>
+        <Link href="/resident/dashboard" className="flex flex-col items-center gap-1 group">
+          <span className="text-2xl group-active:scale-110 transition-transform">📢</span>
+          <span className="text-[7px] font-black uppercase text-blue-500 tracking-widest">掲示板</span>
         </Link>
         <Link href="/resident/settings" className="flex flex-col items-center gap-1 opacity-40">
           <span className="text-2xl">🔧</span>
-          <span className="text-[7px] font-black uppercase text-white">設定</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest">設定</span>
         </Link>
         <Link href="/login" className="flex flex-col items-center gap-1 opacity-40">
           <span className="text-2xl">👤</span>
-          <span className="text-[7px] font-black uppercase text-white">終了</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest">終了</span>
         </Link>
       </nav>
+
+      <footer className="mt-4 pb-12 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
+        Posutto Resident Dashboard v2.6
+      </footer>
     </div>
   );
 }
