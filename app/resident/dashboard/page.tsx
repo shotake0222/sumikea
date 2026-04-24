@@ -26,47 +26,51 @@ export default function ResidentDashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        router.push('/login?type=user');
+        // window.location.href を使うことで確実にリダイレクト
+        window.location.href = '/login?type=user';
         return;
       }
 
       // プロフィール・物件情報の取得
-      const { data: prof, error: profError } = await supabase
+      const { data: prof } = await supabase
         .from('profiles')
         .select('*, properties(*)')
         .eq('id', user.id)
         .single();
 
-      // 物件IDが未登録の場合はセットアップへ
-      if (profError || !prof?.property_id) {
+      // ロールの正規化
+      const role = (prof?.role || 'USER').toUpperCase();
+
+      // 【修正ポイント】
+      // 1. ロールが「USER」かつ「物件IDがない」場合のみセットアップへ
+      // ADMINやSHOPは物件IDがなくてもここをスルーして表示を継続します
+      if (role === 'USER' && !prof?.property_id) {
         router.push('/resident/setup');
         return;
       }
 
-      // 管理者ロールなどが間違えて迷い込んだ場合のガード（必要に応じて）
-      if (prof.role && prof.role !== 'USER' && prof.role !== 'resident') {
-        // ロールに応じたページがある場合はそちらへ、なければ続行
-      }
-
       setProfile(prof);
-      setGarbageCalendars(prof.monthly_garbage_calendars || {});
+      setGarbageCalendars(prof?.monthly_garbage_calendars || {});
 
-      // 1. 掲示板データの取得
-      const { data: rawNotices } = await supabase
-        .from('property_notifications')
-        .select('*')
-        .eq('property_id', prof.property_id)
-        .order('created_at', { ascending: false });
+      // 物件IDがある場合のみ、関連データを取得
+      if (prof?.property_id) {
+        // 1. 掲示板データの取得
+        const { data: rawNotices } = await supabase
+          .from('property_notifications')
+          .select('*')
+          .eq('property_id', prof.property_id)
+          .order('created_at', { ascending: false });
 
-      setNotices(rawNotices || []);
+        setNotices(rawNotices || []);
 
-      // 2. 今日のゴミ出し用データの取得
-      const { data: trashData } = await supabase
-        .from('trash_schedules')
-        .select('*')
-        .eq('property_id', prof.property_id);
-      
-      setTrashSchedules(trashData || []);
+        // 2. 今日のゴミ出し用データの取得
+        const { data: trashData } = await supabase
+          .from('trash_schedules')
+          .select('*')
+          .eq('property_id', prof.property_id);
+        
+        setTrashSchedules(trashData || []);
+      }
 
       // 3. 近隣店舗広告（静的またはDBから取得）
       setAds([
@@ -278,7 +282,7 @@ export default function ResidentDashboard() {
         <button 
           onClick={async () => {
             await supabase.auth.signOut();
-            router.push('/login');
+            window.location.href = '/login';
           }} 
           className="flex flex-col items-center gap-1 opacity-40 group"
         >
