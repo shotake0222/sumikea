@@ -21,7 +21,7 @@ export default function NoticeAnalyticsPage() {
       const { count: totalResidents } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
-        .eq('property_id', notice.property_id);
+        .eq('property_id', notice!.property_id);
 
       // 2. 既読者数とデモグラ情報を結合して取得
       const { data: reads } = await supabase
