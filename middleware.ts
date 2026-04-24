@@ -1,16 +1,48 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { NextResponse, type NextRequest } from 'next/server';
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({ name, value, ...options });
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          });
+          response.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({ name, value: '', ...options });
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          });
+          response.cookies.set({ name, value: '', ...options });
+        },
+      },
+    }
+  );
 
   const { data: { session } } = await supabase.auth.getSession();
 
-  // 1. 未ログインの場合、/login 以外のページにアクセスしたらログインへ飛ばす
-  if (!session && !req.nextUrl.pathname.startsWith('/login')) {
-    return NextResponse.redirect(new URL('/login', req.url));
+  // 1. 未ログイン時の処理
+  if (!session && !request.nextUrl.pathname.startsWith('/login')) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // 2. ログイン済みの場合のロール別アクセス制御
@@ -22,40 +54,29 @@ export async function middleware(req: NextRequest) {
       .single();
 
     const role = (profile?.role || 'USER').toUpperCase();
-    const path = req.nextUrl.pathname;
+    const path = request.nextUrl.pathname;
 
-    // --- ロールとパスの整合性チェック（スプレッドシート準拠） ---
-    
-    // 住民ページへのアクセス
+    // スプレッドシートの定義に基づいたガード
     if (path.startsWith('/resident') && role !== 'USER' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', req.url));
+      return NextResponse.redirect(new URL('/login', request.url));
     }
-
-    // 管理会社ページへのアクセス
     if (path.startsWith('/management') && role !== 'MANAGER' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', req.url));
+      return NextResponse.redirect(new URL('/login', request.url));
     }
-
-    // ポスティング業者ページへのアクセス
     if (path.startsWith('/posting') && role !== 'POSTING' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', req.url));
+      return NextResponse.redirect(new URL('/login', request.url));
     }
-
-    // 店舗ページへのアクセス
     if (path.startsWith('/shop') && role !== 'SHOP' && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', req.url));
+      return NextResponse.redirect(new URL('/login', request.url));
     }
-
-    // 運営・システム管理ページへのアクセス
     if (path.startsWith('/properties') && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/login', req.url));
+      return NextResponse.redirect(new URL('/login', request.url));
     }
   }
 
-  return res;
+  return response;
 }
 
-// 適用範囲の設定
 export const config = {
   matcher: [
     '/resident/:path*',
