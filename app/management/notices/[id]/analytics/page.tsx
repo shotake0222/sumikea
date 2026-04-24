@@ -19,6 +19,7 @@ export default function NoticeAnalyticsPage() {
         .single();
 
       const { count: totalResidents } = await supabase
+        if (!notice) return null;
         .from('profiles')
         .select('*', { count: 'exact', head: true })
         .eq('property_id', notice!.property_id);　
