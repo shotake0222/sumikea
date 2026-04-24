@@ -18,14 +18,7 @@ export default function NoticeAnalyticsPage() {
         .eq('id', id)
         .single();
 
-    // 1. バリアを「supabaseの通信が始まる前」に置く
-      if (!notice) return null;
 
-      // 2. そのあとで、通信をひと続きで書く
-      const { count: totalResidents } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('property_id', notice.property_id);
 
       // 2. 既読者数とデモグラ情報を結合して取得
       const { data: reads } = await supabase
