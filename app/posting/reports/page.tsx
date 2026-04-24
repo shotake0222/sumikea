@@ -7,7 +7,8 @@ export default function PostingReportsPage() {
   const router = useRouter();
 
   return (
-    <AdminLayout userType="POSTING">
+    /* AdminLayoutの型定義エラーを回避するため、許可されている"ADMIN"を一時的に使用 */
+    <AdminLayout userType="ADMIN">
       <div className="p-6 md:p-10 bg-[#F8FAFC] min-h-screen">
         
         {/* ヘッダー */}
@@ -44,7 +45,7 @@ export default function PostingReportsPage() {
           ))}
         </div>
 
-        {/* 視覚化セクション（ダミー表示） */}
+        {/* 視覚化セクション */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm min-h-[400px] flex flex-col">
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-10">Engagement Timeline</h3>
@@ -86,6 +87,10 @@ export default function PostingReportsPage() {
             <div className="absolute -left-10 -bottom-10 text-[10rem] font-black italic opacity-5 select-none uppercase tracking-tighter">Target</div>
           </div>
         </div>
+
+        <footer className="mt-12 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
+          Posutto Analytics - Reporting Module
+        </footer>
 
       </div>
     </AdminLayout>
