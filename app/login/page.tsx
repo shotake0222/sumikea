@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-// 環境が戻ったとのことですので、標準的なインポートに戻しています。
-// もし再度パスエラーが出る場合は '@/lib/supabase' または直接初期化を試してください。
 import { supabase } from '@/lib/supabase'; 
 import { useSearchParams, useRouter } from 'next/navigation';
 
@@ -13,7 +11,7 @@ function LoginContent() {
   
   const router = useRouter();
   const searchParams = useSearchParams();
-  // URLの?type=...パラメータを取得（ADMINのデバッグ用などに使用）
+  // URLの?type=...パラメータを取得
   const typeParam = searchParams.get('type')?.toLowerCase();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -49,37 +47,53 @@ function LoginContent() {
     // DB上のロールを取得（未設定ならメタデータまたはUSERをデフォルトに）
     const dbRole = (profile?.role || authData.user.user_metadata?.role || 'USER').toUpperCase();
 
-    // 3. スプレッドシートの定義に基づいたルーティング 
+    // 3. ルーティングロジックの修正
     let targetPath = '';
 
     if (dbRole === 'ADMIN') {
-      // 運営・システム管理者の場合 
-      // typeパラメータによる遷移先指定がある場合はそれに従い、なければ標準の /properties へ
-      if (typeParam === 'user') targetPath = '/resident/dashboard';
-      else if (typeParam === 'manager') targetPath = '/management/notices';
-      else if (typeParam === 'posting') targetPath = '/posting/dashboard';
-      else if (typeParam === 'shop') targetPath = '/shop/post';
-      else targetPath = '/properties';
+      /**
+       * ADMIN（運営）の場合：
+       * 全ての typeParam を受け入れ、指定されたダッシュボードへ遷移させる
+       */
+      switch (typeParam) {
+        case 'user':
+        case 'resident':
+          targetPath = '/resident/dashboard';
+          break;
+        case 'manager':
+        case 'management':
+          targetPath = '/management/notices';
+          break;
+        case 'posting':
+          targetPath = '/posting/dashboard';
+          break;
+        case 'shop':
+          targetPath = '/shop/post';
+          break;
+        case 'admin':
+          targetPath = '/properties';
+          break;
+        default:
+          targetPath = '/properties'; // 標準は物件一覧
+          break;
+      }
     } 
     else if (dbRole === 'MANAGER') {
-      // 管理会社の場合 
       targetPath = '/management/notices';
     } 
     else if (dbRole === 'POSTING') {
-      // ポスティング業者の場合 
       targetPath = '/posting/dashboard';
     } 
     else if (dbRole === 'SHOP') {
-      // 近隣店舗の場合 
       targetPath = '/shop/post';
     } 
     else {
-      // 住民（USER）およびその他の場合 
+      // 一般ユーザー (USER / RESIDENT)
       targetPath = '/resident/dashboard';
     }
 
-    // 4. 指定された画面へリダイレクト
-    // セッションをブラウザに確実に反映させるため、window.location.href を使用します
+    // 4. リダイレクト実行
+    // セッション反映を確実にするため window.location.href を使用
     setTimeout(() => {
       window.location.href = targetPath;
     }, 500);
@@ -91,32 +105,38 @@ function LoginContent() {
         <div className="inline-block bg-orange-500 text-white p-3 rounded-2xl mb-4 shadow-lg rotate-3">
           <span className="text-2xl font-bold">📩</span>
         </div>
-        <h1 className="text-4xl font-black text-slate-900 italic">POSUTTO</h1>
+        <h1 className="text-4xl font-black text-slate-900 italic uppercase tracking-tighter">POSUTTO</h1>
         <p className="text-[10px] text-slate-400 font-black mt-2 uppercase tracking-[0.3em]">
           Authentication Portal
         </p>
       </div>
 
       <form onSubmit={handleLogin} className="space-y-6">
-        <input 
-          type="email"
-          className="w-full bg-slate-50 border-2 border-transparent p-4 rounded-2xl text-sm font-bold focus:border-orange-500 outline-none transition-all"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="メールアドレス"
-          required
-        />
-        <input 
-          type="password"
-          className="w-full bg-slate-50 border-2 border-transparent p-4 rounded-2xl text-sm font-bold focus:border-orange-500 outline-none transition-all"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="パスワード"
-          required
-        />
+        <div className="space-y-1">
+          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Email Address</label>
+          <input 
+            type="email"
+            className="w-full bg-slate-50 border-2 border-transparent p-4 rounded-2xl text-sm font-bold focus:border-orange-500 outline-none transition-all"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="メールアドレス"
+            required
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Password</label>
+          <input 
+            type="password"
+            className="w-full bg-slate-50 border-2 border-transparent p-4 rounded-2xl text-sm font-bold focus:border-orange-500 outline-none transition-all"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="パスワード"
+            required
+          />
+        </div>
         <button 
           disabled={loading}
-          className="w-full bg-slate-900 hover:bg-orange-600 text-white py-5 rounded-[2rem] font-black shadow-lg transition-all active:scale-[0.98]"
+          className="w-full bg-slate-900 hover:bg-orange-600 text-white py-5 rounded-[2rem] font-black shadow-lg transition-all active:scale-[0.98] mt-4"
         >
           {loading ? '認証中...' : 'ログインして開始'}
         </button>

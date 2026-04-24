@@ -10,10 +10,10 @@ export default function ResidentDashboard() {
   const [profile, setProfile] = useState<any>(null);
   const [notices, setNotices] = useState<any[]>([]);
   const [ads, setAds] = useState<any[]>([]); 
-  const [trashSchedules, setTrashSchedules] = useState<any[]>([]); // ステップ3用
+  const [trashSchedules, setTrashSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // 画像アップロード形式用ステート
+  // ゴミカレンダー（画像・PDF）管理用
   const [garbageCalendars, setGarbageCalendars] = useState<any>({}); 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [uploading, setUploading] = useState(false);
@@ -30,19 +30,22 @@ export default function ResidentDashboard() {
         return;
       }
 
-      // 修正: メールアドレスによる強制リダイレクトを削除しました。
-      // これによりループが解消され、以下の「物件IDがない場合のみ」の判定が正しく機能します。
-
+      // プロフィール・物件情報の取得
       const { data: prof, error: profError } = await supabase
         .from('profiles')
         .select('*, properties(*)')
         .eq('id', user.id)
         .single();
 
-      // 物件IDが未登録（初回ログイン時やDBリセット時）のみセットアップへ
+      // 物件IDが未登録の場合はセットアップへ
       if (profError || !prof?.property_id) {
         router.push('/resident/setup');
         return;
+      }
+
+      // 管理者ロールなどが間違えて迷い込んだ場合のガード（必要に応じて）
+      if (prof.role && prof.role !== 'USER' && prof.role !== 'resident') {
+        // ロールに応じたページがある場合はそちらへ、なければ続行
       }
 
       setProfile(prof);
@@ -52,23 +55,24 @@ export default function ResidentDashboard() {
       const { data: rawNotices } = await supabase
         .from('property_notifications')
         .select('*')
-        .eq('property_id', prof.property_id);
+        .eq('property_id', prof.property_id)
+        .order('created_at', { ascending: false });
 
       setNotices(rawNotices || []);
 
-      // 2. 近隣店舗広告
-      setAds([
-        { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
-        { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
-      ]);
-
-      // 3. 今日のゴミ出し用テキストデータの取得
+      // 2. 今日のゴミ出し用データの取得
       const { data: trashData } = await supabase
         .from('trash_schedules')
         .select('*')
         .eq('property_id', prof.property_id);
       
       setTrashSchedules(trashData || []);
+
+      // 3. 近隣店舗広告（静的またはDBから取得）
+      setAds([
+        { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
+        { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
+      ]);
 
     } catch (err) {
       console.error('Data fetch error:', err);
@@ -77,7 +81,7 @@ export default function ResidentDashboard() {
     }
   };
 
-  // 今日のゴミ出しを判定するヘルパー
+  // 今日のゴミ出しを判定
   const getTodayTrash = () => {
     const dayMap = ["日", "月", "火", "水", "木", "金", "土"];
     const todayStr = dayMap[new Date().getDay()];
@@ -86,7 +90,7 @@ export default function ResidentDashboard() {
 
   const todayTrash = getTodayTrash();
 
-  // 画像アップロード処理
+  // カレンダーのアップロード処理
   const handleCalendarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -119,7 +123,7 @@ export default function ResidentDashboard() {
       if (updateError) throw updateError;
 
       setGarbageCalendars(updatedCalendars);
-      alert(`${selectedMonth}月のカレンダーを登録しました`);
+      alert(`${selectedMonth}月のカレンダーを保存しました`);
     } catch (err) {
       console.error(err);
       alert('アップロードに失敗しました');
@@ -143,7 +147,7 @@ export default function ResidentDashboard() {
           <div className="flex items-center gap-2 mb-2">
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-              {profile?.properties?.name} 居住者専用
+              {profile?.properties?.name || 'My Residence'}
             </span>
           </div>
           <h1 className="text-4xl font-black tracking-tighter italic">
@@ -153,10 +157,10 @@ export default function ResidentDashboard() {
         <div className="absolute right-[-5%] top-[-10%] w-56 h-56 bg-blue-600 rounded-full opacity-20 blur-[80px]"></div>
       </div>
 
-      <div className="p-6 space-y-10 -mt-8">
+      <div className="p-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 【ステップ3】今日のゴミ出し（テキスト形式） */}
-        <section className="relative">
+        {/* 今日のゴミ出し（テキスト表示） */}
+        <section>
           <div className="flex justify-between items-end px-2 mb-4">
             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Today's Trash</h2>
           </div>
@@ -166,7 +170,7 @@ export default function ResidentDashboard() {
             </div>
             <div>
               <p className="text-[10px] font-black opacity-80 uppercase tracking-widest">
-                {new Date().toLocaleDateString('ja-JP', { weekday: 'long' })}
+                {new Date().toLocaleDateString('ja-JP', { weekday: 'long' })}の収集
               </p>
               <h3 className="text-xl font-black italic">
                 {todayTrash.length > 0 
@@ -177,10 +181,10 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* ゴミカレンダー画像表示エリア */}
+        {/* ゴミカレンダー画像・PDF表示エリア */}
         <section className="bg-white rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 border border-white">
           <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Full Calendar</h2>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Garbage Calendar</h2>
             <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">{selectedMonth}月分</span>
           </div>
 
@@ -197,16 +201,29 @@ export default function ResidentDashboard() {
             ))}
           </div>
 
-          <div className="mt-4 rounded-[2rem] overflow-hidden border-2 border-slate-100 bg-slate-50 min-h-[200px] flex items-center justify-center">
+          <div className="mt-4 rounded-[2rem] overflow-hidden border-2 border-slate-100 bg-slate-50 min-h-[200px] flex items-center justify-center relative">
             {garbageCalendars[selectedMonth] ? (
-              <img 
-                src={garbageCalendars[selectedMonth]} 
-                alt="ゴミカレンダー" 
-                className="w-full h-auto object-contain cursor-pointer"
-                onClick={() => window.open(garbageCalendars[selectedMonth], '_blank')}
-              />
+              <div className="w-full h-full">
+                {garbageCalendars[selectedMonth].toLowerCase().endsWith('.pdf') ? (
+                  <iframe 
+                    src={garbageCalendars[selectedMonth]} 
+                    className="w-full h-[300px] border-none"
+                    title="PDF Calendar"
+                  />
+                ) : (
+                  <img 
+                    src={garbageCalendars[selectedMonth]} 
+                    alt="Calendar" 
+                    className="w-full h-auto object-contain cursor-pointer"
+                    onClick={() => window.open(garbageCalendars[selectedMonth], '_blank')}
+                  />
+                )}
+              </div>
             ) : (
-              <p className="text-[11px] font-black text-slate-400 italic p-10">カレンダー未登録</p>
+              <div className="text-center p-10">
+                <p className="text-[11px] font-black text-slate-400 italic">カレンダー未登録</p>
+                <p className="text-[9px] text-slate-300 mt-1 uppercase tracking-tighter">下の「表登録」から追加できます</p>
+              </div>
             )}
           </div>
         </section>
@@ -218,47 +235,62 @@ export default function ResidentDashboard() {
             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 text-center italic">Digital Post</h2>
             {notices.length > 0 ? (
               <div className="space-y-6">
+                <div className="inline-block px-3 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-full uppercase">Recent Notice</div>
                 <h3 className="text-lg font-black text-slate-900 leading-tight">{notices[0].title}</h3>
-                <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem]">{notices[0].content}</p>
+                <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] whitespace-pre-wrap">{notices[0].content}</p>
               </div>
             ) : (
-              <p className="text-center text-slate-400 text-xs italic py-10">新しいお知らせはありません</p>
+              <p className="text-center text-slate-400 text-xs italic py-10 font-bold uppercase tracking-widest">No New Post</p>
             )}
           </div>
         </section>
 
-        {/* 店舗情報 */}
-        <section className="space-y-4 pb-10">
+        {/* 近隣店舗 */}
+        <section className="space-y-4">
           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 italic">Neighborhood</h2>
           <div className="grid grid-cols-1 gap-4">
             {ads.map((ad) => (
-              <div key={ad.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-50 flex items-center gap-6">
+              <div key={ad.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-50 flex items-center gap-6 active:scale-[0.98] transition-transform">
                 <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-2xl">{ad.emoji}</div>
-                <div className="flex-1 text-sm font-black text-slate-800">{ad.shop}</div>
+                <div>
+                  <p className="text-[9px] font-black text-amber-600 uppercase mb-0.5">{ad.discount}</p>
+                  <h4 className="text-sm font-black text-slate-800">{ad.shop}</h4>
+                </div>
               </div>
             ))}
           </div>
         </section>
       </div>
 
-      {/* ナビゲーション */}
+      {/* ボトムナビゲーション */}
       <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] h-20 bg-slate-900/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-8 border border-white/10 z-50">
-        <Link href="/resident/dashboard" className="flex flex-col items-center gap-1">
-          <span className="text-2xl">📢</span>
+        <Link href="/resident/dashboard" className="flex flex-col items-center gap-1 group">
+          <span className="text-2xl group-active:scale-110 transition-transform">📢</span>
           <span className="text-[7px] font-black uppercase text-blue-500 tracking-widest">掲示板</span>
         </Link>
         
-        <label className="flex flex-col items-center gap-1 cursor-pointer">
-          <span className="text-2xl">{uploading ? '⏳' : '📅'}</span>
+        <label className="flex flex-col items-center gap-1 cursor-pointer group">
+          <span className="text-2xl group-active:scale-110 transition-transform">{uploading ? '⏳' : '📅'}</span>
           <span className="text-[7px] font-black uppercase text-white tracking-widest opacity-40">表登録</span>
           <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" disabled={uploading} />
         </label>
 
-        <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="flex flex-col items-center gap-1 opacity-40">
-          <span className="text-2xl">👤</span>
-          <span className="text-[7px] font-black uppercase text-white tracking-widest">ログアウト</span>
+        <button 
+          onClick={async () => {
+            await supabase.auth.signOut();
+            router.push('/login');
+          }} 
+          className="flex flex-col items-center gap-1 opacity-40 group"
+        >
+          <span className="text-2xl group-active:scale-110 transition-transform">👤</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest">終了</span>
         </button>
       </nav>
+
+      {/* バージョン表記のみのシンプルなフッター */}
+      <footer className="mt-4 pb-12 text-[8px] text-slate-300 text-center font-bold uppercase tracking-[0.4em]">
+        Posutto v2.8
+      </footer>
     </div>
   );
 }
