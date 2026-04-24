@@ -1,21 +1,21 @@
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/request';
+import type { NextRequest } from 'next/server'; // ここを server に修正
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
 
-  // Cookieからセッションの有無を確認（Supabaseの標準的なCookie名）
+  // Cookieからセッションを確認
   const session = req.cookies.get('sb-access-token') || req.cookies.get('supabase-auth-token');
 
-  // 1. 未ログインの場合：ログインページ以外へのアクセスをログイン画面へリダイレクト
+  // 1. 未ログイン時のガード
   if (!session && !path.startsWith('/login')) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  // 2. ログイン済みの場合：ログインページにアクセスしたら、一旦ダッシュボード（居住者）へ飛ばす
-  if (session && path.startsWith('/login')) {
+  // 2. ログイン済みでログインページに来た場合
+  if (session && path === '/login') {
     const url = req.nextUrl.clone();
     url.pathname = '/resident/dashboard';
     return NextResponse.redirect(url);
