@@ -10,9 +10,8 @@ export default function ResidentDashboard() {
   const [profile, setProfile] = useState<any>(null);
   const [propertyInfo, setPropertyInfo] = useState<any>(null);
   const [notices, setNotices] = useState<any[]>([]);
-  const [utilityData, setUtilityData] = useState<any>([]);
+  const [ads, setAds] = useState<any[]>([]); // 近隣店舗広告用
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchResidentData = async () => {
@@ -24,23 +23,20 @@ export default function ResidentDashboard() {
           return;
         }
 
-        // 1. プロフィールと物件情報の取得
         const { data: prof, error: profError } = await supabase
           .from('profiles')
           .select('*, properties(*)')
           .eq('id', user.id)
           .single();
 
-        // 物件が紐付いていない場合はセットアップ画面へ強制リダイレクト
         if (profError || !prof?.property_id) {
           router.push('/resident/setup');
           return;
         }
 
         setProfile(prof);
-        setUserRole(prof.role);
 
-        // 2. 掲示板データの取得とパーソナライズ
+        // 1. 掲示板・ポスティングデータの取得
         const now = new Date().toISOString();
         const { data: rawNotices } = await supabase
           .from('property_notifications')
@@ -48,40 +44,23 @@ export default function ResidentDashboard() {
           .eq('property_id', prof.property_id)
           .or(`expires_at.gt.${now},is_permanent.eq.true`);
 
-        // --- パーソナライズ・ロジック ---
+        // パーソナライズ（投函物としての重み付け）
         const sortedNotices = (rawNotices || []).map(notice => {
           let score = 0;
-          // 緊急度は最優先
           if (notice.category === 'urgent') score += 1000;
-          // ペット飼育者に関連
           if (prof.has_pet && (notice.title + notice.content).includes('ペット')) score += 100;
-          // 車利用に関連
-          if (prof.primary_transport === 'car' && (notice.title + notice.content).includes('駐車場')) score += 80;
-          // 在宅ワークに関連
-          if (prof.lifestyle_tags?.includes('remote') && (notice.title + notice.content).includes('工事')) score += 60;
-          
           return { ...notice, score };
         }).sort((a, b) => b.score - a.score);
 
         setNotices(sortedNotices);
 
-        // 3. 生活情報（ゴミの日等）の取得
-        const { data: livingInfo } = await supabase
-          .from('property_living_info')
-          .select('*')
-          .eq('property_id', prof.property_id)
-          .single();
-        
-        // 4. インフラ使用量データ
-        const { data: utils } = await supabase
-          .from('resident_utilities')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('usage_month', { ascending: false })
-          .limit(6);
+        // 2. 近隣店舗広告データの取得（ダミーまたはDBから）
+        // 本来はプロフィールの住所情報等から取得。今回はデモ用。
+        setAds([
+          { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
+          { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
+        ]);
 
-        setPropertyInfo(livingInfo);
-        setUtilityData(utils || []);
       } catch (err) {
         console.error('Data fetch error:', err);
       } finally {
@@ -99,124 +78,142 @@ export default function ResidentDashboard() {
   );
 
   return (
-    <div className="max-w-md mx-auto bg-[#F8FAFC] min-h-screen pb-32 font-sans overflow-x-hidden">
+    <div className="max-w-md mx-auto bg-[#F8FAFC] min-h-screen pb-40 font-sans overflow-x-hidden">
       
-      {/* ヒーロー：物件名とステータス */}
+      {/* ヒーローヘッダー */}
       <div className="bg-slate-900 p-10 rounded-b-[3.5rem] text-white shadow-2xl relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-              {profile?.properties?.name} Official
+              {profile?.properties?.name} 居住者専用
             </span>
           </div>
           <h1 className="text-4xl font-black tracking-tighter italic">
-            {profile?.room_number ? `${profile.room_number}号室` : 'My Page'}
+             {profile?.room_number ? `${profile.room_number}号室` : 'マイページ'}
           </h1>
         </div>
-        {/* 装飾用デザイン要素 */}
         <div className="absolute right-[-5%] top-[-10%] w-56 h-56 bg-blue-600 rounded-full opacity-20 blur-[80px]"></div>
       </div>
 
-      <div className="p-6 space-y-8 -mt-8">
+      <div className="p-6 space-y-10 -mt-8">
         
-        {/* クイックアクション：ゴミカレンダー */}
-        <Link href="/resident/trash">
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-xl shadow-slate-200/50 flex items-center justify-between border border-white active:scale-[0.97] transition-all">
-            <div>
-              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Next Garbage Day</p>
-              <p className="text-xl font-black text-slate-800">
-                {propertyInfo?.next_garbage_info || '明日は「燃えるゴミ」'}
-              </p>
-            </div>
-            <div className="bg-slate-900 w-14 h-14 flex items-center justify-center rounded-[1.5rem] text-2xl shadow-lg shadow-slate-200">
-              🗑️
-            </div>
-          </div>
-        </Link>
-
-        {/* パーソナライズ掲示板フィード */}
-        <section className="space-y-4">
-          <div className="flex justify-between items-end px-2">
-            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Personalized Feed</h2>
-            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase italic">For You</span>
+        {/* メインフィーチャー：デジタルポスティング（ポスト風UI） */}
+        <section className="relative group">
+          <div className="flex justify-between items-end px-2 mb-4">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Digital Posting</h2>
+            <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase italic">最新の投函物</span>
           </div>
           
-          <div className="space-y-4">
-            {notices.length === 0 ? (
-              <div className="bg-white p-10 rounded-[2.5rem] text-center border-2 border-dashed border-slate-200">
-                <p className="text-slate-400 text-xs font-bold">現在、重要なお知らせはありません。</p>
-              </div>
-            ) : (
-              notices.map((notice) => (
-                <article key={notice.id} 
-                  className={`bg-white p-6 rounded-[2.5rem] shadow-sm border-l-8 transition-all hover:shadow-md
-                    ${notice.category === 'urgent' ? 'border-red-500' : 'border-blue-500'}`}
-                >
-                  <div className="flex justify-between items-center mb-3">
-                    <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase
-                      ${notice.category === 'urgent' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
-                      {notice.category === 'urgent' ? 'Important' : 'Notice'}
-                    </span>
-                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
-                      {new Date(notice.created_at).toLocaleDateString()}
-                    </p>
+          <div className="bg-white rounded-[3rem] shadow-2xl shadow-slate-200 border border-slate-100 overflow-hidden">
+            {/* ポストの投函口風デザイン */}
+            <div className="bg-slate-800 h-4 mx-12 mt-8 rounded-full shadow-inner opacity-40"></div>
+            
+            <div className="p-8">
+              {notices.length > 0 ? (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-200">
+                      📬
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 leading-tight">
+                        {notices[0].title}
+                      </h3>
+                      <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
+                        ポスティング管理：{new Date(notices[0].created_at).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-black text-slate-900 leading-tight mb-2">{notice.title}</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-3 mb-4">{notice.content}</p>
                   
-                  {notice.pdf_url && (
-                    <a href={notice.pdf_url} target="_blank" className="inline-flex items-center gap-2 text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-xl">
-                      📎 VIEW DOCUMENT
-                    </a>
-                  )}
-                </article>
-              ))
-            )}
-          </div>
-        </section>
+                  <p className="text-sm text-slate-600 leading-relaxed line-clamp-3 bg-slate-50 p-6 rounded-[2rem]">
+                    {notices[0].content}
+                  </p>
 
-        {/* 分析：光熱費グラフ（既存ロジックのマージ） */}
-        <section>
-          <div className="flex items-center gap-2 mb-4 ml-2">
-            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Utility Analytics</h2>
-          </div>
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-            <div className="flex justify-between items-end gap-3 h-24">
-              {utilityData.length > 0 ? utilityData.map((d: any, i: number) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
-                  <div className="w-full bg-slate-100 rounded-t-xl relative transition-all group-hover:bg-blue-100" 
-                    style={{ height: `${Math.min((d.electricity_kwh / 500) * 100, 100)}%` }}>
+                  <div className="flex gap-3">
+                    {notices[0].pdf_url && (
+                      <a href={notices[0].pdf_url} target="_blank" className="flex-1 text-center bg-slate-900 text-white text-[10px] font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all">
+                        資料を確認する
+                      </a>
+                    )}
+                    <button className="flex-1 text-center bg-blue-50 text-blue-600 text-[10px] font-black py-4 rounded-2xl active:scale-95 transition-all">
+                      他 {notices.length} 件の履歴
+                    </button>
                   </div>
-                  <span className="text-[8px] font-black text-slate-400">{new Date(d.usage_month).getMonth() + 1}月</span>
                 </div>
-              )) : (
-                <p className="text-[10px] text-slate-300 w-full text-center pb-8">No usage data yet</p>
+              ) : (
+                <div className="text-center py-10">
+                  <p className="text-slate-400 text-xs font-bold italic">ポストは空です</p>
+                </div>
               )}
             </div>
           </div>
         </section>
+
+        {/* 近隣店舗の広告エリア */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 px-2">
+             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Neighborhood Ads</h2>
+             <div className="h-px flex-1 bg-slate-100"></div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {ads.map((ad) => (
+              <div key={ad.id} className="bg-white p-6 rounded-[2.5rem] shadow-md border border-slate-50 flex items-center gap-6 active:scale-[0.98] transition-all">
+                <div className="w-16 h-16 bg-amber-50 rounded-3xl flex items-center justify-center text-3xl shrink-0">
+                  {ad.emoji}
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <p className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded uppercase mb-1">限定特典</p>
+                    <span className="text-sm font-black text-slate-900">{ad.discount}</span>
+                  </div>
+                  <h4 className="text-sm font-black text-slate-800">{ad.shop}</h4>
+                  <p className="text-[10px] text-slate-400 font-bold">{ad.title}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 掲示板バックナンバー */}
+        <section className="space-y-4">
+           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">掲示板フィード</h2>
+           <div className="space-y-4">
+             {notices.slice(1).map((notice) => (
+               <article key={notice.id} className="bg-white/60 p-6 rounded-[2rem] border-l-4 border-slate-300">
+                  <p className="text-[9px] font-black text-slate-400 mb-1">{new Date(notice.created_at).toLocaleDateString()}</p>
+                  <h4 className="text-xs font-black text-slate-800">{notice.title}</h4>
+               </article>
+             ))}
+           </div>
+        </section>
       </div>
 
-      {/* フローティング・タブバー */}
-      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[85%] h-20 bg-slate-900/90 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-8 border border-white/10">
-        <button className="text-blue-500 flex flex-col items-center gap-1">
-          <span className="text-2xl">📢</span>
-          <span className="text-[7px] font-black uppercase tracking-widest text-white">Board</span>
-        </button>
-        <Link href="/resident/trash" className="text-slate-500 flex flex-col items-center gap-1">
-          <span className="text-2xl opacity-40">🗓️</span>
-          <span className="text-[7px] font-black uppercase tracking-widest">Calendar</span>
+      {/* フローティング・ナビゲーション (機能するように修正) */}
+      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] h-20 bg-slate-900/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-4 border border-white/10 z-50">
+        <Link href="/resident/dashboard" className="flex flex-col items-center gap-1 group">
+          <span className="text-2xl group-active:scale-110 transition-transform">📢</span>
+          <span className="text-[7px] font-black uppercase text-blue-500 tracking-widest">掲示板</span>
         </Link>
-        <button className="text-slate-500 flex flex-col items-center gap-1">
-          <span className="text-2xl opacity-40">📦</span>
-          <span className="text-[7px] font-black uppercase tracking-widest">Parcel</span>
+        <Link href="/resident/settings" className="flex flex-col items-center gap-1 group opacity-40 hover:opacity-100 transition-opacity">
+          <span className="text-2xl group-active:scale-110 transition-transform">🔧</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest">設定</span>
+        </Link>
+        {/* 未作成の画面は暫定的にダッシュボードへ飛ばすか、今後作成 */}
+        <button onClick={() => alert('Coming Soon!')} className="flex flex-col items-center gap-1 opacity-40">
+          <span className="text-2xl">🎁</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest">特典</span>
         </button>
-        <button className="text-slate-500 flex flex-col items-center gap-1">
-          <span className="text-2xl opacity-40">⚙️</span>
-          <span className="text-[7px] font-black uppercase tracking-widest">Menu</span>
-        </button>
+        <Link href="/login" className="flex flex-col items-center gap-1 opacity-40">
+          <span className="text-2xl">👤</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest">ログアウト</span>
+        </Link>
       </nav>
+
+      <footer className="mt-4 pb-12 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
+        Posutto Resident Dashboard v2.4
+      </footer>
     </div>
   );
 }
