@@ -8,9 +8,8 @@ import Link from 'next/link';
 export default function ResidentDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
-  const [propertyInfo, setPropertyInfo] = useState<any>(null);
   const [notices, setNotices] = useState<any[]>([]);
-  const [ads, setAds] = useState<any[]>([]); // 近隣店舗広告用
+  const [ads, setAds] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function ResidentDashboard() {
           .eq('property_id', prof.property_id)
           .or(`expires_at.gt.${now},is_permanent.eq.true`);
 
-        // パーソナライズ（投函物としての重み付け）
         const sortedNotices = (rawNotices || []).map(notice => {
           let score = 0;
           if (notice.category === 'urgent') score += 1000;
@@ -54,8 +52,7 @@ export default function ResidentDashboard() {
 
         setNotices(sortedNotices);
 
-        // 2. 近隣店舗広告データの取得（ダミーまたはDBから）
-        // 本来はプロフィールの住所情報等から取得。今回はデモ用。
+        // 2. 近隣店舗広告データ（仮設定）
         setAds([
           { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
           { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
@@ -98,17 +95,15 @@ export default function ResidentDashboard() {
 
       <div className="p-6 space-y-10 -mt-8">
         
-        {/* メインフィーチャー：デジタルポスティング（ポスト風UI） */}
+        {/* デジタルポスティング */}
         <section className="relative group">
           <div className="flex justify-between items-end px-2 mb-4">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Digital Posting</h2>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">デジタルポスティング</h2>
             <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase italic">最新の投函物</span>
           </div>
           
           <div className="bg-white rounded-[3rem] shadow-2xl shadow-slate-200 border border-slate-100 overflow-hidden">
-            {/* ポストの投函口風デザイン */}
             <div className="bg-slate-800 h-4 mx-12 mt-8 rounded-full shadow-inner opacity-40"></div>
-            
             <div className="p-8">
               {notices.length > 0 ? (
                 <div className="space-y-6">
@@ -125,20 +120,18 @@ export default function ResidentDashboard() {
                       </p>
                     </div>
                   </div>
-                  
                   <p className="text-sm text-slate-600 leading-relaxed line-clamp-3 bg-slate-50 p-6 rounded-[2rem]">
                     {notices[0].content}
                   </p>
-
                   <div className="flex gap-3">
                     {notices[0].pdf_url && (
                       <a href={notices[0].pdf_url} target="_blank" className="flex-1 text-center bg-slate-900 text-white text-[10px] font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all">
                         資料を確認する
                       </a>
                     )}
-                    <button className="flex-1 text-center bg-blue-50 text-blue-600 text-[10px] font-black py-4 rounded-2xl active:scale-95 transition-all">
+                    <Link href="/resident/settings" className="flex-1 text-center bg-blue-50 text-blue-600 text-[10px] font-black py-4 rounded-2xl active:scale-95 transition-all flex items-center justify-center">
                       他 {notices.length} 件の履歴
-                    </button>
+                    </Link>
                   </div>
                 </div>
               ) : (
@@ -150,33 +143,34 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* 近隣店舗の広告エリア */}
+        {/* 近隣の店舗情報 */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 px-2">
-             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Neighborhood Ads</h2>
+             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">近隣の店舗情報</h2>
              <div className="h-px flex-1 bg-slate-100"></div>
           </div>
-
           <div className="grid grid-cols-1 gap-4">
             {ads.map((ad) => (
-              <div key={ad.id} className="bg-white p-6 rounded-[2.5rem] shadow-md border border-slate-50 flex items-center gap-6 active:scale-[0.98] transition-all">
-                <div className="w-16 h-16 bg-amber-50 rounded-3xl flex items-center justify-center text-3xl shrink-0">
-                  {ad.emoji}
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
-                    <p className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded uppercase mb-1">限定特典</p>
-                    <span className="text-sm font-black text-slate-900">{ad.discount}</span>
+              <Link key={ad.id} href="/resident/settings">
+                <div className="bg-white p-6 rounded-[2.5rem] shadow-md border border-slate-50 flex items-center gap-6 active:scale-[0.98] transition-all cursor-pointer">
+                  <div className="w-16 h-16 bg-amber-50 rounded-3xl flex items-center justify-center text-3xl shrink-0">
+                    {ad.emoji}
                   </div>
-                  <h4 className="text-sm font-black text-slate-800">{ad.shop}</h4>
-                  <p className="text-[10px] text-slate-400 font-bold">{ad.title}</p>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start">
+                      <p className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded uppercase mb-1">限定特典</p>
+                      <span className="text-sm font-black text-slate-900">{ad.discount}</span>
+                    </div>
+                    <h4 className="text-sm font-black text-slate-800">{ad.shop}</h4>
+                    <p className="text-[10px] text-slate-400 font-bold">{ad.title}</p>
+                  </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </section>
 
-        {/* 掲示板バックナンバー */}
+        {/* 掲示板フィード */}
         <section className="space-y-4">
            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">掲示板フィード</h2>
            <div className="space-y-4">
@@ -190,8 +184,8 @@ export default function ResidentDashboard() {
         </section>
       </div>
 
-      {/* フローティング・ナビゲーション (機能するように修正) */}
-      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] h-20 bg-slate-900/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-4 border border-white/10 z-50">
+      {/* フローティング・ナビゲーション (特典削除) */}
+      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] h-20 bg-slate-900/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl flex items-center justify-around px-8 border border-white/10 z-50">
         <Link href="/resident/dashboard" className="flex flex-col items-center gap-1 group">
           <span className="text-2xl group-active:scale-110 transition-transform">📢</span>
           <span className="text-[7px] font-black uppercase text-blue-500 tracking-widest">掲示板</span>
@@ -200,19 +194,14 @@ export default function ResidentDashboard() {
           <span className="text-2xl group-active:scale-110 transition-transform">🔧</span>
           <span className="text-[7px] font-black uppercase text-white tracking-widest">設定</span>
         </Link>
-        {/* 未作成の画面は暫定的にダッシュボードへ飛ばすか、今後作成 */}
-        <button onClick={() => alert('Coming Soon!')} className="flex flex-col items-center gap-1 opacity-40">
-          <span className="text-2xl">🎁</span>
-          <span className="text-[7px] font-black uppercase text-white tracking-widest">特典</span>
-        </button>
-        <Link href="/login" className="flex flex-col items-center gap-1 opacity-40">
-          <span className="text-2xl">👤</span>
+        <Link href="/login" className="flex flex-col items-center gap-1 group opacity-40 hover:opacity-100 transition-opacity">
+          <span className="text-2xl group-active:scale-110 transition-transform">👤</span>
           <span className="text-[7px] font-black uppercase text-white tracking-widest">ログアウト</span>
         </Link>
       </nav>
 
       <footer className="mt-4 pb-12 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-        Posutto Resident Dashboard v2.4
+        Posutto Resident Dashboard v2.5
       </footer>
     </div>
   );

@@ -1,281 +1,162 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { supabase } from '../../../lib/supabase'; // パスは環境に合わせて調整してください
 
-export default function ResidentSetupPage() {
+export default function ResidentSettingsPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  
-  const [inviteCode, setInviteCode] = useState('');
-  const [propertyInfo, setPropertyInfo] = useState<{id: string, name: string, code_id?: string, is_fixed_code: boolean} | null>(null);
-  
-  const [householdSize, setHouseholdSize] = useState('1');
-  const [lifestyle, setLifestyle] = useState<string[]>([]);
-  const [hasPet, setHasPet] = useState(false);
-  const [transportation, setTransportation] = useState('train');
-
-  const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login?type=resident');
-        return;
-      }
-      setLoading(false);
-    };
-    checkUser();
-  }, [router]);
-
-  // ステップ1: 招待コードの照合
-  const verifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError('');
-
-    const cleanCode = inviteCode.trim().toUpperCase().replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => {
-      return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
-    });
-
+  // カレンダーのアップロード処理
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
-      // 1. 物件共通コードをチェック
-      const { data: propData } = await supabase
-        .from('properties')
-        .select('id, name')
-        .eq('join_code', cleanCode)
-        .maybeSingle();
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-      if (propData) {
-        setPropertyInfo({
-          id: propData.id,
-          name: propData.name,
-          is_fixed_code: true
-        });
-        setStep(2);
-        setIsSubmitting(false);
-        return;
+      // 5MB以上のファイルは弾く（任意）
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('ファイルサイズは5MB以下にしてください。');
       }
 
-      // 2. 個別招待コードをチェック
-      const { data: inviteData } = await supabase
-        .from('invitation_codes')
-        .select(`
-          id,
-          property_id,
-          is_used,
-          properties ( id, name )
-        `)
-        .eq('code', cleanCode)
-        .eq('is_used', false)
-        .maybeSingle();
+      setUploading(true);
+      setError('');
+      setMessage('');
 
-      if (inviteData && inviteData.properties) {
-        const prop = Array.isArray(inviteData.properties) ? inviteData.properties[0] : inviteData.properties;
-        setPropertyInfo({
-          id: prop.id,
-          name: prop.name,
-          code_id: inviteData.id,
-          is_fixed_code: false
-        });
-        setStep(2);
-      } else {
-        setError('無効な招待コードか、既に使用されています。');
-      }
-
-    } catch (err: any) {
-      console.error(err);
-      setError('通信エラーが発生しました。');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const toggleLifestyle = (tag: string) => {
-    setLifestyle(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
-  };
-
-  const handleFinalSubmit = async () => {
-    if (!propertyInfo) return;
-    setIsSubmitting(true);
-    setError('');
-    
-    try {
+      // 現在のユーザーを取得
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('セッションが切れました。');
+      if (!user) throw new Error('セッションが切れました。再度ログインしてください。');
 
+      // ファイル名を一意にする（例: user_id-123456.jpg）
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `garbage_calendars/${fileName}`;
+
+      // 1. Supabase Storage ('user_documents' バケット) へアップロード
+      const { error: uploadError } = await supabase.storage
+        .from('user_documents')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 2. アップロードしたファイルの公開URLを取得
+      const { data: { publicUrl } } = supabase.storage
+        .from('user_documents')
+        .getPublicUrl(filePath);
+
+      // 3. プロフィールにURLを保存
       const { error: updateError } = await supabase
         .from('profiles')
-        .upsert({ 
-          id: user.id,
-          property_id: propertyInfo.id,
-          role: 'RESIDENT',
-          household_size: parseInt(householdSize),
-          lifestyle_tags: lifestyle,
-          has_pet: hasPet,
-          primary_transport: transportation,
-          is_setup_completed: true,
-          setup_completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        .update({ garbage_calendar_url: publicUrl })
+        .eq('id', user.id);
 
       if (updateError) throw updateError;
 
-      if (!propertyInfo.is_fixed_code && propertyInfo.code_id) {
-        await supabase
-          .from('invitation_codes')
-          .update({ is_used: true })
-          .eq('id', propertyInfo.code_id);
-      }
+      setMessage('カレンダーの登録が完了しました！');
+      
+      // 完了後、少し待ってからダッシュボードへ戻る
+      setTimeout(() => {
+        router.push('/resident/dashboard');
+      }, 2000);
 
-      router.push('/resident/dashboard');
     } catch (err: any) {
-      console.error(err);
-      setError('保存に失敗しました。');
-      setIsSubmitting(false);
+      console.error('Upload Error:', err);
+      setError(err.message || 'アップロードに失敗しました。');
+    } finally {
+      setUploading(false);
+      // inputの値をリセット
+      e.target.value = '';
     }
   };
 
-  if (loading) return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
-      <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-6 text-white font-sans">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen bg-[#0F172A] flex flex-col items-center p-6 text-white font-sans">
+      <div className="max-w-md w-full space-y-8 mt-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
         
-        {/* プログレスバー */}
-        <div className="flex gap-2 mb-10">
-          <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${step >= 1 ? 'bg-blue-500' : 'bg-slate-700'}`} />
-          <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${step >= 2 ? 'bg-blue-500' : 'bg-slate-700'}`} />
+        {/* ヘッダー */}
+        <header className="text-center space-y-2">
+          <div className="w-16 h-16 bg-slate-800 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg border border-slate-700 mb-4">
+            ⚙️
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter italic uppercase">Settings</h1>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">各種設定・アップロード</p>
+        </header>
+
+        {/* メイン機能：ゴミカレンダーアップロード */}
+        <section className="bg-slate-800/50 p-6 rounded-[2rem] border border-slate-700 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+          
+          <h2 className="text-lg font-black mb-2 flex items-center gap-2">
+            <span>🗑️</span> マイ・ゴミカレンダー
+          </h2>
+          <p className="text-slate-400 text-[10px] mb-6 leading-relaxed">
+            お住まいの地域のゴミ収集カレンダー（写真またはPDF）を登録すると、いつでもダッシュボードから確認できるようになります。
+          </p>
+
+          <div className="relative">
+            <input 
+              type="file" 
+              accept="image/*,.pdf"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed"
+            />
+            <div className={`w-full border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all ${uploading ? 'border-blue-500/50 bg-blue-500/10' : 'border-slate-600 bg-slate-800 hover:border-blue-500 hover:bg-slate-700'}`}>
+              <span className="text-3xl mb-3">{uploading ? '⏳' : '📤'}</span>
+              <span className="text-sm font-bold text-slate-300">
+                {uploading ? 'アップロード中...' : 'タップしてファイルを選択'}
+              </span>
+              <span className="text-[9px] text-slate-500 mt-2 font-black uppercase tracking-widest">
+                JPG, PNG, PDF (Max 5MB)
+              </span>
+            </div>
+          </div>
+
+          {/* メッセージ表示エリア */}
+          {message && (
+            <p className="text-green-400 text-xs font-bold mt-4 text-center bg-green-500/10 py-2 rounded-xl border border-green-500/20 animate-pulse">
+              {message}
+            </p>
+          )}
+          {error && (
+            <p className="text-red-400 text-xs font-bold mt-4 text-center bg-red-500/10 py-2 rounded-xl border border-red-500/20">
+              {error}
+            </p>
+          )}
+        </section>
+
+        {/* 開発中の機能（元コードの要素） */}
+        <section className="text-center py-8">
+          <div className="w-12 h-12 bg-slate-800/50 rounded-full mx-auto flex items-center justify-center text-xl mb-4 opacity-50">
+            🛠️
+          </div>
+          <p className="text-slate-500 text-xs leading-relaxed font-bold">
+            その他の設定機能やご近所特典は<br />
+            現在エンジニアが鋭意開発中です。<br />
+            リリースまで今しばらくお待ちください。
+          </p>
+        </section>
+
+        {/* ナビゲーション */}
+        <div className="pt-4">
+          <button 
+            onClick={() => router.back()}
+            disabled={uploading}
+            className="w-full bg-slate-800 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl hover:bg-slate-700 transition-all active:scale-[0.97] disabled:opacity-50"
+          >
+            ← 戻る
+          </button>
+          
+          <Link href="/resident/dashboard" className="block mt-6 text-center text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] hover:text-white transition-colors">
+            ダッシュボードへ移動
+          </Link>
         </div>
 
-        {step === 1 ? (
-          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="text-center">
-              <div className="w-20 h-20 bg-blue-600 rounded-[2rem] mx-auto mb-6 flex items-center justify-center shadow-2xl shadow-blue-500/20">
-                <span className="text-3xl">🔑</span>
-              </div>
-              <h1 className="text-3xl font-black tracking-tighter italic uppercase">住民セットアップ</h1>
-              <p className="text-slate-400 text-sm mt-3 font-medium leading-relaxed italic">
-                招待コードを入力して<br/>物件と連携してください
-              </p>
-            </div>
-
-            <form onSubmit={verifyCode} className="space-y-6">
-              <div className="relative group">
-                <input 
-                  type="text"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
-                  placeholder="例: POS-1234"
-                  className="w-full bg-slate-800/50 border-2 border-slate-700 p-6 rounded-[2rem] text-center text-2xl font-black tracking-[0.2em] focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all uppercase placeholder:text-slate-700"
-                  required
-                />
-              </div>
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/20 py-4 rounded-[1.5rem]">
-                  <p className="text-red-400 text-xs font-black text-center animate-pulse">{error}</p>
-                </div>
-              )}
-              <button 
-                type="submit"
-                disabled={isSubmitting || !inviteCode}
-                className="w-full bg-white text-slate-900 py-6 rounded-[2rem] font-black text-lg hover:bg-blue-600 hover:text-white transition-all active:scale-[0.97] shadow-xl shadow-white/5 disabled:opacity-50"
-              >
-                {isSubmitting ? '認証中...' : '次へ進む →'}
-              </button>
-            </form>
-          </div>
-        ) : (
-          <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-700">
-            <header className="text-center">
-              <div className="inline-block bg-blue-500/20 text-blue-400 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-[0.2em] mb-4 border border-blue-500/30">
-                対象物件: {propertyInfo?.name}
-              </div>
-              <h1 className="text-3xl font-black tracking-tighter italic leading-none">暮らしの設定</h1>
-              <p className="text-slate-500 text-[10px] font-bold mt-2 uppercase tracking-widest">最適な情報を届けるために教えてください</p>
-            </header>
-
-            <div className="space-y-8 bg-slate-800/30 p-8 rounded-[3rem] border border-slate-700/50 shadow-inner">
-              {/* 世帯人数 */}
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">世帯人数</label>
-                <div className="flex justify-between gap-3">
-                  {['1', '2', '3', '4+'].map(num => (
-                    <button key={num} type="button" onClick={() => setHouseholdSize(num)}
-                      className={`flex-1 py-4 rounded-2xl font-black transition-all ${householdSize === num ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-700/50 text-slate-500 hover:bg-slate-700'}`}>
-                      {num === '4+' ? '4人〜' : `${num}人`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 主な移動手段 */}
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">主な移動手段</label>
-                <div className="relative">
-                  <select 
-                    value={transportation} onChange={(e) => setTransportation(e.target.value)}
-                    className="w-full bg-slate-700/50 p-5 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500/50 text-sm text-white appearance-none cursor-pointer"
-                  >
-                    <option value="train">🚃 電車・バス</option>
-                    <option value="car">🚗 自家用車</option>
-                    <option value="bike">🚲 自転車・バイク</option>
-                    <option value="walk">🏃 徒歩のみ</option>
-                  </select>
-                  <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">▼</div>
-                </div>
-              </div>
-
-              {/* ライフスタイルタグ */}
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">ライフスタイル</label>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    {id: 'worker', label: '会社員'}, {id: 'remote', label: 'リモート'}, 
-                    {id: 'student', label: '学生'}, {id: 'family', label: '子育て'},
-                    {id: 'night', label: '夜型'}, {id: 'holiday_work', label: '平日休み'}
-                  ].map(tag => (
-                    <button key={tag.id} type="button" onClick={() => toggleLifestyle(tag.id)}
-                      className={`px-5 py-3 rounded-xl text-[10px] font-black transition-all ${lifestyle.includes(tag.id) ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'bg-slate-700/50 text-slate-500'}`}>
-                      {tag.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ペット同居 */}
-              <button 
-                type="button"
-                onClick={() => setHasPet(!hasPet)}
-                className={`w-full p-5 rounded-2xl flex justify-between items-center transition-all border-2 ${hasPet ? 'bg-amber-500/10 border-amber-500/50 text-amber-200' : 'bg-slate-700/30 border-transparent text-slate-500'}`}
-              >
-                <span className="text-[10px] font-black uppercase tracking-widest">ペットと同居していますか？</span>
-                <span className="text-xl">{hasPet ? '🐕 はい' : '🚫 いいえ'}</span>
-              </button>
-            </div>
-
-            {error && <p className="text-red-400 text-[10px] font-black text-center uppercase tracking-widest italic">{error}</p>}
-
-            <button 
-              onClick={handleFinalSubmit}
-              disabled={isSubmitting}
-              className="w-full bg-blue-600 text-white py-7 rounded-[2.5rem] font-black text-xl italic shadow-2xl shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-[0.98] disabled:opacity-50"
-            >
-              {isSubmitting ? '保存しています...' : '設定を完了してはじめる →'}
-            </button>
-          </div>
-        )}
-
-        <footer className="mt-16 text-[9px] text-slate-800 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto Digital Onboarding Protocol v2.4
+        <footer className="pt-10 pb-8 text-[9px] text-slate-800 text-center font-bold uppercase tracking-[0.4em]">
+          Posutto Digital Protocol v2.5
         </footer>
       </div>
     </div>
