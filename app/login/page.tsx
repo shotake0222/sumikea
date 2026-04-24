@@ -18,96 +18,75 @@ function LoginContent() {
     setLoading(true);
     
     try {
-      // 1. サインイン実行
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ 
+      // 1. まずサインイン
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
       });
       
       if (authError) throw authError;
-      if (!authData.user) throw new Error('User not found');
 
-      // 2. profilesテーブルからロール情報を取得
+      // 2. ロールを profiles から取得
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', authData.user.id)
+        .eq('id', data.user.id)
         .single();
 
-      // DB上のロール（大文字で統一）
       const dbRole = (profile?.role || 'USER').toUpperCase();
 
-      // 3. スプレッドシートの定義に基づいた厳密なパス判定
-      let targetPath = '';
+      // 3. スプレッドシートに基づいた遷移先を決定
+      let targetPath = '/resident/dashboard'; // デフォルト
 
-      // ADMINの場合、URLパラメータがあればその画面を、なければ管理画面へ
       if (dbRole === 'ADMIN') {
         if (typeParam === 'user') targetPath = '/resident/dashboard';
         else if (typeParam === 'manager') targetPath = '/management/notices';
         else if (typeParam === 'posting') targetPath = '/posting/dashboard';
         else if (typeParam === 'shop') targetPath = '/shop/post';
         else targetPath = '/properties';
-      } 
-      // 一般ロールの場合（スプレッドシート準拠）
-      else if (dbRole === 'MANAGER') {
+      } else if (dbRole === 'MANAGER') {
         targetPath = '/management/notices';
-      } 
-      else if (dbRole === 'POSTING') {
+      } else if (dbRole === 'POSTING') {
         targetPath = '/posting/dashboard';
-      } 
-      else if (dbRole === 'SHOP') {
+      } else if (dbRole === 'SHOP') {
         targetPath = '/shop/post';
-      } 
-      else {
-        // 住民（USER）
-        targetPath = '/resident/dashboard';
       }
 
-      // 4. 強制リダイレクト
-      // next/navigation の router.push よりも確実にページを切り替えるため
-      // window.location.replace を使用します（履歴に残さず遷移）
-      if (targetPath) {
-        window.location.replace(targetPath);
-      }
+      // 【重要】もし遷移しないなら、ここで強制的にURLを書き換える
+      console.log('Redirecting to:', targetPath);
+      
+      // router.push を使わず、ブラウザの機能でリフレッシュを伴う遷移をさせる
+      window.location.assign(targetPath);
 
     } catch (err: any) {
-      alert('エラー: ' + err.message);
+      alert('ログイン失敗: ' + err.message);
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl border border-slate-100">
-      <div className="text-center mb-10">
-        <div className="inline-block bg-orange-500 text-white p-3 rounded-2xl mb-4 shadow-lg rotate-3">
-          <span className="text-2xl font-bold">📩</span>
-        </div>
-        <h1 className="text-4xl font-black text-slate-900 italic tracking-tighter">POSUTTO</h1>
-        <p className="text-[10px] text-slate-400 font-black mt-2 uppercase tracking-[0.3em]">
-          {typeParam ? `Auth Mode: ${typeParam}` : 'Portal Access'}
-        </p>
-      </div>
-
+    <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl">
       <form onSubmit={handleLogin} className="space-y-6">
+        <h1 className="text-3xl font-black text-center mb-8 italic">POSUTTO</h1>
         <input 
-          type="email"
-          className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl font-bold focus:border-orange-500 outline-none transition-all"
+          type="email" 
+          placeholder="Email"
+          className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 focus:border-orange-500 font-bold"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="メールアドレス"
           required
         />
         <input 
           type="password"
-          className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl font-bold focus:border-orange-500 outline-none transition-all"
+          placeholder="Password"
+          className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 focus:border-orange-500 font-bold"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="パスワード"
           required
         />
         <button 
+          className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black hover:bg-orange-600 transition-all"
           disabled={loading}
-          className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black shadow-lg hover:bg-orange-600 transition-all active:scale-[0.98]"
         >
           {loading ? '認証中...' : 'ログイン'}
         </button>
@@ -118,7 +97,7 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center p-6 font-sans">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
       <Suspense fallback={<div>Loading...</div>}>
         <LoginContent />
       </Suspense>
