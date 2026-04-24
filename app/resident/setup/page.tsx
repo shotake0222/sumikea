@@ -29,7 +29,6 @@ export default function ResidentDashboard() {
         return;
       }
 
-      // プロフィール取得（カラム名を明示的に指定）
       const { data: prof, error: profError } = await supabase
         .from('profiles')
         .select('*, properties(*)')
@@ -43,14 +42,11 @@ export default function ResidentDashboard() {
 
       setProfile(prof);
       
-      // 重要：データが入っているかログで確認（ブラウザのコンソールで見れます）
-      console.log("取得したプロフィール:", prof);
-      
-      // JSONBカラムから月別データを復元（カラム名が正確か確認してください）
+      // JSONBから月別データを取得
       const savedCalendars = prof.monthly_garbage_calendars || {};
       setGarbageCalendars(savedCalendars);
 
-      // 通知取得（エラー回避のため個別に取得）
+      // 通知取得
       const { data: rawNotices } = await supabase
         .from('property_notifications')
         .select('*')
@@ -92,7 +88,6 @@ export default function ResidentDashboard() {
         .from('user_documents')
         .getPublicUrl(filePath);
 
-      // 現在のリストに新しいURLを追加
       const updatedCalendars = { ...garbageCalendars, [selectedMonth]: publicUrl };
       
       const { error: updateError } = await supabase
@@ -139,11 +134,13 @@ export default function ResidentDashboard() {
 
       <div className="p-6 space-y-10 -mt-8">
         
-        {/* 【ここがカレンダーUI】 */}
+        {/* ゴミカレンダー表示セクション */}
         <section className="bg-white rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 border border-white">
           <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">My Calendar</h2>
-            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">ゴミ収集表</span>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Garbage Calendar</h2>
+            <div className="flex items-center gap-2">
+               <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">{selectedMonth}月</span>
+            </div>
           </div>
 
           {/* 月選択タブ */}
@@ -164,33 +161,44 @@ export default function ResidentDashboard() {
             })}
           </div>
 
-          {/* コンテンツエリア */}
-          <div className="mt-4 p-5 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
+          {/* カレンダー表示エリア */}
+          <div className="mt-4 overflow-hidden rounded-[2rem] border-2 border-slate-100 bg-slate-50 min-h-[200px] flex items-center justify-center relative">
             {garbageCalendars[selectedMonth] ? (
-              <div className="space-y-4 text-center">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {selectedMonth}月分 登録済み
+              <div className="w-full h-full flex flex-col items-center">
+                {garbageCalendars[selectedMonth].toLowerCase().endsWith('.pdf') ? (
+                  <iframe 
+                    src={garbageCalendars[selectedMonth]} 
+                    className="w-full h-[300px] rounded-[2rem]"
+                    title="PDF Calendar"
+                  />
+                ) : (
+                  <img 
+                    src={garbageCalendars[selectedMonth]} 
+                    alt="Calendar" 
+                    className="w-full h-auto object-contain rounded-[2rem]"
+                    onClick={() => window.open(garbageCalendars[selectedMonth], '_blank')}
+                  />
+                )}
+                <div className="absolute bottom-4 right-4 flex gap-2">
+                  <label className="bg-white/90 backdrop-blur shadow-sm p-2 rounded-full cursor-pointer hover:bg-white transition-colors">
+                    <span className="text-sm">🔄</span>
+                    <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" />
+                  </label>
+                  <button 
+                    onClick={() => window.open(garbageCalendars[selectedMonth], '_blank')}
+                    className="bg-white/90 backdrop-blur shadow-sm p-2 rounded-full"
+                  >
+                    <span className="text-sm">🔍</span>
+                  </button>
                 </div>
-                <a 
-                  href={garbageCalendars[selectedMonth]} 
-                  target="_blank" 
-                  rel="noreferrer"
-                  className="block w-full bg-slate-900 text-white text-[11px] font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-transform"
-                >
-                  カレンダーを表示する
-                </a>
-                <label className="inline-block text-[10px] font-bold text-blue-500 cursor-pointer hover:underline">
-                  別の画像に変更
-                  <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" />
-                </label>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center py-6 cursor-pointer group">
-                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 group-active:scale-90 transition-transform">
+              <label className="flex flex-col items-center justify-center p-10 cursor-pointer group w-full h-full">
+                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 group-active:scale-95 transition-transform border border-slate-100">
                   <span className="text-2xl">{uploading ? '⏳' : '📤'}</span>
                 </div>
-                <span className="text-[11px] font-black text-slate-500 tracking-tighter">
-                  {uploading ? 'アップロード中...' : `${selectedMonth}月のカレンダーをアップ`}
+                <span className="text-[11px] font-black text-slate-400 tracking-tighter text-center">
+                  {uploading ? 'アップロード中...' : `${selectedMonth}月のカレンダーが未登録です\nタップして登録`}
                 </span>
                 <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" disabled={uploading} />
               </label>
@@ -237,10 +245,14 @@ export default function ResidentDashboard() {
           <span className="text-2xl group-active:scale-110 transition-transform">📢</span>
           <span className="text-[7px] font-black uppercase text-blue-500 tracking-widest">掲示板</span>
         </Link>
-        <Link href="/resident/settings" className="flex flex-col items-center gap-1 opacity-40">
-          <span className="text-2xl">🔧</span>
-          <span className="text-[7px] font-black uppercase text-white tracking-widest">設定</span>
-        </Link>
+        
+        {/* ゴミカレンダー登録専用のラベルに変更 */}
+        <label className="flex flex-col items-center gap-1 cursor-pointer">
+          <span className="text-2xl">📅</span>
+          <span className="text-[7px] font-black uppercase text-white tracking-widest opacity-40">表登録</span>
+          <input type="file" className="hidden" onChange={handleCalendarUpload} accept="image/*,application/pdf" />
+        </label>
+
         <Link href="/login" className="flex flex-col items-center gap-1 opacity-40">
           <span className="text-2xl">👤</span>
           <span className="text-[7px] font-black uppercase text-white tracking-widest">終了</span>
@@ -248,7 +260,7 @@ export default function ResidentDashboard() {
       </nav>
 
       <footer className="mt-4 pb-12 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-        Posutto Resident Dashboard v2.6
+        Posutto Resident Dashboard v2.7
       </footer>
     </div>
   );
