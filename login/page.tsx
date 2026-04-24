@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
-export default function LoginPage() {
+export default function Page() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,7 +13,7 @@ export default function LoginPage() {
   // ロゴ画像のパス（publicフォルダに logo.png 等を置いた場合）
   const logoPath = "./logo.png"; 
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handle = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
@@ -62,7 +62,7 @@ export default function LoginPage() {
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ぽすっと</h1>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form onSubmit={handle} className="space-y-6">
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Account ID (Email)</label>
             <input 
