@@ -25,7 +25,6 @@ function LoginContent() {
     try {
       if (isSignUp) {
         // --- 【新規住民専用】サインアップフロー ---
-        console.log('--- Resident Sign Up Start ---');
         const { data: authData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -46,12 +45,10 @@ function LoginContent() {
         if (profileError) console.error('Initial Profile DB Error:', profileError);
 
         // 新規登録完了後はセットアップへ強制遷移
-        console.log('New User Created. Redirecting to setup...');
         window.location.href = '/resident/setup';
 
       } else {
         // --- 【管理者・既存ユーザー】ログインフロー ---
-        console.log('--- Login Process Start ---');
         const { data, error: authError } = await supabase.auth.signInWithPassword({ 
           email, 
           password 
@@ -73,16 +70,17 @@ function LoginContent() {
         
         let targetPath = '';
 
-        // ロールに基づいたパス判定（ディレクトリ構成変更を反映）
+        // --- ロールに基づいたパス判定（厳密に /manager/notices を指定） ---
         if (dbRole === 'ADMIN') {
+          // ADMINは全画面へ行けるが、パラメータによって振り分ける
           if (typeParam === 'user') targetPath = '/resident/dashboard';
-          else if (typeParam === 'manager') targetPath = '/manager/notices'; // 修正: management -> manager
+          else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
           else if (typeParam === 'shop') targetPath = '/shop/post';
-          else targetPath = '/properties';
+          else targetPath = '/properties'; // デフォルトは物件一覧
         } 
         else if (dbRole === 'MANAGER') {
-          // ✅ 管理会社のデフォルト遷移先を新ディレクトリへ
+          // 管理会社ロールは一律で掲示板管理へ
           targetPath = '/manager/notices'; 
         } 
         else if (dbRole === 'POSTING') {
@@ -96,7 +94,7 @@ function LoginContent() {
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
-        console.log('Target Destination:', targetPath);
+        console.log('Final Redirect Path:', targetPath);
         window.location.href = targetPath;
       }
 
@@ -115,7 +113,7 @@ function LoginContent() {
           <div className="mt-2">
             <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
               isUserMode ? 'bg-blue-100 text-blue-600' : 
-              typeParam === 'manager' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : // 管理会社なら青
+              typeParam === 'manager' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 
               'bg-orange-100 text-orange-600'
             }`}>
               {isUserMode ? (isSignUp ? 'Resident Sign Up' : 'Resident Login') : 
@@ -152,7 +150,6 @@ function LoginContent() {
           {loading ? '処理中...' : (isSignUp ? '新規登録して次へ' : 'ログイン')}
         </button>
 
-        {/* 住民モード（type=user）の場合のみ、登録とログインの切り替えを表示 */}
         {isUserMode && (
           <div className="text-center mt-6">
             <button 
@@ -167,7 +164,7 @@ function LoginContent() {
       </form>
       
       <p className="mt-8 text-center text-[8px] text-slate-300 font-bold uppercase tracking-[0.3em]">
-        {isUserMode ? 'Resident Portal' : 'Management System'} v3.0
+        {isUserMode ? 'Resident Portal' : 'Management System'} v3.5
       </p>
     </div>
   );
