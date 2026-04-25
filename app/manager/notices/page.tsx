@@ -11,7 +11,7 @@ export default function ManagementNoticePage() {
   // --- 状態管理 ---
   const [managedProperties, setManagedProperties] = useState<any[]>([]);
   const [selectedProperty, setSelectedProperty] = useState('');
-  const [selectedPropertyData, setSelectedPropertyData] = useState<any>(null); // ← ここが空のままだった
+  const [selectedPropertyData, setSelectedPropertyData] = useState<any>(null);
   const [recentNotices, setRecentNotices] = useState<any[]>([]);
   
   const [title, setTitle] = useState('');
@@ -31,7 +31,7 @@ export default function ManagementNoticePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // --- 初期データ取得 ---
+  // --- 初期データ取得 (invite_codeを削除してエラー回避) ---
   useEffect(() => {
     const fetchAuthAndData = async () => {
       try {
@@ -45,17 +45,19 @@ export default function ManagementNoticePage() {
         
         let propertyList: any[] = [];
         if (role === 'ADMIN') {
-          const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
+          // invite_codeをselectから除外
+          const { data: allProps } = await supabase.from('properties').select('id, name');
           if (allProps) {
             propertyList = allProps.map(p => ({
               property_id: p.id,
-              properties: { name: p.name, invite_code: p.invite_code }
+              properties: { name: p.name }
             }));
           }
         } else {
+          // invite_codeをselectから除外
           const { data: managerProps } = await supabase
             .from('property_managers')
-            .select('property_id, properties(name, invite_code)')
+            .select('property_id, properties(name)')
             .eq('user_id', user.id);
           if (managerProps) propertyList = managerProps;
         }
@@ -63,10 +65,9 @@ export default function ManagementNoticePage() {
         if (propertyList && propertyList.length > 0) {
           setManagedProperties(propertyList);
           
-          // 【修正ポイント】初期表示の物件情報を確実にセット
           const firstProp = propertyList[0];
           setSelectedProperty(firstProp.property_id);
-          setSelectedPropertyData(firstProp.properties); // これで名前が出るようになる
+          setSelectedPropertyData(firstProp.properties);
           
           fetchNoticeHistory(firstProp.property_id);
         }
@@ -227,13 +228,12 @@ export default function ManagementNoticePage() {
                 「{selectedPropertyData?.name || '---'}」の住民登録用チラシを作成
               </h2>
               <p className="text-slate-400 text-base font-bold leading-relaxed max-w-2xl">
-                招待コード「{selectedPropertyData?.invite_code || '------'}」が記載された専用チラシを出力します。
+                QRコードが記載された専用チラシを出力します。
               </p>
             </div>
           </div>
         </header>
 
-        {/* フォーム部分などは前回と同様のため省略なしのフルコード構成 */}
         <div className="flex flex-col xl:flex-row gap-8">
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[4rem] p-8 md:p-14 shadow-2xl border border-slate-50 space-y-12">
@@ -335,7 +335,7 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
-        {/* 印刷用モーダル */}
+        {/* 印刷用モーダル (invite_code表示を削除) */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
@@ -353,19 +353,13 @@ export default function ManagementNoticePage() {
                 </div>
                 <div className="border-y-[6px] border-slate-50 py-12 mb-12 text-center">
                   <p className="text-sm font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">対象物件名</p>
-                  <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name || '---'}</h3>
-                  <div className="bg-slate-50 inline-block p-10 rounded-[4rem] border-2 border-slate-100">
-                    <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Your Invitation Code</p>
-                    <div className="text-7xl font-black tracking-[0.25em] italic text-slate-900">
-                      {selectedPropertyData?.invite_code || '---'}
-                    </div>
-                  </div>
+                  <h3 className="text-5xl font-black tracking-tight mb-4">{selectedPropertyData?.name || '---'}</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center mb-20">
                   <div className="space-y-8">
                     <h4 className="text-3xl font-black border-l-[12px] border-blue-600 pl-6 mb-10 italic">ご利用の手順</h4>
                     <div className="space-y-6">
-                      {[{ step: '1', title: 'スキャン', desc: '右記のQRコードをスマートフォンで読み取ります。' }, { step: '2', title: 'ログイン', desc: '登録またはログインを行います。' }, { step: '3', title: 'コード入力', desc: '招待コードを入力して連携完了！' }].map((item) => (
+                      {[{ step: '1', title: 'スキャン', desc: '右記のQRコードをスマートフォンで読み取ります。' }, { step: '2', title: 'ログイン', desc: '登録またはログインを行います。' }, { step: '3', title: '完了', desc: 'お住まいの物件のお知らせが届くようになります。' }].map((item) => (
                         <div key={item.step} className="flex gap-6 items-start">
                           <span className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shrink-0 text-xl shadow-lg">{item.step}</span>
                           <div>
