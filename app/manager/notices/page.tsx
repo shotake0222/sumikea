@@ -33,7 +33,6 @@ export default function ManagementNoticePage() {
 
   const [showPreview, setShowPreview] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [showReadList, setShowReadList] = useState<{show: boolean, users: any[]}>({show: false, users: []});
 
   // --- 初期データ取得 ---
   useEffect(() => {
@@ -49,20 +48,43 @@ export default function ManagementNoticePage() {
         
         let propertyList: any[] = [];
         if (role === 'ADMIN') {
+          // ADMIN: 全物件を取得し、MANAGERと同じデータ構造に map する
           const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
           if (allProps) {
-            propertyList = allProps.map(p => ({ property_id: p.id, properties: { name: p.name, invite_code: p.invite_code } }));
+            propertyList = allProps.map(p => ({
+              property_id: p.id,
+              properties: { name: p.name, invite_code: p.invite_code }
+            }));
           }
         } else {
-          const { data: managerProps } = await supabase.from('property_managers').select('property_id, properties(name, invite_code)').eq('user_id', user.id);
-          if (managerProps) propertyList = managerProps;
+          // MANAGER: 紐付けテーブルから取得。properties!inner を使い、配列ではなくオブジェクトとして取得を試みる
+          const { data: managerProps } = await supabase
+            .from('property_managers')
+            .select(`
+              property_id,
+              properties:properties!inner (
+                name,
+                invite_code
+              )
+            `)
+            .eq('user_id', user.id);
+          
+          if (managerProps) {
+            // properties が配列で返ってくる可能性を考慮して整形
+            propertyList = managerProps.map((p: any) => ({
+              property_id: p.property_id,
+              properties: Array.isArray(p.properties) ? p.properties[0] : p.properties
+            }));
+          }
         }
         
-        if (propertyList.length > 0) {
+        if (propertyList && propertyList.length > 0) {
           setManagedProperties(propertyList);
-          setSelectedProperty(propertyList[0].property_id);
-          setSelectedPropertyData(propertyList[0].properties);
-          fetchNoticeHistory(propertyList[0].property_id);
+          // 初期選択物件をセット
+          const initialProp = propertyList[0];
+          setSelectedProperty(initialProp.property_id);
+          setSelectedPropertyData(initialProp.properties);
+          fetchNoticeHistory(initialProp.property_id);
         }
       } catch (err) {
         console.error('データ取得エラー:', err);
@@ -104,8 +126,10 @@ export default function ManagementNoticePage() {
   const handlePropertyChange = (propId: string) => {
     setSelectedProperty(propId);
     const found = managedProperties.find(p => p.property_id === propId);
-    if (found) setSelectedPropertyData(found.properties);
-    fetchNoticeHistory(propId);
+    if (found) {
+      setSelectedPropertyData(found.properties);
+      fetchNoticeHistory(propId);
+    }
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +236,6 @@ export default function ManagementNoticePage() {
             </div>
           </div>
 
-          {/* 修正された案内バナー: 余計な余白を排除 */}
           <div className="bg-slate-900 text-white p-8 md:p-10 rounded-[4rem] shadow-2xl flex flex-col md:flex-row items-center gap-10 border-b-[12px] border-slate-800">
             <button 
               onClick={() => setShowPrintModal(true)}
@@ -223,10 +246,10 @@ export default function ManagementNoticePage() {
             </button>
             <div className="flex-1 text-center md:text-left">
               <h2 className="text-2xl md:text-3xl font-black mb-3 tracking-tight italic">
-                「{selectedPropertyData?.name}」の住民登録用チラシを作成
+                「{selectedPropertyData?.name || '選択物件'}」の住民登録用チラシを作成
               </h2>
               <p className="text-slate-400 text-base font-bold leading-relaxed max-w-2xl">
-                招待コード「{selectedPropertyData?.invite_code}」が記載された専用チラシを出力します。<br />
+                招待コード「{selectedPropertyData?.invite_code || '------'}」が記載された専用チラシを出力します。<br />
                 印刷して共用部の掲示板や、各住戸のポストへ投函して登録を案内してください。
               </p>
             </div>
@@ -337,7 +360,7 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
-        {/* 印刷用モーダル (QRコード生成ロジック含む) */}
+        {/* 印刷用モーダル */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
@@ -356,7 +379,7 @@ export default function ManagementNoticePage() {
 
                 <div className="border-y-[6px] border-slate-50 py-12 mb-12 text-center">
                   <p className="text-sm font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">対象物件名</p>
-                  <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name}</h3>
+                  <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name || '---'}</h3>
                   
                   <div className="bg-slate-50 inline-block p-10 rounded-[4rem] border-2 border-slate-100">
                     <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Your Invitation Code</p>
@@ -392,7 +415,6 @@ export default function ManagementNoticePage() {
                         src={getQrCodeUrl()} 
                         alt="Resident Login QR" 
                         className="w-56 h-56 object-contain" 
-                        onLoad={() => console.log('QR Code loaded')}
                       />
                     </div>
                     <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] italic">Scan to access portal</p>
