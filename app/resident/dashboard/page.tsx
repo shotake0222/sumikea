@@ -20,7 +20,7 @@ export default function ResidentDashboard() {
 
   useEffect(() => {
     fetchResidentData();
-  }, [router]);
+  }, []); // router への依存を外し、初回マウント時のみ確実に実行
 
   const fetchResidentData = async () => {
     try {
@@ -40,18 +40,21 @@ export default function ResidentDashboard() {
         .eq('id', user.id)
         .single();
 
-      if (profError) console.error('DB Fetch Error:', profError);
+      if (profError) {
+        console.error('DB Fetch Error:', profError);
+      }
 
       // ロールの正規化
       const role = (prof?.role || 'USER').toUpperCase();
       console.log('Current User Role:', role);
       console.log('Property ID Status:', prof?.property_id ? 'Attached' : 'Empty');
 
-      // 【重要：リダイレクト条件の厳格化】
-      // ロールが「USER（一般住民）」かつ「物件IDが紐づいていない」場合のみセットアップへ
-      // ADMIN, SHOP, MANAGER 等は物件IDがなくてもこの画面を表示し続ける
+      // 【修正：リダイレクトのガード強化】
+      // ロールが「USER（一般住民）」であり、かつ「物件IDが紐づいていない」場合のみセットアップへ
+      // ADMIN, SHOP, MANAGER 等は物件IDがなくてもここをスルーして表示を継続します
       if (role === 'USER' && !prof?.property_id) {
         console.log('Redirecting to Setup (User without property)');
+        // 確実に遷移させるため location.href を使用
         window.location.href = '/resident/setup';
         return;
       }
@@ -80,7 +83,7 @@ export default function ResidentDashboard() {
         setTrashSchedules(trashData || []);
       }
 
-      // 3. 近隣店舗広告（静的サンプル）
+      // 3. 近隣店舗広告（サンプルデータ）
       setAds([
         { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
         { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
