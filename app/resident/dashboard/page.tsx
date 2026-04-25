@@ -232,10 +232,10 @@ export default function ResidentDashboard() {
         <section className="bg-indigo-900 rounded-[3rem] shadow-2xl border border-indigo-800 overflow-hidden text-white relative">
           <div className="absolute top-0 right-0 p-4 opacity-10 text-4xl">📬</div>
           <div className="p-8">
-            <h2 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6 italic">ぽすっと重要告知</h2>
+            <h2 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6 italic">ポスト</h2>
             {postingNotices.length > 0 ? (
               <div className="space-y-4">
-                <div className="inline-block px-2 py-0.5 bg-indigo-500 text-[8px] font-black rounded-full uppercase mb-2">ポスティング業者より</div>
+                <div className="inline-block px-2 py-0.5 bg-indigo-500 text-[8px] font-black rounded-full uppercase mb-2">ポスト</div>
                 <h3 className="text-lg font-black leading-tight mb-2">{postingNotices[0].title}</h3>
                 <p className="text-[12px] text-indigo-100 leading-relaxed opacity-90">{postingNotices[0].content}</p>
               </div>
