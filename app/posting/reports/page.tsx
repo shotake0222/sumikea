@@ -7,7 +7,7 @@ export default function PostingReportsPage() {
   const router = useRouter();
 
   return (
-    /* AdminLayoutの型定義エラーを回避するため、許可されている"ADMIN"を一時的に使用 */
+    /* AdminLayoutの型定義エラーを回避するため、"ADMIN"を継続使用 */
     <AdminLayout userType="ADMIN">
       <div className="p-6 md:p-10 bg-[#F8FAFC] min-h-screen">
         
@@ -18,25 +18,25 @@ export default function PostingReportsPage() {
               onClick={() => router.back()}
               className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 flex items-center gap-2 hover:translate-x-[-4px] transition-transform"
             >
-              ← Back to Dashboard
+              ← ダッシュボードへ戻る
             </button>
             <h1 className="text-5xl font-black text-slate-900 tracking-tighter italic uppercase leading-none">
-              Analytics <span className="text-indigo-600">Deep Dive</span>
+              分析 <span className="text-indigo-600">レポート</span>
             </h1>
           </div>
           <div className="flex gap-3">
-            <button className="bg-white border border-slate-200 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition">Export PDF</button>
-            <button className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition shadow-lg">Download CSV</button>
+            <button className="bg-white border border-slate-200 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition">PDF 書き出し</button>
+            <button className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition shadow-lg">CSV ダウンロード</button>
           </div>
         </header>
 
         {/* 統計概要 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[
-            { label: 'Avg Engagement Time', value: '1m 42s', color: 'text-slate-900' },
-            { label: 'Unique Users', value: '12,403', color: 'text-indigo-600' },
-            { label: 'Conversion Rate', value: '4.2%', color: 'text-green-500' },
-            { label: 'Bounce Rate', value: '28%', color: 'text-orange-500' },
+            { label: '平均閲覧時間', value: '1分 42秒', color: 'text-slate-900' },
+            { label: 'ユニークユーザー', value: '12,403', color: 'text-indigo-600' },
+            { label: 'コンバージョン率', value: '4.2%', color: 'text-green-500' },
+            { label: '直帰率', value: '28%', color: 'text-orange-500' },
           ].map((stat, i) => (
             <div key={i} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{stat.label}</p>
@@ -45,10 +45,12 @@ export default function PostingReportsPage() {
           ))}
         </div>
 
-        {/* 視覚化セクション */}
+        {/* データ視覚化セクション */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* 閲覧推移グラフ */}
           <div className="lg:col-span-2 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm min-h-[400px] flex flex-col">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-10">Engagement Timeline</h3>
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-10">エンゲージメント・タイムライン</h3>
             <div className="flex-1 flex items-end gap-2 px-2">
               {[40, 70, 45, 90, 65, 80, 100, 50, 70, 85, 60, 75, 95].map((h, i) => (
                 <div key={i} className="flex-1 bg-indigo-50 rounded-t-xl relative group cursor-pointer" style={{ height: `${h}%` }}>
@@ -60,18 +62,19 @@ export default function PostingReportsPage() {
               ))}
             </div>
             <div className="flex justify-between mt-6 text-[8px] font-black text-slate-400 uppercase tracking-widest italic px-2">
-              <span>Mon</span><span>Wed</span><span>Fri</span><span>Sun</span>
+              <span>月曜日</span><span>水曜日</span><span>金曜日</span><span>日曜日</span>
             </div>
           </div>
 
+          {/* デモグラフィック内訳 */}
           <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
-            <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-10 relative z-10">Demographic Split</h3>
+            <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-10 relative z-10">居住者層の内訳</h3>
             <div className="space-y-8 relative z-10">
               {[
-                { label: 'Family', val: 55, color: 'bg-indigo-500' },
-                { label: 'Single', val: 25, color: 'bg-blue-400' },
-                { label: 'Senior', val: 15, color: 'bg-purple-400' },
-                { label: 'High-Income', val: 5, color: 'bg-emerald-400' },
+                { label: 'ファミリー層', val: 55, color: 'bg-indigo-500' },
+                { label: '単身者層', val: 25, color: 'bg-blue-400' },
+                { label: 'シニア層', val: 15, color: 'bg-purple-400' },
+                { label: '高所得層', val: 5, color: 'bg-emerald-400' },
               ].map((d, i) => (
                 <div key={i}>
                   <div className="flex justify-between text-[10px] font-black uppercase mb-2">
@@ -84,12 +87,13 @@ export default function PostingReportsPage() {
                 </div>
               ))}
             </div>
-            <div className="absolute -left-10 -bottom-10 text-[10rem] font-black italic opacity-5 select-none uppercase tracking-tighter">Target</div>
+            <div className="absolute -left-10 -bottom-10 text-[10rem] font-black italic opacity-5 select-none uppercase tracking-tighter">ターゲット</div>
           </div>
+
         </div>
 
         <footer className="mt-12 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto Analytics - Reporting Module
+          Posutto 分析モジュール - レポーティングシステム
         </footer>
 
       </div>

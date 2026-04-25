@@ -20,70 +20,49 @@ export default function ResidentDashboard() {
 
   useEffect(() => {
     fetchResidentData();
-  }, []); // router への依存を外し、初回マウント時のみ確実に実行
+  }, []);
 
   const fetchResidentData = async () => {
     try {
-      console.log('--- Dashboard Fetch Start ---');
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (!user) {
-        console.log('No user session found. Redirecting to login.');
         window.location.href = '/login?type=user';
         return;
       }
 
-      // プロフィール・物件情報の取得
       const { data: prof, error: profError } = await supabase
         .from('profiles')
         .select('*, properties(*)')
         .eq('id', user.id)
         .single();
 
-      if (profError) {
-        console.error('DB Fetch Error:', profError);
-      }
+      if (profError) console.error('DB Fetch Error:', profError);
 
-      // ロールの正規化
       const role = (prof?.role || 'USER').toUpperCase();
-      console.log('Current User Role:', role);
-      console.log('Property ID Status:', prof?.property_id ? 'Attached' : 'Empty');
 
-      // 【修正：リダイレクトのガード強化】
-      // ロールが「USER（一般住民）」であり、かつ「物件IDが紐づいていない」場合のみセットアップへ
-      // ADMIN, SHOP, MANAGER 等は物件IDがなくてもここをスルーして表示を継続します
       if (role === 'USER' && !prof?.property_id) {
-        console.log('Redirecting to Setup (User without property)');
-        // 確実に遷移させるため location.href を使用
         window.location.href = '/resident/setup';
         return;
       }
 
-      // データのセット
       setProfile(prof);
       setGarbageCalendars(prof?.monthly_garbage_calendars || {});
 
-      // 物件IDがある場合のみ、関連データをDBから取得
       if (prof?.property_id) {
-        // 1. 掲示板データの取得
         const { data: rawNotices } = await supabase
           .from('property_notifications')
           .select('*')
           .eq('property_id', prof.property_id)
           .order('created_at', { ascending: false });
-
         setNotices(rawNotices || []);
 
-        // 2. 今日のゴミ出し用データの取得
         const { data: trashData } = await supabase
           .from('trash_schedules')
           .select('*')
           .eq('property_id', prof.property_id);
-        
         setTrashSchedules(trashData || []);
       }
 
-      // 3. 近隣店舗広告（サンプルデータ）
       setAds([
         { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
         { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
@@ -96,7 +75,6 @@ export default function ResidentDashboard() {
     }
   };
 
-  // 今日のゴミ出しを判定
   const getTodayTrash = () => {
     const dayMap = ["日", "月", "火", "水", "木", "金", "土"];
     const todayStr = dayMap[new Date().getDay()];
@@ -105,7 +83,6 @@ export default function ResidentDashboard() {
 
   const todayTrash = getTodayTrash();
 
-  // カレンダーのアップロード処理
   const handleCalendarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -156,7 +133,7 @@ export default function ResidentDashboard() {
   return (
     <div className="max-w-md mx-auto bg-[#F8FAFC] min-h-screen pb-40 font-sans overflow-x-hidden">
       
-      {/* ヒーローヘッダー */}
+      {/* ヘッダー */}
       <div className="bg-slate-900 p-10 rounded-b-[3.5rem] text-white shadow-2xl relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-2">
@@ -174,72 +151,60 @@ export default function ResidentDashboard() {
 
       <div className="p-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 今日のゴミ出し */}
-        <section>
-          <div className="flex justify-between items-end px-2 mb-4">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Today's Trash</h2>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2.5rem] p-6 shadow-xl text-white flex items-center gap-4">
-            <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl">
-              {todayTrash.length > 0 ? "🚮" : "🍃"}
-            </div>
-            <div>
-              <p className="text-[10px] font-black opacity-80 uppercase tracking-widest">
-                {new Date().toLocaleDateString('ja-JP', { weekday: 'long' })}の収集
-              </p>
-              <h3 className="text-xl font-black italic">
-                {todayTrash.length > 0 
-                  ? todayTrash.map(t => t.trash_type).join('・') 
-                  : '本日の収集はありません'}
-              </h3>
+        {/* 今日のゴミ出し & カレンダー表示 */}
+        <section className="space-y-4">
+          <div className="flex justify-between items-end px-2">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Garbage Schedule</h2>
+            <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[200px]">
+              {[...Array(12)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => setSelectedMonth(i + 1)}
+                  className={`flex-shrink-0 w-8 h-8 rounded-lg font-black text-[9px] transition-all border 
+                    ${selectedMonth === i + 1 ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-300 border-slate-100'}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
             </div>
           </div>
-        </section>
 
-        {/* ゴミカレンダー表示 */}
-        <section className="bg-white rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 border border-white">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Garbage Calendar</h2>
-            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">{selectedMonth}月分</span>
-          </div>
+          {/* 曜日表示を削除し、カレンダーの中身をメインに表示 */}
+          <div className="bg-white rounded-[2.5rem] overflow-hidden shadow-xl shadow-slate-200 border border-white">
+            {/* 今日のゴミ種類だけを上部にチップで表示 */}
+            <div className="bg-emerald-500 p-4 text-white flex justify-between items-center">
+              <span className="text-[10px] font-black uppercase tracking-widest">Today's Trash</span>
+              <span className="text-sm font-black italic">
+                {todayTrash.length > 0 ? todayTrash.map(t => t.trash_type).join('・') : '収集なし'}
+              </span>
+            </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
-            {[...Array(12)].map((_, i) => (
-              <button
-                key={i + 1}
-                onClick={() => setSelectedMonth(i + 1)}
-                className={`flex-shrink-0 w-11 h-11 rounded-xl font-black text-xs transition-all border-2 
-                  ${selectedMonth === i + 1 ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-300 border-slate-100'}`}
-              >
-                {i + 1}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-[2rem] overflow-hidden border-2 border-slate-100 bg-slate-50 min-h-[200px] flex items-center justify-center relative">
-            {garbageCalendars[selectedMonth] ? (
-              <div className="w-full h-full">
-                {garbageCalendars[selectedMonth].toLowerCase().endsWith('.pdf') ? (
-                  <iframe 
-                    src={garbageCalendars[selectedMonth]} 
-                    className="w-full h-[300px] border-none"
-                    title="PDF Calendar"
-                  />
-                ) : (
-                  <img 
-                    src={garbageCalendars[selectedMonth]} 
-                    alt="Calendar" 
-                    className="w-full h-auto object-contain cursor-pointer"
-                    onClick={() => window.open(garbageCalendars[selectedMonth], '_blank')}
-                  />
-                )}
-              </div>
-            ) : (
-              <div className="text-center p-10">
-                <p className="text-[11px] font-black text-slate-400 italic">カレンダー未登録</p>
-                <p className="text-[9px] text-slate-300 mt-1 uppercase tracking-tighter">下の「表登録」から追加できます</p>
-              </div>
-            )}
+            <div className="p-2 min-h-[250px] flex items-center justify-center bg-slate-50 relative">
+              {garbageCalendars[selectedMonth] ? (
+                <div className="w-full">
+                  {garbageCalendars[selectedMonth].toLowerCase().endsWith('.pdf') ? (
+                    <iframe 
+                      src={garbageCalendars[selectedMonth]} 
+                      className="w-full h-[350px] border-none rounded-xl"
+                      title="PDF Calendar"
+                    />
+                  ) : (
+                    <img 
+                      src={garbageCalendars[selectedMonth]} 
+                      alt={`${selectedMonth}月カレンダー`} 
+                      className="w-full h-auto object-contain rounded-xl"
+                      onClick={() => window.open(garbageCalendars[selectedMonth], '_blank')}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="text-center p-10">
+                  <div className="text-3xl mb-2 opacity-20">📅</div>
+                  <p className="text-[11px] font-black text-slate-400 italic">{selectedMonth}月のカレンダー未登録</p>
+                  <p className="text-[9px] text-slate-300 mt-1 uppercase tracking-tighter">下の「表登録」ボタンから画像を追加してください</p>
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
