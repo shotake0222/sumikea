@@ -11,6 +11,7 @@ export default function ManagementNoticePage() {
   // --- 状態管理 ---
   const [managedProperties, setManagedProperties] = useState<any[]>([]);
   const [selectedProperty, setSelectedProperty] = useState('');
+  const [selectedPropertyData, setSelectedPropertyData] = useState<any>(null);
   const [recentNotices, setRecentNotices] = useState<any[]>([]);
   
   // 配信設定用
@@ -33,6 +34,7 @@ export default function ManagementNoticePage() {
 
   // モーダル管理用
   const [showPreview, setShowPreview] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
   const [showReadList, setShowReadList] = useState<{show: boolean, users: any[]}>({show: false, users: []});
 
   // --- 初期データ取得 ---
@@ -49,18 +51,19 @@ export default function ManagementNoticePage() {
         
         let propertyList: any[] = [];
         if (role === 'ADMIN') {
-          const { data: allProps } = await supabase.from('properties').select('id, name');
+          const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
           if (allProps) {
-            propertyList = allProps.map(p => ({ property_id: p.id, properties: { name: p.name } }));
+            propertyList = allProps.map(p => ({ property_id: p.id, properties: { name: p.name, invite_code: p.invite_code } }));
           }
         } else {
-          const { data: managerProps } = await supabase.from('property_managers').select('property_id, properties(name)').eq('user_id', user.id);
+          const { data: managerProps } = await supabase.from('property_managers').select('property_id, properties(name, invite_code)').eq('user_id', user.id);
           if (managerProps) propertyList = managerProps;
         }
         
         if (propertyList.length > 0) {
           setManagedProperties(propertyList);
           setSelectedProperty(propertyList[0].property_id);
+          setSelectedPropertyData(propertyList[0].properties);
           fetchNoticeHistory(propertyList[0].property_id);
         }
       } catch (err) {
@@ -98,6 +101,13 @@ export default function ManagementNoticePage() {
     } catch (err) {
       console.error('履歴取得エラー:', err);
     }
+  };
+
+  const handlePropertyChange = (propId: string) => {
+    setSelectedProperty(propId);
+    const found = managedProperties.find(p => p.property_id === propId);
+    if (found) setSelectedPropertyData(found.properties);
+    fetchNoticeHistory(propId);
   };
 
   const handleShowReadDetails = async (noticeId: string) => {
@@ -158,6 +168,11 @@ export default function ManagementNoticePage() {
     setIsSubmitting(false);
   };
 
+  const getQrCodeUrl = () => {
+    const baseUrl = "https://posutto.vercel.app/login?type=user";
+    return `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(baseUrl)}&choe=UTF-8`;
+  };
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400 animate-pulse">
       配信環境をロード中...
@@ -166,9 +181,16 @@ export default function ManagementNoticePage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden; }
+          #print-area, #print-area * { visibility: visible; }
+          #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none !important; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
       <div className="max-w-7xl mx-auto">
-        
-        {/* ヘッダー */}
         <header className="mb-10 flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
           <div className="flex-1">
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">
@@ -176,27 +198,36 @@ export default function ManagementNoticePage() {
             </h1>
           </div>
           
-          <div className="w-full lg:w-96 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center gap-4">
-            <div className="flex-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">配信対象の物件</label>
-              <select 
-                className="w-full bg-transparent font-bold text-slate-700 outline-none cursor-pointer text-lg"
-                value={selectedProperty}
-                onChange={(e) => { setSelectedProperty(e.target.value); fetchNoticeHistory(e.target.value); }}
-              >
-                {managedProperties.map((p, i) => (
-                  <option key={p.property_id || i} value={p.property_id}>{p.properties?.name}</option>
-                ))}
-              </select>
+          <div className="w-full lg:w-[450px] flex gap-4">
+            <div className="flex-1 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">配信対象の物件</label>
+                <select 
+                  className="w-full bg-transparent font-bold text-slate-700 outline-none cursor-pointer text-lg"
+                  value={selectedProperty}
+                  onChange={(e) => handlePropertyChange(e.target.value)}
+                >
+                  {managedProperties.map((p, i) => (
+                    <option key={p.property_id || i} value={p.property_id}>{p.properties?.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-xl">🏢</div>
             </div>
-            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-xl">🏢</div>
+
+            <button 
+              onClick={() => setShowPrintModal(true)}
+              className="bg-slate-900 text-white px-6 rounded-[2rem] shadow-lg hover:bg-blue-600 transition-all flex flex-col items-center justify-center gap-1 group"
+            >
+              <span className="text-xl group-hover:scale-110 transition-transform">🖨️</span>
+              <span className="text-[9px] font-black uppercase tracking-tighter">案内を印刷</span>
+            </button>
           </div>
         </header>
 
         <div className="flex flex-col xl:flex-row gap-8">
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-2xl shadow-slate-200/40 border border-slate-100 space-y-10">
-              
               <div className="flex justify-between items-center border-b border-slate-50 pb-8">
                 <div className="flex bg-slate-100 p-1 rounded-2xl">
                   {[
@@ -275,7 +306,6 @@ export default function ManagementNoticePage() {
             </form>
           </div>
 
-          {/* 右サイド：履歴 */}
           <div className="w-full xl:w-96 space-y-6">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-10">配信履歴</h3>
@@ -310,21 +340,99 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
-        {/* モーダル：既読詳細 */}
-        {showReadList.show && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6" onClick={() => setShowReadList({ ...showReadList, show: false })}>
-            <div className="bg-white w-full max-w-md rounded-[3rem] p-10 space-y-6" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-center">
-                <h4 className="text-xl font-black italic">閲覧ユーザー</h4>
-                <button onClick={() => setShowReadList({ ...showReadList, show: false })} className="text-slate-400">✕</button>
+        {/* 印刷用モーダル */}
+        {showPrintModal && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center justify-center p-4 md:p-6 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
+            <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-end mb-4 gap-4 no-print">
+                <button onClick={() => window.print()} className="bg-blue-600 text-white px-8 py-3 rounded-full font-black shadow-xl hover:bg-blue-700 transition-all flex items-center gap-2">
+                   <span>🖨️</span> 印刷画面を開く
+                </button>
+                <button onClick={() => setShowPrintModal(false)} className="bg-white/20 text-white px-6 py-3 rounded-full font-black backdrop-blur-md">閉じる ✕</button>
               </div>
-              <div className="max-h-96 overflow-y-auto space-y-2 pr-2">
-                {showReadList.users.length > 0 ? showReadList.users.map((u, i) => (
-                  <div key={i} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
-                    <span className="font-bold text-sm">{u.profiles?.room_number || '---'}号室 {u.profiles?.full_name}様</span>
-                    <span className="text-[9px] font-bold text-slate-400">{new Date(u.read_at).toLocaleString()}</span>
+
+              <div id="print-area" className="bg-white p-8 md:p-16 shadow-2xl rounded-sm text-slate-900 border-[12px] border-blue-600">
+                <div className="text-center mb-12">
+                  <h2 className="text-5xl font-black italic tracking-tighter text-blue-600 mb-2 uppercase">Posutto</h2>
+                  <p className="text-xl font-bold tracking-widest text-slate-400 italic">Resident Portal Invitation</p>
+                </div>
+
+                <div className="border-y-4 border-slate-100 py-8 mb-10 text-center">
+                  <p className="text-sm font-black text-slate-400 mb-2">対象物件</p>
+                  <h3 className="text-4xl font-black tracking-tight mb-8">{selectedPropertyData?.name}</h3>
+                  
+                  <div className="bg-slate-50 inline-block p-8 rounded-[3rem] border border-slate-100">
+                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3">あなたの招待コード</p>
+                    <div className="text-6xl font-black tracking-[0.2em] italic text-slate-900 select-all">
+                      {selectedPropertyData?.invite_code || '---'}
+                    </div>
                   </div>
-                )) : <p className="text-center text-slate-400 py-10">既読データなし</p>}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center mb-16">
+                  <div className="space-y-6">
+                    <h4 className="text-2xl font-black border-l-8 border-blue-600 pl-4 mb-6">ご利用開始の手順</h4>
+                    <div className="space-y-4">
+                      {[
+                        { step: '1', title: 'スキャン', desc: '右のQRコードをスマホで読み取ります。' },
+                        { step: '2', title: 'ログイン', desc: '画面に従い、ログイン・新規登録をします。' },
+                        { step: '3', title: 'コード入力', desc: '上記の招待コードを入力して物件と連携！' }
+                      ].map((item) => (
+                        <div key={item.step} className="flex gap-4 items-start">
+                          <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shrink-0">{item.step}</span>
+                          <div>
+                            <p className="font-black text-lg">{item.title}</p>
+                            <p className="text-xs text-slate-500 font-bold leading-relaxed">{item.desc}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center text-center space-y-4">
+                    <div className="p-4 bg-white border-4 border-slate-900 rounded-[2.5rem] shadow-xl">
+                      <img src={getQrCodeUrl()} alt="Invitation QR" className="w-40 h-40" />
+                    </div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Scan to access</p>
+                  </div>
+                </div>
+
+                {/* 可愛いテイストの解説セクション */}
+                <div className="bg-blue-50/50 rounded-[3rem] p-10 border-2 border-dashed border-blue-200 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 text-4xl opacity-20">✨</div>
+                  <h4 className="text-center text-xl font-black text-blue-700 mb-8">マイページで、暮らしをもっと便利に。</h4>
+                  
+                  <div className="grid grid-cols-3 gap-6 relative z-10">
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-3xl mb-3 border border-blue-100">📮</div>
+                      <p className="text-xs font-black text-slate-700 mb-1">デジタルポスト</p>
+                      <p className="text-[9px] font-bold text-slate-400 leading-tight">掲示板や配布物を<br/>スマホでいつでも確認</p>
+                    </div>
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-3xl mb-3 border border-blue-100">🗑️</div>
+                      <p className="text-xs font-black text-slate-700 mb-1">ゴミカレンダー</p>
+                      <p className="text-[9px] font-bold text-slate-400 leading-tight">収集日をWebでチェック<br/>出し忘れも防げます</p>
+                    </div>
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-3xl mb-3 border border-blue-100">🏘️</div>
+                      <p className="text-xs font-black text-slate-700 mb-1">近隣・地域情報</p>
+                      <p className="text-[9px] font-bold text-slate-400 leading-tight">マンション周辺の<br/>役立つ情報を集約</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex items-center justify-center gap-3">
+                    <div className="h-px bg-blue-200 flex-1"></div>
+                    <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest italic">Posutto Experience</span>
+                    <div className="h-px bg-blue-200 flex-1"></div>
+                  </div>
+                </div>
+
+                <div className="mt-12 text-center">
+                  <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                    本サービスは管理会社からのお知らせ、ゴミカレンダー等をデジタルで確認できるサービスです。<br/>
+                    紙の配布物を減らし、住み心地の良いマンション環境を創ります。
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -345,6 +453,26 @@ export default function ManagementNoticePage() {
                 <div className="p-6 border-t border-slate-50">
                   <div className="w-full bg-blue-600 h-12 rounded-2xl flex items-center justify-center text-white text-xs font-black">確認しました</div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* モーダル：既読詳細 */}
+        {showReadList.show && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6" onClick={() => setShowReadList({ ...showReadList, show: false })}>
+            <div className="bg-white w-full max-w-md rounded-[3rem] p-10 space-y-6" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center">
+                <h4 className="text-xl font-black italic">閲覧ユーザー</h4>
+                <button onClick={() => setShowReadList({ ...showReadList, show: false })} className="text-slate-400">✕</button>
+              </div>
+              <div className="max-h-96 overflow-y-auto space-y-2 pr-2">
+                {showReadList.users.length > 0 ? showReadList.users.map((u, i) => (
+                  <div key={i} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+                    <span className="font-bold text-sm">{u.profiles?.room_number || '---'}号室 {u.profiles?.full_name}様</span>
+                    <span className="text-[9px] font-bold text-slate-400">{new Date(u.read_at).toLocaleString()}</span>
+                  </div>
+                )) : <p className="text-center text-slate-400 py-10">既読データなし</p>}
               </div>
             </div>
           </div>
