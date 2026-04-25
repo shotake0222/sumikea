@@ -9,6 +9,13 @@ export default function ResidentSetup() {
   const [properties, setProperties] = useState<any[]>([]);
   const [selectedProperty, setSelectedProperty] = useState('');
   const [roomNumber, setRoomNumber] = useState('');
+  
+  // 完全版デモグラフィック・ステート
+  const [ageGroup, setAgeGroup] = useState('');
+  const [gender, setGender] = useState('');
+  const [occupation, setOccupation] = useState(''); // 職業
+  const [hasPet, setHasPet] = useState<boolean | null>(null); // ペットの有無
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -21,7 +28,6 @@ export default function ResidentSetup() {
           return;
         }
 
-        // 物件リストを取得（デモグラ取得用）
         const { data: propData } = await supabase
           .from('properties')
           .select('id, name');
@@ -37,8 +43,9 @@ export default function ResidentSetup() {
   }, [router]);
 
   const handleSave = async () => {
-    if (!selectedProperty || !roomNumber) {
-      alert('物件と部屋番号を入力してください');
+    // 全項目入力チェック
+    if (!selectedProperty || !roomNumber || !ageGroup || !gender || !occupation || hasPet === null) {
+      alert('すべての項目を入力してください（ペットの有無も含む）');
       return;
     }
 
@@ -47,22 +54,26 @@ export default function ResidentSetup() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // profilesテーブルを更新（デモグラ保存）
+      // profilesテーブルを更新（完全デモグラ情報）
       const { error } = await supabase
         .from('profiles')
         .update({
           property_id: selectedProperty,
-          room_number: roomNumber
+          room_number: roomNumber,
+          age_group: ageGroup,
+          gender: gender,
+          occupation: occupation,
+          has_pet: hasPet
         })
         .eq('id', user.id);
 
       if (error) throw error;
 
-      alert('登録が完了しました！');
-      router.push('/resident/dashboard'); // 保存完了後にマイページへ
+      alert('セットアップが完了しました！');
+      window.location.href = '/resident/dashboard'; 
     } catch (err) {
       console.error(err);
-      alert('保存に失敗しました');
+      alert('保存に失敗しました。DBのカラム名（occupation, has_pet 等）を確認してください。');
     } finally {
       setSaving(false);
     }
@@ -75,77 +86,104 @@ export default function ResidentSetup() {
   );
 
   return (
-    <div className="max-w-md mx-auto bg-white min-h-screen p-8 pt-24 font-sans overflow-x-hidden">
+    <div className="max-w-md mx-auto bg-white min-h-screen p-8 pt-16 font-sans overflow-x-hidden pb-24">
       
       {/* ヘッダー */}
-      <div className="mb-12">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Initial Setup</span>
-        </div>
-        <h1 className="text-4xl font-black tracking-tighter italic text-slate-900">
-           Welcome.
-        </h1>
-        <p className="mt-2 text-sm font-bold text-slate-500 leading-relaxed">
-          居住を開始するために、<br />マンションと部屋番号を教えてください。
-        </p>
+      <div className="mb-10 text-center">
+        <h1 className="text-4xl font-black tracking-tighter italic text-slate-900 mb-2">Setup.</h1>
+        <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em]">居住者情報の登録</p>
       </div>
 
-      <div className="space-y-8">
+      <div className="space-y-10">
         
-        {/* 物件選択 */}
-        <section className="space-y-3">
-          <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest ml-1">
-            Property / 物件
-          </label>
-          <div className="relative">
+        {/* 物件・部屋 */}
+        <div className="space-y-6">
+          <section className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Property</label>
             <select 
               value={selectedProperty}
               onChange={(e) => setSelectedProperty(e.target.value)}
-              className="w-full bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] p-5 font-bold text-slate-900 focus:border-blue-500 outline-none transition-all appearance-none"
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none appearance-none"
             >
-              <option value="">物件を選択してください</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              <option value="">物件を選択</option>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 font-bold">
-              ▼
-            </div>
-          </div>
-        </section>
+          </section>
 
-        {/* 部屋番号入力 */}
-        <section className="space-y-3">
-          <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest ml-1">
-            Room Number / 部屋番号
-          </label>
-          <input 
-            type="text" 
-            placeholder="例: 101"
-            value={roomNumber}
-            onChange={(e) => setRoomNumber(e.target.value)}
-            className="w-full bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] p-5 font-bold text-slate-900 focus:border-blue-500 outline-none transition-all"
-          />
-        </section>
-
-        {/* 保存ボタン */}
-        <div className="pt-4">
-          <button 
-            onClick={handleSave}
-            disabled={saving}
-            className={`w-full bg-slate-900 text-white font-black py-6 rounded-[2.5rem] shadow-2xl shadow-slate-200 active:scale-95 transition-all 
-              ${saving ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`}
-          >
-            {saving ? 'SAVING...' : '利用を開始する'}
-          </button>
+          <section className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Room Number</label>
+            <input 
+              type="text" placeholder="部屋番号 (例: 101)" value={roomNumber}
+              onChange={(e) => setRoomNumber(e.target.value)}
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none"
+            />
+          </section>
         </div>
 
-      </div>
+        <hr className="border-slate-100" />
 
-      <footer className="mt-20 text-[9px] text-slate-300 text-center font-bold uppercase tracking-[0.4em]">
-        Posutto Onboarding v1.5
-      </footer>
+        {/* 属性セクション */}
+        <div className="space-y-8">
+          {/* 年代・性別 */}
+          <div className="grid grid-cols-2 gap-4">
+            <section className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Age Group</label>
+              <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-xs">
+                <option value="">年代</option>
+                {['10代', '20代', '30代', '40代', '50代', '60代以上'].map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </section>
+            <section className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Gender</label>
+              <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-xs">
+                <option value="">性別</option>
+                {['男性', '女性', '回答なし'].map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </section>
+          </div>
+
+          {/* 職業 */}
+          <section className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Occupation / 職業</label>
+            <select 
+              value={occupation} onChange={(e) => setOccupation(e.target.value)}
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none"
+            >
+              <option value="">選択してください</option>
+              {['会社員', '公務員', '自営業・自由業', '専業主婦・主夫', '学生', 'パート・アルバイト', 'その他'].map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </section>
+
+          {/* ペットの有無（トグルボタン風） */}
+          <section className="space-y-3">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Do you have a pet? / ペットの有無</label>
+            <div className="flex gap-4">
+              {[ {label: '飼っている', value: true, emoji: '🐶'}, {label: '飼っていない', value: false, emoji: '🏠'} ].map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => setHasPet(item.value)}
+                  className={`flex-1 p-4 rounded-2xl font-bold text-sm transition-all border-2 flex flex-col items-center gap-1
+                    ${hasPet === item.value ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                >
+                  <span className="text-xl">{item.emoji}</span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* 保存 */}
+        <div className="pt-6">
+          <button 
+            onClick={handleSave} disabled={saving}
+            className={`w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] shadow-2xl active:scale-95 transition-all 
+              ${saving ? 'opacity-50' : 'hover:bg-blue-600'}`}
+          >
+            {saving ? 'SAVING...' : 'この内容で開始する'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
