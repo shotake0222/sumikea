@@ -17,7 +17,7 @@ export default function ManagementNoticePage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
-  const [targetAudience] = useState('resident'); // 住民宛に固定
+  const [targetAudience] = useState('resident');
   const [sendPush, setSendPush] = useState(false); 
   
   const [isPermanent, setIsPermanent] = useState(false);
@@ -33,10 +33,20 @@ export default function ManagementNoticePage() {
   useEffect(() => {
     const fetchAuthAndData = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { router.push('/login?type=manager'); return; }
+        // 1. 現在のセッション（ログインユーザー）を取得
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) { 
+          router.push('/login?type=manager'); 
+          return; 
+        }
 
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+        // 2. ユーザーの権限（role）を確認
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+
         const role = profile?.role?.toUpperCase() || 'USER';
         
         if (role !== 'ADMIN' && role !== 'MANAGER') { 
@@ -45,8 +55,13 @@ export default function ManagementNoticePage() {
         }
         
         let propertyList: any[] = [];
+
+        // 3. 権限に基づいて、このユーザーに紐づく物件を抽出
         if (role === 'ADMIN') {
-          const { data: allProps } = await supabase.from('properties').select('id, name');
+          // ADMINは全ての物件を取得可能
+          const { data: allProps } = await supabase
+            .from('properties')
+            .select('id, name');
           if (allProps) {
             propertyList = allProps.map(p => ({
               property_id: p.id,
@@ -54,20 +69,22 @@ export default function ManagementNoticePage() {
             }));
           }
         } else {
+          // MANAGERは「property_managers」テーブルで自分のIDと紐づいている物件のみ取得
           const { data: managerProps } = await supabase
             .from('property_managers')
             .select('property_id, properties(name)')
-            .eq('user_id', user.id);
+            .eq('user_id', user.id); // 👈 ログイン中のユーザーIDでフィルタリング
           if (managerProps) propertyList = managerProps;
         }
         
+        // 4. 初期値をセット
         if (propertyList.length > 0) {
           setManagedProperties(propertyList);
           setSelectedProperty(propertyList[0].property_id);
           fetchNoticeHistory(propertyList[0].property_id);
         }
       } catch (err) {
-        console.error(err);
+        console.error('データ取得エラー:', err);
       } finally {
         setLoading(false);
       }
@@ -122,7 +139,7 @@ export default function ManagementNoticePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProperty) return alert('対象物件を選択してください');
+    if (!selectedProperty) return alert('配信先の物件を選択してください');
     setIsSubmitting(true);
     
     const { error } = await supabase.from('property_notifications').insert({
@@ -138,7 +155,7 @@ export default function ManagementNoticePage() {
     });
 
     if (!error) {
-      alert('住民へのお知らせ配信が完了しました' + (sendPush ? '（プッシュ通知を送信しました）' : ''));
+      alert('住民へのお知らせ配信が完了しました' + (sendPush ? '（通知送信済み）' : ''));
       setTitle(''); setContent(''); setPdfUrl('');
       fetchNoticeHistory(selectedProperty);
     } else {
@@ -151,7 +168,7 @@ export default function ManagementNoticePage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="text-center animate-pulse">
         <div className="w-12 h-12 bg-blue-600/20 rounded-full mx-auto mb-4" />
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">管理コンソールを起動中...</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">配信環境をロード中...</p>
       </div>
     </div>
   );
@@ -174,7 +191,7 @@ export default function ManagementNoticePage() {
           
           <div className="w-full lg:w-96 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center gap-4">
             <div className="flex-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 block ml-1">操作対象の物件</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 block ml-1">配信対象の物件</label>
               <select 
                 className="w-full bg-transparent font-bold text-slate-700 outline-none cursor-pointer text-lg"
                 value={selectedProperty}
@@ -188,7 +205,7 @@ export default function ManagementNoticePage() {
                 ))}
               </select>
             </div>
-            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-xl">🏢</div>
+            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-xl text-blue-600 font-bold">🏢</div>
           </div>
         </header>
 
@@ -200,7 +217,7 @@ export default function ManagementNoticePage() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-50 pb-10">
                 <h2 className="text-xl font-black text-slate-800 flex items-center gap-4 tracking-tighter italic text-nowrap">
                   <span className="w-12 h-12 bg-blue-600 text-white rounded-[1.5rem] flex items-center justify-center text-lg shadow-xl shadow-blue-200">✉️</span> 
-                  新規お知らせ作成
+                  お知らせを作成
                 </h2>
                 <div className="bg-blue-50 px-6 py-3 rounded-2xl border border-blue-100">
                   <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic">配信対象：全住民</span>
@@ -258,7 +275,7 @@ export default function ManagementNoticePage() {
                   </div>
                   
                   <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">添付資料 (PDF/画像)</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">資料・写真の添付</label>
                     <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[2.5rem] h-64 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
                       {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
                         <div className="text-center p-6">
@@ -283,7 +300,7 @@ export default function ManagementNoticePage() {
                 />
                 <label htmlFor="push-notify" className="flex-1 cursor-pointer">
                   <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">即時プッシュ通知を送信</p>
-                  <p className="text-[10px] text-blue-600 font-bold opacity-70">住民のスマートフォンへ即座に通知を届けます</p>
+                  <p className="text-[10px] text-blue-600 font-bold opacity-70">住民のスマホへ一斉通知を飛ばします</p>
                 </label>
               </div>
 
@@ -298,7 +315,7 @@ export default function ManagementNoticePage() {
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center justify-between mb-10">
                 <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic">最新の配信履歴</h3>
-                <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">住民向け</span>
+                <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold italic">RECORDS</span>
               </div>
               
               <div className="space-y-10">
@@ -316,7 +333,7 @@ export default function ManagementNoticePage() {
                         <div className="flex-1">
                           <p className="text-sm font-black text-slate-800 line-clamp-1 mb-1">{notice.title}</p>
                           <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                            <span className="uppercase text-blue-600/60">住民宛</span>
+                            <span className="uppercase text-blue-600/60 font-black">住民宛</span>
                             <span>•</span>
                             <span>{new Date(notice.created_at).toLocaleDateString()}</span>
                           </div>
@@ -326,7 +343,7 @@ export default function ManagementNoticePage() {
                       {/* 既読率インジケーター */}
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <div className="flex justify-between items-end mb-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">閲覧数</span>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">閲覧状況</span>
                           <span className="text-xs font-black text-blue-600">
                             {notice.actual_read_count} / {notice.total_residents}人
                           </span>
@@ -349,7 +366,7 @@ export default function ManagementNoticePage() {
               </div>
 
               <button className="w-full mt-10 py-5 border-2 border-slate-50 rounded-2xl text-[10px] font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">
-                すべての履歴を表示 →
+                履歴をすべて確認する →
               </button>
             </div>
           </div>
