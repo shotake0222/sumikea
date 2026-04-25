@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '../../../lib/supabase'; // 階層に注意
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { adSchema } from '../../../lib/validations';
@@ -14,6 +14,12 @@ export default function PostingDigitalDashboard() {
   const [targetProperties, setTargetProperties] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
+
+  // ✅ 動的統計データ用のステート
+  const [totalStats, setTotalStats] = useState({
+    impressions: 0,
+    ctr: '0.00'
+  });
 
   // 状態管理
   const [pdfUrls, setPdfUrls] = useState<string[]>([]);
@@ -45,15 +51,31 @@ export default function PostingDigitalDashboard() {
           return; 
         }
 
+        // 1. 物件リスト取得
         const { data: props } = await supabase.from('properties').select('id, name');
         setTargetProperties(props || []);
 
+        // 2. 最近のキャンペーン取得
         const { data: campaigns } = await supabase
           .from('digital_flyers')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(3);
         setRecentCampaigns(campaigns || []);
+
+        // ✅ 3. インプレッション数とCTRのリアルタイム集計
+        const { data: adStats } = await supabase.from('local_ad_stats').select('views_count, clicks_count');
+        
+        if (adStats) {
+          const totalViews = adStats.reduce((sum, item) => sum + (item.views_count || 0), 0);
+          const totalClicks = adStats.reduce((sum, item) => sum + (item.clicks_count || 0), 0);
+          const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(2) : '0.00';
+          
+          setTotalStats({
+            impressions: totalViews,
+            ctr: ctr
+          });
+        }
 
       } catch (err) {
         console.error(err);
@@ -130,14 +152,16 @@ export default function PostingDigitalDashboard() {
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">総インプレッション数</p>
-              <p className="text-3xl font-black text-slate-900 tracking-tighter">42,802</p>
+              {/* ✅ リアルデータを反映 */}
+              <p className="text-3xl font-black text-slate-900 tracking-tighter">{totalStats.impressions.toLocaleString()}</p>
             </div>
-            <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full">↑ 12.5%</div>
+            <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full">LIVE</div>
           </div>
           <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center relative overflow-hidden">
             <div className="relative z-10">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">平均クリック率 (CTR)</p>
-              <p className="text-3xl font-black tracking-tighter">8.42%</p>
+              {/* ✅ リアルデータを反映 */}
+              <p className="text-3xl font-black tracking-tighter">{totalStats.ctr}%</p>
             </div>
             <div className="absolute -right-4 -bottom-4 text-6xl italic font-black opacity-10">%</div>
           </div>
@@ -243,7 +267,8 @@ export default function PostingDigitalDashboard() {
                         <h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4>
                       </div>
                       <div className="text-right">
-                        <p className="text-xl font-black text-slate-900 leading-none">1,240</p>
+                        {/* 仮でインプレッションを表示 */}
+                        <p className="text-xl font-black text-slate-900 leading-none">{(1200 - i * 100).toLocaleString()}</p>
                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p>
                       </div>
                     </div>
