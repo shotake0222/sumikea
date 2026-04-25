@@ -18,7 +18,6 @@ export default function ManagementNoticePage() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
   const [targetAudience] = useState('resident');
-  const [sendPush, setSendPush] = useState(false); 
   const [status, setStatus] = useState<'published' | 'draft' | 'scheduled'>('published');
   
   const [isPermanent, setIsPermanent] = useState(false);
@@ -101,7 +100,6 @@ export default function ManagementNoticePage() {
     }
   };
 
-  // 既読詳細の取得 (機能4: 既読詳細表示)
   const handleShowReadDetails = async (noticeId: string) => {
     const { data } = await supabase
       .from('notification_reads')
@@ -124,20 +122,17 @@ export default function ManagementNoticePage() {
     }
   };
 
-  // --- 送信処理 (機能1: バリデーション / 機能2: 予約 / 機能3: 下書き / Webhook連携) ---
   const handleSubmit = async (e: React.FormEvent, forcedStatus?: typeof status) => {
     e.preventDefault();
     const targetStatus = forcedStatus || status;
 
-    // バリデーション
     if (!selectedProperty) return alert('配信先の物件を選択してください');
-    if (title.length < 5) return alert('タイトルは5文字以上入力してください（住民の視認性向上のため）');
+    if (title.length < 5) return alert('タイトルは5文字以上入力してください');
     if (!content) return alert('本文を入力してください');
     if (targetStatus === 'scheduled' && !scheduledAt) return alert('予約配信日時を設定してください');
 
     setIsSubmitting(true);
     
-    // 緊急カテゴリーの場合はタイトルに自動付与
     const finalTitle = category === 'urgent' && !title.includes('【重要】') ? `【重要】${title}` : title;
 
     const { error } = await supabase.from('property_notifications').insert({
@@ -150,17 +145,12 @@ export default function ManagementNoticePage() {
       is_permanent: isPermanent,
       expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
       scheduled_at: targetStatus === 'scheduled' ? new Date(scheduledAt).toISOString() : null,
-      status: targetStatus,
-      send_push: sendPush // 👈 ここが重要！Webhookがこのフラグを見て通知を飛ばします
+      status: targetStatus
     });
 
     if (!error) {
-      const successMsg = targetStatus === 'draft' 
-        ? '下書きとして保存しました' 
-        : '設定が完了しました' + (sendPush ? '（Webhookにより通知が配信されます）' : '');
-      
-      alert(successMsg);
-      setTitle(''); setContent(''); setPdfUrl(''); setStatus('published'); setSendPush(false); setShowPreview(false);
+      alert(targetStatus === 'draft' ? '下書きとして保存しました' : '住民へのお知らせ配信設定が完了しました');
+      setTitle(''); setContent(''); setPdfUrl(''); setStatus('published'); setShowPreview(false);
       fetchNoticeHistory(selectedProperty);
     } else {
       alert('エラー: ' + error.message);
@@ -207,7 +197,6 @@ export default function ManagementNoticePage() {
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-2xl shadow-slate-200/40 border border-slate-100 space-y-10">
               
-              {/* ステータス切り替え & プレビューボタン (機能: 下書き/予約/プレビュー) */}
               <div className="flex justify-between items-center border-b border-slate-50 pb-8">
                 <div className="flex bg-slate-100 p-1 rounded-2xl">
                   {[
@@ -222,7 +211,7 @@ export default function ManagementNoticePage() {
                   ))}
                 </div>
                 <button type="button" onClick={() => setShowPreview(true)} 
-                  className="text-[10px] font-black text-slate-400 hover:text-blue-600 flex items-center gap-2 italic uppercase transition-colors">
+                  className="text-[10px] font-black text-slate-400 hover:text-blue-600 flex items-center gap-2 italic uppercase">
                   送信前プレビューを表示 👁️
                 </button>
               </div>
@@ -241,185 +230,120 @@ export default function ManagementNoticePage() {
                 </div>
 
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">スケジュール管理</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">掲載期間設定</label>
                   <div className="bg-slate-50 p-6 rounded-[2rem] space-y-4 border border-slate-100">
                     {status === 'scheduled' && (
-                      <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <span className="text-[9px] font-bold text-blue-600 ml-1">配信予定日時を指定</span>
-                        <input type="datetime-local" className="w-full p-3 rounded-xl border-none font-bold text-sm shadow-sm outline-none focus:ring-2 focus:ring-blue-100" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-bold text-blue-600 ml-1">配信予定日時</span>
+                        <input type="datetime-local" className="w-full p-3 rounded-xl border-none font-bold text-sm outline-none shadow-sm" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
                       </div>
                     )}
                     <button type="button" onClick={() => setIsPermanent(!isPermanent)}
-                      className={`w-full py-4 rounded-xl text-[10px] font-black transition-all flex items-center justify-center gap-2 ${isPermanent ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>
-                      {isPermanent ? '✅ 常にトップに固定表示' : '自動非表示の日時を設定'}
+                      className={`w-full py-4 rounded-xl text-[10px] font-black transition-all ${isPermanent ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                      {isPermanent ? '✅ 常にトップに固定' : '掲載終了日時を指定する'}
                     </button>
                     {!isPermanent && (
-                      <input type="datetime-local" className="w-full p-4 rounded-xl border-none font-bold text-sm shadow-sm outline-none focus:ring-2 focus:ring-blue-100" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+                      <input type="datetime-local" className="w-full p-4 rounded-xl border-none font-bold text-sm shadow-sm outline-none" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
                     )}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">タイトル</label>
-                  <input className="w-full bg-slate-50 border-none p-7 rounded-[2rem] text-xl font-black text-slate-900 outline-none focus:ring-4 focus:ring-blue-50 transition-all placeholder:text-slate-200"
-                      value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：【重要】水害による点検のお知らせ" />
-                </div>
+                <input className="w-full bg-slate-50 border-none p-7 rounded-[2rem] text-xl font-black text-slate-900 outline-none focus:ring-4 focus:ring-blue-50 transition-all placeholder:text-slate-200"
+                    value={title} onChange={(e) => setTitle(e.target.value)} placeholder="配信タイトル（5文字以上）" />
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                  <div className="md:col-span-2 space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">本文内容</label>
-                    <textarea className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] h-64 text-slate-700 outline-none resize-none leading-relaxed focus:ring-4 focus:ring-blue-50 text-lg font-medium"
-                        value={content} onChange={(e) => setContent(e.target.value)} placeholder="住民の方へ伝えたい内容を詳しく..." />
-                  </div>
+                  <textarea className="md:col-span-2 w-full bg-slate-50 border-none p-8 rounded-[2.5rem] h-64 text-slate-700 outline-none resize-none leading-relaxed focus:ring-4 focus:ring-blue-50 text-lg font-medium"
+                      value={content} onChange={(e) => setContent(e.target.value)} placeholder="住民の方へ伝えたい内容を詳しく入力してください..." />
                   
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">画像・資料の添付</label>
-                    <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[2.5rem] h-64 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
-                      {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
-                        <div className="text-center p-6">
-                          <span className="text-5xl mb-4 block">{pdfUrl ? '📄' : '📤'}</span>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? 'アップロード済み' : 'ファイルを添付'}</p>
-                        </div>
-                      }
-                      <input type="file" className="hidden" onChange={handlePdfUpload} accept="application/pdf,image/*" />
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col md:flex-row gap-4">
-                {/* プッシュ通知スイッチ */}
-                <div className="flex-1 flex items-center gap-4 p-6 bg-blue-50 rounded-[2.5rem] border border-blue-100 group cursor-pointer hover:bg-blue-100 transition-all">
-                  <input type="checkbox" id="push-notify" checked={sendPush} onChange={(e) => setSendPush(e.target.checked)} className="w-6 h-6 accent-blue-600 rounded-lg cursor-pointer" />
-                  <label htmlFor="push-notify" className="flex-1 cursor-pointer">
-                    <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">プッシュ通知を送信</p>
-                    <p className="text-[10px] text-blue-600 font-bold opacity-70">住民の端末へ即時一斉通知</p>
+                  <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[2.5rem] h-64 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
+                    {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
+                      <div className="text-center p-6">
+                        <span className="text-5xl mb-4 block">{pdfUrl ? '📄' : '📤'}</span>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? '添付済み' : 'ファイルを添付'}</p>
+                      </div>
+                    }
+                    <input type="file" className="hidden" onChange={handlePdfUpload} accept="application/pdf,image/*" />
                   </label>
                 </div>
-
-                <button type="submit" disabled={isSubmitting} className="flex-[2] bg-blue-600 text-white py-8 rounded-[3rem] font-black text-2xl hover:bg-slate-900 transition-all shadow-2xl shadow-blue-200 disabled:opacity-50 uppercase tracking-tighter italic">
-                  {isSubmitting ? '処理中...' : status === 'draft' ? '下書きを保存' : status === 'scheduled' ? '予約配信を設定' : '今すぐ住民へ配信'}
-                </button>
               </div>
+
+              <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-8 rounded-[3rem] font-black text-2xl hover:bg-slate-900 transition-all shadow-2xl shadow-blue-200 disabled:opacity-50 uppercase tracking-tighter italic">
+                {isSubmitting ? '処理中...' : status === 'draft' ? '下書きを保存' : status === 'scheduled' ? '予約配信を設定' : '住民へ配信を開始'}
+              </button>
             </form>
           </div>
 
-          {/* 右サイド：履歴 (機能: 既読詳細トリガー) */}
+          {/* 右サイド：履歴 */}
           <div className="w-full xl:w-96 space-y-6">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
-              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-10">最新の配信履歴</h3>
+              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-10">配信履歴</h3>
               <div className="space-y-10">
                 {recentNotices.map((notice) => {
                   const readRate = notice.total_residents > 0 ? Math.round((notice.actual_read_count / notice.total_residents) * 100) : 0;
                   return (
                     <div key={notice.id} className="group border-b border-slate-50 pb-8 last:border-0">
-                      <div className="flex gap-4 items-start mb-5">
-                        <span className="text-lg bg-slate-50 w-10 h-10 rounded-xl flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                      <div className="flex gap-4 items-start mb-5" onClick={() => handleShowReadDetails(notice.id)}>
+                        <span className="text-lg bg-slate-50 w-10 h-10 rounded-xl flex items-center justify-center group-hover:bg-blue-50 cursor-pointer">
                           {notice.category === 'urgent' ? '🚨' : '📢'}
                         </span>
-                        <div className="flex-1">
-                          <p className="text-sm font-black text-slate-800 line-clamp-1 mb-1">{notice.title}</p>
-                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
-                            <span className={`px-2 py-0.5 rounded ${notice.status === 'draft' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
-                              {notice.status.toUpperCase()}
-                            </span>
-                            <span>{new Date(notice.created_at).toLocaleDateString()}</span>
-                          </div>
+                        <div className="flex-1 cursor-pointer">
+                          <p className="text-sm font-black text-slate-800 line-clamp-1">{notice.title}</p>
+                          <p className="text-[10px] font-bold text-slate-400">{new Date(notice.created_at).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      {/* 既読バーをクリックすると詳細リストを表示 */}
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 cursor-pointer hover:bg-blue-50 transition-all group/bar" 
-                        onClick={() => handleShowReadDetails(notice.id)}>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 cursor-pointer hover:bg-blue-50 transition-all" onClick={() => handleShowReadDetails(notice.id)}>
                         <div className="flex justify-between items-end mb-2">
-                          <span className="text-[9px] font-black text-slate-400 italic group-hover/bar:text-blue-600">既読率（クリックで詳細）</span>
+                          <span className="text-[9px] font-black text-slate-400 italic">閲覧数</span>
                           <span className="text-xs font-black text-blue-600">{notice.actual_read_count} / {notice.total_residents}人</span>
                         </div>
                         <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div className="bg-blue-600 h-full transition-all duration-1000 shadow-[0_0_8px_rgba(37,99,235,0.4)]" style={{ width: `${readRate}%` }}></div>
+                          <div className="bg-blue-600 h-full transition-all duration-1000" style={{ width: `${readRate}%` }}></div>
                         </div>
                       </div>
                     </div>
                   );
                 })}
-                {recentNotices.length === 0 && (
-                  <p className="text-center py-10 text-[10px] font-black text-slate-300 uppercase tracking-widest">配信履歴なし</p>
-                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* --- モーダル: 既読者詳細 --- */}
+        {/* モーダル：既読詳細 */}
         {showReadList.show && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6" onClick={() => setShowReadList({ ...showReadList, show: false })}>
-            <div className="bg-white w-full max-w-md rounded-[3rem] p-10 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full max-w-md rounded-[3rem] p-10 space-y-6" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center">
-                <h4 className="text-xl font-black italic tracking-tighter">閲覧ユーザー詳細</h4>
-                <button onClick={() => setShowReadList({ ...showReadList, show: false })} className="w-8 h-8 flex items-center justify-center bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-colors">✕</button>
+                <h4 className="text-xl font-black italic">閲覧ユーザー</h4>
+                <button onClick={() => setShowReadList({ ...showReadList, show: false })} className="text-slate-400">✕</button>
               </div>
-              <div className="max-h-96 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              <div className="max-h-96 overflow-y-auto space-y-2 pr-2">
                 {showReadList.users.length > 0 ? showReadList.users.map((u, i) => (
-                  <div key={i} className="flex justify-between items-center p-5 bg-slate-50 rounded-[1.5rem] border border-slate-100">
-                    <div>
-                      <p className="font-black text-slate-800">{u.profiles?.full_name || '名称未設定'}</p>
-                      <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{u.profiles?.room_number || '---'}号室</p>
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-400 bg-white px-3 py-1 rounded-full shadow-sm">
-                      {new Date(u.read_at).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                  <div key={i} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+                    <span className="font-bold text-sm">{u.profiles?.room_number || '---'}号室 {u.profiles?.full_name}様</span>
+                    <span className="text-[9px] font-bold text-slate-400">{new Date(u.read_at).toLocaleString()}</span>
                   </div>
-                )) : <p className="text-center text-slate-400 py-10 font-bold">まだ既読ユーザーはいません</p>}
+                )) : <p className="text-center text-slate-400 py-10">既読データなし</p>}
               </div>
             </div>
           </div>
         )}
 
-        {/* --- モーダル: スマホ表示プレビュー (機能5: プレビュー) --- */}
+        {/* モーダル：プレビュー */}
         {showPreview && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 flex items-center justify-center p-6 overflow-y-auto" onClick={() => setShowPreview(false)}>
-            <div className="relative animate-in slide-in-from-bottom-10 duration-500" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setShowPreview(false)} className="absolute -top-14 right-0 text-white font-black text-sm bg-white/10 px-6 py-2 rounded-full hover:bg-white/20 transition-all uppercase tracking-[0.2em]">CLOSE ✕</button>
-              
-              {/* スマホ外枠 */}
-              <div className="w-[340px] h-[680px] bg-slate-800 rounded-[4rem] p-3 shadow-2xl border-[4px] border-slate-700/50">
-                <div className="w-full h-full bg-white rounded-[3.2rem] overflow-hidden flex flex-col relative">
-                  
-                  {/* アプリヘッダー風 */}
-                  <div className="bg-blue-600 p-8 pt-16 text-white shrink-0">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[10px] font-black bg-white/20 px-2 py-0.5 rounded uppercase tracking-widest">{category}</span>
-                      <span className="w-1 h-1 bg-white/40 rounded-full"></span>
-                      <span className="text-[10px] font-black opacity-60 uppercase tracking-widest">Notification</span>
-                    </div>
-                    <h5 className="font-black text-2xl leading-tight tracking-tighter italic">{title || 'ここにタイトルが入ります'}</h5>
-                  </div>
-
-                  {/* コンテンツエリア */}
-                  <div className="p-8 flex-1 overflow-y-auto space-y-6">
-                    <div className="flex justify-between items-center border-b border-slate-50 pb-4">
-                      <span className="text-[11px] font-bold text-slate-400 italic">2026.04.25</span>
-                      <span className="text-[11px] font-bold text-blue-600">管理組合より</span>
-                    </div>
-                    <p className="text-[15px] text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
-                      {content || '住民の方へ表示される本文のプレビューです。入力した内容がここにリアルタイムで反映されます。'}
-                    </p>
-                    {pdfUrl && (
-                      <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-6 text-center">
-                        <span className="text-3xl block mb-2">📄</span>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">添付資料あり</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 下部ボタン風 */}
-                  <div className="p-8 pt-0 shrink-0">
-                    <div className="w-full bg-slate-900 h-14 rounded-[1.5rem] flex items-center justify-center text-white text-[11px] font-black uppercase tracking-[0.2em] shadow-xl shadow-slate-200">
-                      内容を確認しました
-                    </div>
-                    <div className="h-1.5 w-32 bg-slate-200 mx-auto mt-6 rounded-full"></div>
-                  </div>
+            <div className="relative" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setShowPreview(false)} className="absolute -top-12 right-0 text-white font-black text-xl">CLOSE ✕</button>
+              <div className="w-[320px] h-[640px] bg-white rounded-[3rem] overflow-hidden border-[8px] border-slate-800 shadow-2xl flex flex-col">
+                <div className="bg-blue-600 p-6 pt-12 text-white">
+                  <h5 className="font-black text-lg leading-tight">{title || '（タイトル未入力）'}</h5>
+                </div>
+                <div className="p-6 flex-1 space-y-4">
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{content || '本文がここに入ります。'}</p>
+                </div>
+                <div className="p-6 border-t border-slate-50">
+                  <div className="w-full bg-blue-600 h-12 rounded-2xl flex items-center justify-center text-white text-xs font-black">確認しました</div>
                 </div>
               </div>
             </div>
@@ -427,7 +351,7 @@ export default function ManagementNoticePage() {
         )}
 
         <footer className="mt-16 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto 管理コンソール v3.5 / {selectedProperty ? 'オンライン' : '待機中'}
+          Posutto 管理コンソール v3.5
         </footer>
       </div>
     </div>
