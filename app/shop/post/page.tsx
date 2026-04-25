@@ -22,6 +22,7 @@ export default function ShopPostPage() {
   const [linkUrl, setLinkUrl] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [radiusKm, setRadiusKm] = useState(1);
+  const [targetType, setTargetType] = useState('all'); // ✅ セグメント状態
   const [expiresAt, setExpiresAt] = useState(
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
@@ -59,9 +60,10 @@ export default function ShopPostPage() {
           setMyStore(currentStore);
           setStoreName(currentStore.name);
           fetchHistory(currentStore.id);
-          handleRadiusSearch(currentStore, 1);
+          // 初回検索
+          await handleRadiusSearch(currentStore, 1, 'all');
         } else {
-          alert('店舗情報が見つかりません。店舗登録を先に行ってください。');
+          alert('店舗情報が見つかりません。');
           router.push('/shop/settings');
         }
       } catch (err) {
@@ -84,20 +86,25 @@ export default function ShopPostPage() {
     if (data) setRecentAds(data);
   };
 
-  const handleRadiusSearch = async (store: any, radius: number) => {
+  // ✅ 属性フィルタ付きの半径検索
+  const handleRadiusSearch = async (store: any, radius: number, type: string) => {
     if (!store?.lat || !store?.lng) return;
     setRadiusKm(radius);
+    setTargetType(type);
     
-    const { data: nearby, error } = await supabase.rpc('get_properties_within_radius', {
+    // get_properties_within_radius_v2 を呼び出し
+    const { data: nearby, error } = await supabase.rpc('get_properties_within_radius_v2', {
       target_lat: store.lat,
       target_lng: store.lng,
-      radius_meters: radius * 1000
+      radius_meters: radius * 1000,
+      target_type: type
     });
     
     if (!error && nearby) {
       setNearbyProperties(nearby);
     } else {
-      setNearbyProperties(new Array(Math.floor(radius * 12 + 3)).fill({ id: 'dummy' }));
+      console.error('物件検索エラー:', error);
+      setNearbyProperties([]);
     }
   };
 
@@ -130,29 +137,32 @@ export default function ShopPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!myStore || myStore.id === 'admin-preview-id') return alert('デモ版のため送信機能は制限されています。');
+    if (!myStore) return;
     if (nearbyProperties.length === 0) return alert('配信先の物件が見つかりません。');
     
     setIsSubmitLoading(true);
+    
     const insertData = nearbyProperties.map(p => ({
-      store_id: myStore.id,
+      store_id: myStore.id === 'admin-preview-id' ? null : myStore.id,
       store_name: storeName,
       title, 
       content, 
-      property_id: p.id || p.uuid,
+      property_id: p.id,
       coupon_code: couponCode,
       link_url: linkUrl,
       pdf_url: pdfUrl,
       radius_km: radiusKm,
+      target_segment: targetType, // セグメント情報も保存
       expires_at: new Date(`${expiresAt}T23:59:59`).toISOString(),
       view_count: 0
     }));
 
     const { error } = await supabase.from('local_ads').insert(insertData);
+    
     if (!error) {
-      alert(`${nearbyProperties.length}件のマンションへデジタル配布が完了しました！`);
+      alert(`${nearbyProperties.length}件のマンション・アパートへセグメント配信が完了しました！`);
       setTitle(''); setContent(''); setShopMessage(''); setPdfUrl('');
-      fetchHistory(myStore.id);
+      if (myStore.id !== 'admin-preview-id') fetchHistory(myStore.id);
     } else {
       alert('エラー: ' + error.message);
     }
@@ -169,7 +179,6 @@ export default function ShopPostPage() {
     <div className="min-h-screen bg-[#F8FAFC]">
       <div className="p-4 md:p-10 max-w-7xl mx-auto">
         
-        {/* --- クイックナビゲーション（重複を削除し、2つに整理） --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
           {[
             { label: '過去の広告一覧・管理', icon: '📢', path: '/shop/ads', color: 'hover:border-orange-500' },
@@ -187,16 +196,15 @@ export default function ShopPostPage() {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* メイン入力エリア */}
           <div className="flex-1 space-y-6">
             <div className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-xl border border-slate-50">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></span>
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">Create <span className="text-orange-500">Post</span></h1>
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">Segment <span className="text-orange-500">Post</span></h1>
                   </div>
-                  <p className="text-slate-400 text-[10px] font-bold tracking-[0.3em] uppercase underline decoration-orange-500/30 underline-offset-4">新しいデジタル広告を作成</p>
+                  <p className="text-slate-400 text-[10px] font-bold tracking-[0.3em] uppercase underline decoration-orange-500/30 underline-offset-4">ターゲットを絞って効率的にポスティング</p>
                 </div>
                 <button 
                   type="button"
@@ -209,7 +217,7 @@ export default function ShopPostPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-12">
-                {/* 店舗の生の声 */}
+                {/* メッセージ入力 */}
                 <div className="space-y-4">
                   <label className="text-[11px] font-black text-orange-500 uppercase tracking-widest ml-1 italic">【必須】今日の一言・アピール</label>
                   <input 
@@ -217,33 +225,73 @@ export default function ShopPostPage() {
                     value={shopMessage} 
                     onChange={(e) => setShopMessage(e.target.value)} 
                     placeholder="例：本日限定！焼き立てパンが全品10%OFFです"
+                    required
                   />
                 </div>
 
-                {/* エリア設定 */}
-                <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white flex flex-col md:flex-row md:items-center justify-between gap-8 shadow-2xl relative overflow-hidden">
-                  <div className="relative z-10">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-4">配信範囲の選択</label>
-                    <div className="flex gap-3">
-                      {[0.5, 1, 2, 5].map(r => (
-                        <button key={r} type="button" onClick={() => handleRadiusSearch(myStore, r)} 
-                          className={`text-sm font-black w-16 h-16 rounded-2xl border-2 transition-all ${radiusKm === r ? 'bg-orange-500 border-orange-500 text-white shadow-xl shadow-orange-500/20' : 'bg-white/5 border-white/10 text-white/40 hover:border-white/30'}`}>
-                          {r >= 1 ? `${r}km` : `500m`}
-                        </button>
-                      ))}
+                {/* 配信セグメント・範囲設定 */}
+                <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
+                  <div className="grid md:grid-cols-2 gap-8 relative z-10">
+                    <div>
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-4">① 配信ターゲット</label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { id: 'all', label: '全対象' },
+                          { id: 'single', label: '単身者向け' },
+                          { id: 'family', label: 'ファミリー向け' }
+                        ].map(t => (
+                          <button key={t.id} type="button" onClick={() => handleRadiusSearch(myStore, radiusKm, t.id)} 
+                            className={`px-6 py-3 rounded-xl text-[10px] font-black transition-all border-2 ${targetType === t.id ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'}`}>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-4">② 配信範囲（半径）</label>
+                      <div className="flex gap-2">
+                        {[0.5, 1, 2, 5].map(r => (
+                          <button key={r} type="button" onClick={() => handleRadiusSearch(myStore, r, targetType)} 
+                            className={`w-12 h-12 rounded-xl border-2 text-[10px] font-black transition-all ${radiusKm === r ? 'bg-white text-slate-900 border-white' : 'bg-white/5 border-white/10 text-white/40'}`}>
+                            {r >= 1 ? `${r}k` : `500`}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div className="relative z-10 text-right">
-                    <p className="text-[11px] font-black text-slate-400 uppercase mb-1">現在の配信対象物件</p>
-                    <p className="text-6xl font-black text-white tracking-tighter">
-                      {nearbyProperties.length}
-                      <span className="text-sm ml-2 text-orange-500 italic uppercase">棟</span>
-                    </p>
+
+                  <div className="relative z-10 pt-6 border-t border-white/10 flex justify-between items-end">
+                    <div>
+                      <p className="text-[10px] font-black text-orange-500 uppercase mb-1 italic">Estimation</p>
+                      <p className="text-sm font-bold text-slate-300">
+                        {radiusKm}km圏内の <span className="text-white">{targetType === 'all' ? 'すべて' : targetType === 'single' ? '単身' : 'ファミリー'}物件</span>
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-6xl font-black text-white tracking-tighter">
+                        {nearbyProperties.length}
+                        <span className="text-sm ml-2 text-orange-500 italic uppercase">棟</span>
+                      </p>
+                    </div>
                   </div>
-                  <div className="absolute -right-10 -bottom-10 text-[8rem] font-black italic opacity-5 select-none uppercase tracking-tighter">Radius</div>
+                  <div className="absolute -right-10 -bottom-10 text-[8rem] font-black italic opacity-5 select-none uppercase tracking-tighter pointer-events-none">Target</div>
                 </div>
 
-                {/* プレビュー入力 */}
+                {/* 物件プレビュー */}
+                {nearbyProperties.length > 0 && (
+                  <div className="px-6 py-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">🎯 配信予定の物件（一部）:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {nearbyProperties.slice(0, 8).map((p, i) => (
+                        <span key={i} className="text-[10px] font-bold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                          {p.name} <span className="text-[8px] text-blue-400 ml-1">#{p.property_type || 'all'}</span>
+                        </span>
+                      ))}
+                      {nearbyProperties.length > 8 && <span className="text-[10px] text-slate-300 self-center ml-2">他 {nearbyProperties.length - 8} 棟...</span>}
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の見出し（タイトル）</label>
@@ -266,7 +314,6 @@ export default function ShopPostPage() {
                   </div>
                 </div>
 
-                {/* 画像アップロード */}
                 <div className="space-y-4">
                   <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">画像またはデジタルチラシ（任意）</label>
                   <label className="w-full bg-white border-2 border-dashed border-slate-200 p-12 rounded-[3rem] cursor-pointer hover:bg-slate-50 hover:border-orange-500 transition-all flex flex-col items-center justify-center gap-4 group">
@@ -282,13 +329,13 @@ export default function ShopPostPage() {
                   disabled={isSubmitLoading} 
                   className="w-full bg-slate-900 text-white py-9 rounded-[3rem] font-black shadow-2xl hover:bg-orange-600 transition-all active:scale-[0.98] text-2xl italic tracking-tighter uppercase"
                 >
-                  {isSubmitLoading ? '配信処理中...' : '近隣住民へポスティング！'}
+                  {isSubmitLoading ? '配信処理中...' : 'ターゲットへポスティング！'}
                 </button>
               </form>
             </div>
           </div>
 
-          {/* 右サイド：直近の履歴 */}
+          {/* サイドバー */}
           <div className="w-full lg:w-96">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">
@@ -308,18 +355,10 @@ export default function ShopPostPage() {
                     </div>
                     <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
                       <span>{new Date(ad.created_at).toLocaleDateString()}</span>
-                      <span className="bg-slate-50 px-2 py-1 rounded-md">範囲: {ad.radius_km}km</span>
-                    </div>
-                    <div className="mt-4 h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
-                      <div className="h-full bg-orange-500" style={{ width: `${Math.min((ad.view_count || 0) * 2, 100)}%` }}></div>
+                      <span className="bg-slate-50 px-2 py-1 rounded-md">{ad.target_segment === 'single' ? '単身' : ad.target_segment === 'family' ? '家計' : '全域'}</span>
                     </div>
                   </div>
                 ))}
-                {recentAds.length === 0 && (
-                  <div className="text-center py-10">
-                    <p className="text-[11px] text-slate-300 font-black uppercase">履歴はありません</p>
-                  </div>
-                )}
               </div>
 
               <button 
@@ -331,10 +370,6 @@ export default function ShopPostPage() {
             </div>
           </div>
         </div>
-        
-        <footer className="mt-16 text-[10px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto Shop Portal - デジタル広告配信システム v2.9
-        </footer>
       </div>
     </div>
   );
