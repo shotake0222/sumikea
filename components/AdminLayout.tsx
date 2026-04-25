@@ -15,8 +15,8 @@ export default function AdminLayout({
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      {/* サイドバー（PC用） */}
-      <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-white p-6">
+      {/* サイドバー（PC用） - 印刷時は非表示(no-print) */}
+      <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-white p-6 no-print">
         <div className="mb-10">
           {/* サービス名を「ぽすっと」に統合（brandConfig経由） */}
           <h1 className="text-2xl font-black tracking-tighter italic uppercase text-blue-500">
@@ -35,8 +35,16 @@ export default function AdminLayout({
             href="/properties" 
             active={pathname === '/properties'} 
           />
+
+          {/* 追加：レポーティング（大項目：ポスティング・管理会社・店舗・住民） */}
+          <AdminNavLink 
+            label="レポーティング" 
+            icon="📈" 
+            href="/management/reporting" 
+            active={pathname.includes('/management/reporting')} 
+          />
           
-          {/* 広告配信（分析レポートを削除し、こちらに集約） */}
+          {/* 広告配信・管理 */}
           <AdminNavLink 
             label="広告配信・管理" 
             icon="🎯" 
@@ -44,7 +52,7 @@ export default function AdminLayout({
             active={pathname === '/management/post-ad'} 
           />
 
-          {/* ユーザー・掲示板管理（MANAGER/ADMIN用） */}
+          {/* 通知・掲示板管理 */}
           <AdminNavLink 
             label="通知・掲示板管理" 
             icon="🔔" 
@@ -52,7 +60,7 @@ export default function AdminLayout({
             active={pathname === '/management/notices'} 
           />
 
-          {/* 設定（完全なADMINページへのリンク） */}
+          {/* システム設定 */}
           <AdminNavLink 
             label="システム設定" 
             icon="⚙️" 
@@ -83,7 +91,8 @@ export default function AdminLayout({
 
       {/* メインエリア */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
+        {/* ヘッダー - 印刷時は非表示(no-print) */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 no-print">
           <div className="flex items-center gap-3">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
             <h2 className="font-black text-[11px] text-slate-400 uppercase tracking-widest">System Status: Active</h2>
@@ -104,6 +113,7 @@ export default function AdminLayout({
           </div>
         </header>
 
+        {/* コンテンツエリア */}
         <main className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="p-8">
             <div className="max-w-6xl mx-auto">
@@ -116,7 +126,7 @@ export default function AdminLayout({
   );
 }
 
-// 共通リンクコンポーネント（aタグからLinkタグへ、href対応に修正）
+// 共通リンクコンポーネント
 function AdminNavLink({ label, icon, href, active = false }: { 
   label: string, 
   icon: string, 

@@ -84,15 +84,18 @@ export default function AdminPropertiesPage() {
              <button onClick={() => router.push('/management/post-ad')} className="bg-slate-900 text-white px-6 py-4 rounded-2xl hover:bg-blue-600 transition shadow-xl text-[10px] font-black uppercase tracking-widest">
                🎯 広告を配信する
              </button>
+             <button onClick={() => router.push('/management/reporting')} className="bg-white border-2 border-slate-900 text-slate-900 px-6 py-4 rounded-2xl hover:bg-slate-50 transition shadow-md text-[10px] font-black uppercase tracking-widest">
+               📈 レポーティング
+             </button>
           </div>
         </header>
 
         {/* 統計セクション */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[
-            { label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600', path: '/management/users' },
-            { label: '提携店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500', path: '/management/shops' },
-            { label: '配信済み広告', value: stats.totalAds, unit: '本', color: 'text-purple-600', path: '/management/post-ad' },
+            { label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600', path: '/management/reporting?target=resident' },
+            { label: '提携店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500', path: '/management/reporting?target=shop' },
+            { label: '配信済み広告', value: stats.totalAds, unit: '本', color: 'text-purple-600', path: '/management/reporting?target=posting' },
             { label: '稼働掲示板', value: stats.activeNotices, unit: '箇所', color: 'text-emerald-600', path: '/management/notices' }
           ].map((item, i) => (
             <div key={i} onClick={() => router.push(item.path)} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 cursor-pointer hover:scale-[1.02] transition-all">
