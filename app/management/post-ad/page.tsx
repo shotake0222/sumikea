@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-// ✅ パスを ../../../ から ../../../../ に修正（4階層上へ）
-import { supabase } from '../../../../lib/supabase';
-import AdminLayout from '../../../../components/AdminLayout';
+// ✅ 階層移動に合わせてパスを ../../../ に修正
+import { supabase } from '../../../lib/supabase';
+import AdminLayout from '../../../components/AdminLayout';
 
 export default function AdminPostAdPage() {
   const [properties, setProperties] = useState<any[]>([]);
@@ -13,7 +13,6 @@ export default function AdminPostAdPage() {
 
   useEffect(() => {
     const fetchProps = async () => {
-      // 依存関係が解決されているか確認
       if (!supabase) return;
       const { data } = await supabase.from('properties').select('id, name');
       if (data) setProperties(data);
@@ -62,7 +61,7 @@ export default function AdminPostAdPage() {
           <div className="space-y-3">
             <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">配信先ターゲット（物件選択）</label>
             <select 
-              className="w-full p-6 bg-slate-50 rounded-[2rem] font-bold text-slate-700 outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white transition-all appearance-none"
+              className="w-full p-6 bg-slate-50 rounded-[2rem] font-bold text-slate-700 outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer"
               value={selectedPropertyId}
               onChange={(e) => setSelectedPropertyId(e.target.value)}
             >
@@ -87,7 +86,7 @@ export default function AdminPostAdPage() {
               className="w-full p-8 bg-slate-50 rounded-[3rem] font-bold text-lg outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white transition-all min-h-[250px] leading-relaxed" 
               value={content} 
               onChange={(e)=>setContent(e.target.value)} 
-              placeholder="ここに詳細な内容を入力してください。HTMLタグは使用できません。" 
+              placeholder="ここに詳細な内容を入力してください。" 
             />
           </div>
 
@@ -106,4 +105,4 @@ export default function AdminPostAdPage() {
       </div>
     </AdminLayout>
   );
-}
+}　
