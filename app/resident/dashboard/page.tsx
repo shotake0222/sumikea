@@ -27,6 +27,24 @@ export default function ResidentDashboard() {
     return () => { handleTrackDuration(); };
   }, []);
 
+  // --- 【追記】既読記録ロジック ---
+  const markAsRead = async (notificationId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from('notification_reads')
+        .upsert(
+          { notification_id: notificationId, user_id: user.id },
+          { onConflict: 'notification_id, user_id' }
+        );
+      console.log(`Marked as read: ${notificationId}`);
+    } catch (err) {
+      console.error('既読処理エラー:', err);
+    }
+  };
+
   const fetchResidentData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -51,16 +69,21 @@ export default function ResidentDashboard() {
       setGarbageCalendars(prof?.monthly_garbage_calendars || {});
 
       if (prof?.property_id) {
-        // 1. 通常の物件掲示板（管理組合など）
+        // 1. 通常の物件掲示板
         const { data: rawNotices } = await supabase
           .from('property_notifications')
           .select('*')
           .eq('property_id', prof.property_id)
           .order('created_at', { ascending: false });
+        
         setNotices(rawNotices || []);
+        
+        // ✅ 最新の通知を既読にする
+        if (rawNotices && rawNotices.length > 0) {
+          markAsRead(rawNotices[0].id);
+        }
 
-        // 2. ✅ ぽすっとセクション（ポスティング業者からの重要告知）
-        // categoryやsender_roleで判別する運用を想定
+        // 2. ぽすっとセクション
         const { data: rawPosting } = await supabase
           .from('property_notifications')
           .select('*')
@@ -68,7 +91,13 @@ export default function ResidentDashboard() {
           .eq('category', 'posting') 
           .order('created_at', { ascending: false })
           .limit(1);
+        
         setPostingNotices(rawPosting || []);
+
+        // ✅ ぽすっと側も最新があれば既読にする
+        if (rawPosting && rawPosting.length > 0) {
+          markAsRead(rawPosting[0].id);
+        }
 
         // 3. ゴミスケ
         const { data: trashData } = await supabase
@@ -77,7 +106,7 @@ export default function ResidentDashboard() {
           .eq('property_id', prof.property_id);
         setTrashSchedules(trashData || []);
 
-        // 4. ✅ デジタルチラシ（ダミー排除・実データのみ）
+        // 4. デジタルチラシ
         const { data: rawAds } = await supabase
           .from('digital_flyers')
           .select('*')
@@ -94,7 +123,7 @@ export default function ResidentDashboard() {
     }
   };
 
-  // インプレッション（表示されただけでカウント）の自動計測
+  // インプレッション計測
   useEffect(() => {
     if (ads.length > 0) {
       ads.forEach(ad => {
@@ -215,7 +244,7 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* ✅ ぽすっとセクション（ポスティング会社からの重要投稿） */}
+        {/* ぽすっとセクション */}
         <section className="bg-indigo-900 rounded-[3rem] shadow-2xl border border-indigo-800 overflow-hidden text-white relative">
           <div className="absolute top-0 right-0 p-4 opacity-10 text-4xl">📬</div>
           <div className="p-8">
@@ -234,7 +263,7 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* 近隣店舗（デジタルチラシ）: ダミー排除済み */}
+        {/* デジタルチラシ */}
         <section className="space-y-4">
           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 italic">近隣のお得な情報</h2>
           <div className="grid grid-cols-1 gap-3">

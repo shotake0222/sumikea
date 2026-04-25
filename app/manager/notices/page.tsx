@@ -18,6 +18,7 @@ export default function ManagementNoticePage() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
   const [targetAudience, setTargetAudience] = useState('resident');
+  const [sendPush, setSendPush] = useState(false); // プッシュ通知トグル
   
   const [isPermanent, setIsPermanent] = useState(false);
   const [expiresAt, setExpiresAt] = useState(
@@ -38,7 +39,6 @@ export default function ManagementNoticePage() {
         const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
         const role = profile?.role?.toUpperCase() || 'USER';
         
-        // 管理会社（MANAGER）または管理者（ADMIN）のみ許可
         if (role !== 'ADMIN' && role !== 'MANAGER') { 
           router.push('/login?type=manager'); 
           return; 
@@ -46,7 +46,6 @@ export default function ManagementNoticePage() {
         
         let propertyList: any[] = [];
         if (role === 'ADMIN') {
-          // 全物件（管理者用）
           const { data: allProps } = await supabase.from('properties').select('id, name');
           if (allProps) {
             propertyList = allProps.map(p => ({
@@ -55,7 +54,6 @@ export default function ManagementNoticePage() {
             }));
           }
         } else {
-          // 担当物件のみ
           const { data: managerProps } = await supabase
             .from('property_managers')
             .select('property_id, properties(name)')
@@ -77,15 +75,38 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
-  // 物件ごとの履歴取得
+  // 物件ごとの履歴取得（既読数と総住民数を統合）
   const fetchNoticeHistory = async (propId: string) => {
-    const { data } = await supabase
-      .from('property_notifications')
-      .select('*')
-      .eq('property_id', propId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-    if (data) setRecentNotices(data);
+    try {
+      // 1. お知らせと既読数を取得
+      const { data: notices } = await supabase
+        .from('property_notifications')
+        .select(`
+          *,
+          read_count:notification_reads(count)
+        `)
+        .eq('property_id', propId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      // 2. その物件の総住民数を取得
+      const { count: totalResidents } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', propId)
+        .eq('role', 'USER');
+
+      if (notices) {
+        const formatted = notices.map(n => ({
+          ...n,
+          actual_read_count: n.read_count?.[0]?.count || 0,
+          total_residents: totalResidents || 0
+        }));
+        setRecentNotices(formatted);
+      }
+    } catch (err) {
+      console.error('History fetch error:', err);
+    }
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,7 +141,7 @@ export default function ManagementNoticePage() {
     });
 
     if (!error) {
-      alert('配信が完了しました');
+      alert('配信が完了しました' + (sendPush ? '（通知をリクエストしました）' : ''));
       setTitle(''); setContent(''); setPdfUrl('');
       fetchNoticeHistory(selectedProperty);
     } else {
@@ -175,7 +196,6 @@ export default function ManagementNoticePage() {
         </header>
 
         <div className="flex flex-col xl:flex-row gap-8">
-          {/* メイン入力エリア */}
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-2xl shadow-slate-200/40 border border-slate-100 space-y-12">
               
@@ -243,7 +263,7 @@ export default function ManagementNoticePage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
                   <div className="md:col-span-2 space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">詳細内容（アプリ内で表示）</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">詳細内容</label>
                     <textarea className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] h-64 text-slate-700 outline-none resize-none leading-relaxed focus:ring-4 focus:ring-blue-50 transition-all text-lg font-medium"
                       value={content} onChange={(e) => setContent(e.target.value)} placeholder="住民に伝えたい具体的な内容を入力してください..." required />
                   </div>
@@ -263,13 +283,28 @@ export default function ManagementNoticePage() {
                 </div>
               </div>
 
+              {/* プッシュ通知トグル */}
+              <div className="flex items-center gap-4 p-6 bg-blue-50 rounded-[2.5rem] border border-blue-100 group cursor-pointer hover:bg-blue-100 transition-all">
+                <input 
+                  type="checkbox" 
+                  id="push-notify" 
+                  checked={sendPush}
+                  onChange={(e) => setSendPush(e.target.checked)}
+                  className="w-6 h-6 accent-blue-600 rounded-lg cursor-pointer"
+                />
+                <label htmlFor="push-notify" className="flex-1 cursor-pointer">
+                  <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">Immediate Push Notification</p>
+                  <p className="text-[10px] text-blue-600 font-bold opacity-70">対象物件の全住民スマホへ即時通知を飛ばします</p>
+                </label>
+              </div>
+
               <button disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3rem] font-black text-2xl hover:bg-slate-900 transition-all shadow-2xl shadow-blue-200 active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter italic">
                 {isSubmitting ? 'SENDING...' : 'CONFIRM & SEND NOW'}
               </button>
             </form>
           </div>
 
-          {/* 右サイド：履歴リスト */}
+          {/* 右サイド：履歴リスト（既読率バー付き） */}
           <div className="w-full xl:w-96 space-y-6">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center justify-between mb-10">
@@ -277,24 +312,46 @@ export default function ManagementNoticePage() {
                 <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">LATEST 5</span>
               </div>
               
-              <div className="space-y-8">
-                {recentNotices.map((notice) => (
-                  <div key={notice.id} className="group border-b border-slate-50 pb-6 last:border-0">
-                    <div className="flex gap-4 items-start">
-                      <span className="text-lg bg-slate-50 w-10 h-10 rounded-xl flex items-center justify-center group-hover:bg-blue-50 transition">
-                        {notice.category === 'urgent' ? '🚨' : '📢'}
-                      </span>
-                      <div className="flex-1">
-                        <p className="text-sm font-black text-slate-800 line-clamp-1 mb-1">{notice.title}</p>
-                        <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                          <span className="uppercase">{notice.target_audience}宛</span>
-                          <span>•</span>
-                          <span>{new Date(notice.created_at).toLocaleDateString()}</span>
+              <div className="space-y-10">
+                {recentNotices.map((notice) => {
+                  const readRate = notice.total_residents > 0 
+                    ? Math.round((notice.actual_read_count / notice.total_residents) * 100) 
+                    : 0;
+                  
+                  return (
+                    <div key={notice.id} className="group border-b border-slate-50 pb-8 last:border-0">
+                      <div className="flex gap-4 items-start mb-5">
+                        <span className="text-lg bg-slate-50 w-10 h-10 rounded-xl flex items-center justify-center group-hover:bg-blue-50 transition">
+                          {notice.category === 'urgent' ? '🚨' : '📢'}
+                        </span>
+                        <div className="flex-1">
+                          <p className="text-sm font-black text-slate-800 line-clamp-1 mb-1">{notice.title}</p>
+                          <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
+                            <span className="uppercase">{notice.target_audience}宛</span>
+                            <span>•</span>
+                            <span>{new Date(notice.created_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 既読率プログレスバー */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <div className="flex justify-between items-end mb-2">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">Awareness</span>
+                          <span className="text-xs font-black text-blue-600">
+                            {notice.actual_read_count} / {notice.total_residents}人
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-blue-600 h-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(37,99,235,0.4)]" 
+                            style={{ width: `${readRate}%` }}
+                          ></div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {recentNotices.length === 0 && (
                   <div className="text-center py-10">
                     <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest">No logs found</p>
@@ -310,7 +367,7 @@ export default function ManagementNoticePage() {
         </div>
 
         <footer className="mt-16 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto Central Ad-Hub Module v3.1 / {selectedProperty ? 'Property Connected' : 'System Standby'}
+          Posutto Central Ad-Hub Module v3.5 / {selectedProperty ? 'Property Connected' : 'System Standby'}
         </footer>
       </div>
     </div>

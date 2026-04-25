@@ -73,16 +73,17 @@ function LoginContent() {
         
         let targetPath = '';
 
-        // ロールに基づいたパス判定（機能維持）
+        // ロールに基づいたパス判定（ディレクトリ構成変更を反映）
         if (dbRole === 'ADMIN') {
           if (typeParam === 'user') targetPath = '/resident/dashboard';
-          else if (typeParam === 'manager') targetPath = '/management/notices';
+          else if (typeParam === 'manager') targetPath = '/manager/notices'; // 修正: management -> manager
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
           else if (typeParam === 'shop') targetPath = '/shop/post';
           else targetPath = '/properties';
         } 
         else if (dbRole === 'MANAGER') {
-          targetPath = '/management/notices';
+          // ✅ 管理会社のデフォルト遷移先を新ディレクトリへ
+          targetPath = '/manager/notices'; 
         } 
         else if (dbRole === 'POSTING') {
           targetPath = '/posting/dashboard';
@@ -92,7 +93,6 @@ function LoginContent() {
         } 
         else {
           // 一般ユーザー（USER）
-          // 物件が紐づいていなければセットアップ、あればダッシュボードへ
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
@@ -113,8 +113,13 @@ function LoginContent() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black italic tracking-tighter text-slate-900">POSUTTO</h1>
           <div className="mt-2">
-            <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${isUserMode ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
-              {isUserMode ? (isSignUp ? 'Resident Sign Up' : 'Resident Login') : `Auth Mode: ${typeParam || 'Staff'}`}
+            <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
+              isUserMode ? 'bg-blue-100 text-blue-600' : 
+              typeParam === 'manager' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : // 管理会社なら青
+              'bg-orange-100 text-orange-600'
+            }`}>
+              {isUserMode ? (isSignUp ? 'Resident Sign Up' : 'Resident Login') : 
+               typeParam === 'manager' ? 'Property Management Login' : `Auth Mode: ${typeParam || 'Staff'}`}
             </span>
           </div>
         </div>
@@ -139,7 +144,9 @@ function LoginContent() {
         </div>
 
         <button 
-          className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black hover:bg-orange-600 transition-all active:scale-[0.98] shadow-xl"
+          className={`w-full py-5 rounded-[2rem] font-black transition-all active:scale-[0.98] shadow-xl text-white ${
+            typeParam === 'manager' ? 'bg-blue-600 hover:bg-slate-900' : 'bg-slate-900 hover:bg-orange-600'
+          }`}
           disabled={loading}
         >
           {loading ? '処理中...' : (isSignUp ? '新規登録して次へ' : 'ログイン')}
@@ -160,7 +167,7 @@ function LoginContent() {
       </form>
       
       <p className="mt-8 text-center text-[8px] text-slate-300 font-bold uppercase tracking-[0.3em]">
-        {isUserMode ? 'Resident Portal' : 'Management System'} v2.9
+        {isUserMode ? 'Resident Portal' : 'Management System'} v3.0
       </p>
     </div>
   );
