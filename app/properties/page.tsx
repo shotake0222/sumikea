@@ -4,12 +4,16 @@ import { supabase } from '../../lib/supabase';
 import AdminLayout from '../../components/AdminLayout';
 import { useRouter } from 'next/navigation';
 
+type ViewTab = 'posting' | 'manager' | 'shop';
+
 export default function AdminPropertiesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [properties, setProperties] = useState<any[]>([]);
   const [userRole, setUserRole] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<ViewTab>('posting');
   
+  // 各種データ用ステート
+  const [dataList, setDataList] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalResidents: 0,
     activeNotices: 0,
@@ -35,9 +39,10 @@ export default function AdminPropertiesPage() {
           return;
         }
 
-        const { data: props } = await supabase.from('properties').select('*').order('created_at', { ascending: false });
-        if (props) setProperties(props);
+        // 初期表示データ取得
+        fetchTabData('posting');
 
+        // 統計データの取得
         const { count: resCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER');
         const { count: noticeCount } = await supabase.from('property_notifications').select('*', { count: 'exact', head: true });
         const { count: shopCount } = await supabase.from('stores').select('*', { count: 'exact', head: true });
@@ -58,6 +63,29 @@ export default function AdminPropertiesPage() {
     };
     checkAuthAndFetch();
   }, [router]);
+
+  // タブ切り替え時にデータを取得し直す
+  const fetchTabData = async (tab: ViewTab) => {
+    let query: any;
+    if (tab === 'posting') {
+      // ポスティング会社（例としてprofilesから配布員/会社権限を想定。なければ物件一覧を代替表示）
+      query = supabase.from('properties').select('id, name, address, join_code');
+    } else if (tab === 'manager') {
+      // 管理会社（管理物件リスト）
+      query = supabase.from('properties').select('id, name, address, join_code');
+    } else {
+      // 店舗
+      query = supabase.from('stores').select('id, name, address, category');
+    }
+
+    const { data } = await query.order('created_at', { ascending: false });
+    setDataList(data || []);
+  };
+
+  const handleTabChange = (tab: ViewTab) => {
+    setActiveTab(tab);
+    fetchTabData(tab);
+  };
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
@@ -108,29 +136,76 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* 物件一覧 */}
-        <div className="flex justify-between items-center mb-8 px-2">
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight italic">登録物件・エリア管理</h2>
-          <button onClick={() => router.push('/properties/new')} className="bg-white border-2 border-slate-900 text-slate-900 px-6 py-3 rounded-xl font-black hover:bg-slate-900 hover:text-white transition-all text-[10px] uppercase tracking-widest">
-            + 物件追加
-          </button>
+        {/* 登録・管理セクション：タブ切り替え */}
+        <div className="mb-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-2">
+            <div className="flex bg-slate-100 p-1.5 rounded-[1.5rem] gap-1">
+              {[
+                { id: 'posting', label: 'ポスティング会社' },
+                { id: 'manager', label: '管理会社' },
+                { id: 'shop', label: '店舗' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id as ViewTab)}
+                  className={`px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${
+                    activeTab === tab.id 
+                    ? 'bg-white text-slate-900 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            
+            <button onClick={() => router.push(activeTab === 'shop' ? '/management/shops/new' : '/properties/new')} className="bg-white border-2 border-slate-900 text-slate-900 px-6 py-3 rounded-xl font-black hover:bg-slate-900 hover:text-white transition-all text-[10px] uppercase tracking-widest">
+              + 新規登録
+            </button>
+          </div>
         </div>
 
+        {/* リスト表示 */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {properties.map(p => (
-            <div key={p.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col group">
+          {dataList.map(item => (
+            <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col group hover:border-blue-200 transition-all">
               <div className="p-8 flex-1">
-                <p className="text-[9px] font-black text-blue-500 uppercase tracking-[0.2em] mb-2">{p.join_code || 'No Code'}</p>
-                <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter mb-4 group-hover:text-blue-600 transition">{p.name}</h3>
-                <p className="text-[11px] text-slate-400 font-bold mb-6">📍 {p.address}</p>
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-[9px] font-black text-blue-500 uppercase tracking-[0.2em]">
+                    {item.join_code || item.category || 'REGISTED'}
+                  </p>
+                  <span className="text-[10px] font-bold text-slate-300">#{item.id.slice(0, 5)}</span>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter mb-4 group-hover:text-blue-600 transition">
+                  {item.name}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-bold mb-6 min-h-[32px]">
+                  📍 {item.address || '住所未登録'}
+                </p>
                 
-                <div className="flex gap-2">
-                  <button onClick={() => router.push(`/management/post-ad?property_id=${p.id}`)} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest">広告配信</button>
-                  <button onClick={() => router.push(`/properties/edit/${p.id}`)} className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest">編集</button>
+                <div className="flex gap-2 mt-auto">
+                  <button 
+                    onClick={() => router.push(activeTab === 'shop' ? `/management/shops/edit/${item.id}` : `/properties/edit/${item.id}`)}
+                    className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition"
+                  >
+                    詳細・編集
+                  </button>
+                  <button 
+                    onClick={() => router.push(`/management/reporting?id=${item.id}`)}
+                    className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition"
+                  >
+                    実績分析
+                  </button>
                 </div>
               </div>
             </div>
           ))}
+          
+          {dataList.length === 0 && (
+            <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
+              <p className="font-black text-slate-300 uppercase tracking-widest text-xs">データが登録されていません</p>
+            </div>
+          )}
         </div>
       </div>
     </AdminLayout>
