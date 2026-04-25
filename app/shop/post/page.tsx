@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import AdminLayout from '../../../components/AdminLayout';
 import { useRouter } from 'next/navigation';
 import { uploadImage } from '../../../lib/upload';
 
@@ -132,7 +131,7 @@ export default function ShopPostPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myStore || myStore.id === 'admin-preview-id') return alert('デモ版のため送信機能は制限されています。');
-    if (nearbyProperties.length === 0) return alert('配信先の物件が見元かりません。');
+    if (nearbyProperties.length === 0) return alert('配信先の物件が見つかりません。');
     
     setIsSubmitLoading(true);
     const insertData = nearbyProperties.map(p => ({
@@ -168,26 +167,21 @@ export default function ShopPostPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
-      {/* AdminLayoutの代わりに直接構成することで、左メニューを完全に排除 
-          ※ヘッダーが必要な場合は共通コンポーネントを別途配置 
-      */}
       <div className="p-4 md:p-10 max-w-7xl mx-auto">
         
-        {/* --- クイックナビゲーション（上部4つのメニュー） --- */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        {/* --- クイックナビゲーション（重複を削除し、2つに整理） --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
           {[
-            { label: '広告一覧・管理', icon: '📢', path: '/shop/ads', color: 'hover:border-orange-500' },
-            { label: '分析レポート', icon: '📊', path: '/shop/analytics', color: 'hover:border-blue-500' },
-            { label: '店舗情報の変更', icon: '⚙️', path: '/shop/settings', color: 'hover:border-slate-900' },
-            { label: '新しい広告を作る', icon: '➕', path: '/shop/post', color: 'hover:border-green-500' },
+            { label: '過去の広告一覧・管理', icon: '📢', path: '/shop/ads', color: 'hover:border-orange-500' },
+            { label: '閲覧・分析レポート', icon: '📊', path: '/shop/analytics', color: 'hover:border-blue-500' },
           ].map((nav, i) => (
             <button 
               key={i}
               onClick={() => router.push(nav.path)}
-              className={`bg-white border border-slate-100 p-6 rounded-[2.5rem] flex flex-col items-center gap-3 transition-all shadow-sm ${nav.color} hover:shadow-md active:scale-95 group`}
+              className={`bg-white border border-slate-100 p-8 rounded-[2.5rem] flex items-center justify-center gap-6 transition-all shadow-sm ${nav.color} hover:shadow-md active:scale-95 group`}
             >
-              <span className="text-3xl group-hover:scale-110 transition-transform">{nav.icon}</span>
-              <span className="text-[11px] font-black text-slate-500 tracking-tight">{nav.label}</span>
+              <span className="text-4xl group-hover:scale-110 transition-transform">{nav.icon}</span>
+              <span className="text-sm font-black text-slate-700 tracking-widest uppercase">{nav.label}</span>
             </button>
           ))}
         </div>
@@ -200,9 +194,9 @@ export default function ShopPostPage() {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></span>
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">Digital <span className="text-orange-500">Post</span></h1>
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">Create <span className="text-orange-500">Post</span></h1>
                   </div>
-                  <p className="text-slate-400 text-[10px] font-bold tracking-[0.3em] uppercase">デジタルチラシ作成・ポスティング</p>
+                  <p className="text-slate-400 text-[10px] font-bold tracking-[0.3em] uppercase underline decoration-orange-500/30 underline-offset-4">新しいデジタル広告を作成</p>
                 </div>
                 <button 
                   type="button"
@@ -217,7 +211,7 @@ export default function ShopPostPage() {
               <form onSubmit={handleSubmit} className="space-y-12">
                 {/* 店舗の生の声 */}
                 <div className="space-y-4">
-                  <label className="text-[11px] font-black text-orange-500 uppercase tracking-widest ml-1">【必須】今日の一言（広告の元になります）</label>
+                  <label className="text-[11px] font-black text-orange-500 uppercase tracking-widest ml-1 italic">【必須】今日の一言・アピール</label>
                   <input 
                     className="w-full bg-orange-50 border-2 border-orange-100 p-7 rounded-[2.5rem] text-xl font-bold text-orange-900 placeholder:text-orange-200 outline-none focus:ring-4 focus:ring-orange-100 transition-all" 
                     value={shopMessage} 
@@ -252,7 +246,7 @@ export default function ShopPostPage() {
                 {/* プレビュー入力 */}
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告のタイトル</label>
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の見出し（タイトル）</label>
                     <input className="w-full bg-transparent border-b-2 border-slate-200 p-2 text-2xl font-black outline-none focus:border-orange-500 transition-all placeholder:text-slate-200" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="AIにお任せするか、直接入力してください" required />
                   </div>
                   <div className="space-y-4">
@@ -267,18 +261,18 @@ export default function ShopPostPage() {
                     <input className="w-full bg-slate-50 p-6 rounded-2xl text-md font-bold border-none outline-none focus:ring-2 focus:ring-slate-200" value={storeName} onChange={(e) => setStoreName(e.target.value)} required />
                   </div>
                   <div className="space-y-4">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の掲載期限</label>
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">掲載終了日</label>
                     <input type="date" className="w-full bg-slate-50 p-6 rounded-2xl text-md font-bold border-none outline-none focus:ring-2 focus:ring-slate-200" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} required />
                   </div>
                 </div>
 
                 {/* 画像アップロード */}
                 <div className="space-y-4">
-                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">画像またはチラシを添付（任意）</label>
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">画像またはデジタルチラシ（任意）</label>
                   <label className="w-full bg-white border-2 border-dashed border-slate-200 p-12 rounded-[3rem] cursor-pointer hover:bg-slate-50 hover:border-orange-500 transition-all flex flex-col items-center justify-center gap-4 group">
                     <span className="text-5xl group-hover:scale-110 transition-transform">{uploading ? '⏳' : pdfUrl ? '✅' : '📷'}</span>
                     <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
-                      {uploading ? 'アップロード中...' : pdfUrl ? '準備完了' : '画像・PDFを選択する'}
+                      {uploading ? 'アップロード中...' : pdfUrl ? 'ファイルを変更する' : '写真・PDFをアップロード'}
                     </span>
                     <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" />
                   </label>
@@ -299,7 +293,7 @@ export default function ShopPostPage() {
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 italic">直近の配信履歴</h2>
+                <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 italic">最新の配信ステータス</h2>
               </div>
               
               <div className="space-y-10">
@@ -339,7 +333,7 @@ export default function ShopPostPage() {
         </div>
         
         <footer className="mt-16 text-[10px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto Shop Portal - デジタル広告配信システム
+          Posutto Shop Portal - デジタル広告配信システム v2.9
         </footer>
       </div>
     </div>
