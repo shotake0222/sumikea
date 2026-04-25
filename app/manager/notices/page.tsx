@@ -31,7 +31,7 @@ export default function ManagementNoticePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // --- 初期データ取得 (invite_codeを削除してエラー回避) ---
+  // --- 初期データ取得 ---
   useEffect(() => {
     const fetchAuthAndData = async () => {
       try {
@@ -45,30 +45,26 @@ export default function ManagementNoticePage() {
         
         let propertyList: any[] = [];
         if (role === 'ADMIN') {
-          // invite_codeをselectから除外
           const { data: allProps } = await supabase.from('properties').select('id, name');
           if (allProps) {
             propertyList = allProps.map(p => ({
               property_id: p.id,
-              properties: { name: p.name }
+              properties: { id: p.id, name: p.name } // IDを保持しておく
             }));
           }
         } else {
-          // invite_codeをselectから除外
           const { data: managerProps } = await supabase
             .from('property_managers')
-            .select('property_id, properties(name)')
+            .select('property_id, properties(id, name)')
             .eq('user_id', user.id);
           if (managerProps) propertyList = managerProps;
         }
         
         if (propertyList && propertyList.length > 0) {
           setManagedProperties(propertyList);
-          
           const firstProp = propertyList[0];
           setSelectedProperty(firstProp.property_id);
           setSelectedPropertyData(firstProp.properties);
-          
           fetchNoticeHistory(firstProp.property_id);
         }
       } catch (err) {
@@ -159,10 +155,16 @@ export default function ManagementNoticePage() {
     setIsSubmitting(false);
   };
 
+  // QRコード生成ロジックの修正
   const getQrCodeUrl = () => {
-    const targetUrl = "https://posutto.vercel.app/login?type=user";
-    return `https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=${encodeURIComponent(targetUrl)}&choe=UTF-8`;
+    // 物件IDをパラメータに含めることで、スキャン時に物件を特定しやすくする
+    const baseUrl = "https://posutto.vercel.app/login?type=user";
+    const targetUrl = selectedProperty ? `${baseUrl}&prop=${selectedProperty}` : baseUrl;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(targetUrl)}`;
   };
+
+  // 招待コードの代用ロジック (invite_codeカラムがない場合、IDの先頭6文字を使用)
+  const displayInviteCode = selectedPropertyData?.invite_code || (selectedProperty ? selectedProperty.substring(0, 6).toUpperCase() : '------');
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400 uppercase tracking-widest">
@@ -228,7 +230,7 @@ export default function ManagementNoticePage() {
                 「{selectedPropertyData?.name || '---'}」の住民登録用チラシを作成
               </h2>
               <p className="text-slate-400 text-base font-bold leading-relaxed max-w-2xl">
-                QRコードが記載された専用チラシを出力します。
+                招待コード「{displayInviteCode}」が記載された専用チラシを出力します。
               </p>
             </div>
           </div>
@@ -335,7 +337,7 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
-        {/* 印刷用モーダル (invite_code表示を削除) */}
+        {/* 印刷用モーダル修正 */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
@@ -353,7 +355,15 @@ export default function ManagementNoticePage() {
                 </div>
                 <div className="border-y-[6px] border-slate-50 py-12 mb-12 text-center">
                   <p className="text-sm font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">対象物件名</p>
-                  <h3 className="text-5xl font-black tracking-tight mb-4">{selectedPropertyData?.name || '---'}</h3>
+                  <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name || '---'}</h3>
+                  
+                  {/* 招待コード代用表示 */}
+                  <div className="bg-slate-50 inline-block p-10 rounded-[4rem] border-2 border-slate-100">
+                    <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Your Invitation Code</p>
+                    <div className="text-7xl font-black tracking-[0.25em] italic text-slate-900">
+                      {displayInviteCode}
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center mb-20">
                   <div className="space-y-8">
@@ -372,7 +382,10 @@ export default function ManagementNoticePage() {
                   </div>
                   <div className="flex flex-col items-center justify-center text-center space-y-6">
                     <div className="p-8 bg-white border-[6px] border-slate-900 rounded-[3rem] shadow-2xl scale-110">
-                      <img src={getQrCodeUrl()} alt="QR" className="w-56 h-56 object-contain" />
+                      {/* QRコード表示（APIを介して生成） */}
+                      {selectedProperty && (
+                        <img src={getQrCodeUrl()} alt="Property QR Code" className="w-56 h-56 object-contain" />
+                      )}
                     </div>
                   </div>
                 </div>
