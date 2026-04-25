@@ -18,7 +18,7 @@ export default function ManagementNoticePage() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
   const [targetAudience, setTargetAudience] = useState('resident');
-  const [sendPush, setSendPush] = useState(false); // プッシュ通知トグル
+  const [sendPush, setSendPush] = useState(false); // ✅ プッシュ通知トグル
   
   const [isPermanent, setIsPermanent] = useState(false);
   const [expiresAt, setExpiresAt] = useState(
@@ -75,10 +75,9 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
-  // 物件ごとの履歴取得（既読数と総住民数を統合）
+  // ✅ 既読数と総住民数を統合して取得
   const fetchNoticeHistory = async (propId: string) => {
     try {
-      // 1. お知らせと既読数を取得
       const { data: notices } = await supabase
         .from('property_notifications')
         .select(`
@@ -89,7 +88,6 @@ export default function ManagementNoticePage() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      // 2. その物件の総住民数を取得
       const { count: totalResidents } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
@@ -141,7 +139,7 @@ export default function ManagementNoticePage() {
     });
 
     if (!error) {
-      alert('配信が完了しました' + (sendPush ? '（通知をリクエストしました）' : ''));
+      alert('配信が完了しました' + (sendPush ? '（プッシュ通知リクエスト済み）' : ''));
       setTitle(''); setContent(''); setPdfUrl('');
       fetchNoticeHistory(selectedProperty);
     } else {
@@ -196,6 +194,7 @@ export default function ManagementNoticePage() {
         </header>
 
         <div className="flex flex-col xl:flex-row gap-8">
+          {/* メイン入力エリア */}
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-2xl shadow-slate-200/40 border border-slate-100 space-y-12">
               
@@ -283,7 +282,7 @@ export default function ManagementNoticePage() {
                 </div>
               </div>
 
-              {/* プッシュ通知トグル */}
+              {/* ✅ プッシュ通知トグル（デザイン統合） */}
               <div className="flex items-center gap-4 p-6 bg-blue-50 rounded-[2.5rem] border border-blue-100 group cursor-pointer hover:bg-blue-100 transition-all">
                 <input 
                   type="checkbox" 
@@ -294,7 +293,7 @@ export default function ManagementNoticePage() {
                 />
                 <label htmlFor="push-notify" className="flex-1 cursor-pointer">
                   <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">Immediate Push Notification</p>
-                  <p className="text-[10px] text-blue-600 font-bold opacity-70">対象物件の全住民スマホへ即時通知を飛ばします</p>
+                  <p className="text-[10px] text-blue-600 font-bold opacity-70">対象物件の全住民へ即時通知を飛ばします</p>
                 </label>
               </div>
 
@@ -304,7 +303,7 @@ export default function ManagementNoticePage() {
             </form>
           </div>
 
-          {/* 右サイド：履歴リスト（既読率バー付き） */}
+          {/* ✅ 右サイド：元のデザインをベースに既読率を統合 */}
           <div className="w-full xl:w-96 space-y-6">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center justify-between mb-10">
@@ -334,7 +333,7 @@ export default function ManagementNoticePage() {
                         </div>
                       </div>
 
-                      {/* 既読率プログレスバー */}
+                      {/* ✅ 既読率プログレスバー（元のUIに馴染むデザイン） */}
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <div className="flex justify-between items-end mb-2">
                           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">Awareness</span>
