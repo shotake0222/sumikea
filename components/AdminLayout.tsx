@@ -18,9 +18,9 @@ export default function AdminLayout({
       {/* サイドバー（PC用） - 印刷時は非表示(no-print) */}
       <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-white p-6 no-print">
         <div className="mb-10">
-          {/* サービス名を「ぽすっと」に統合（brandConfig経由） */}
+          {/* 左上の表記を「ぽすっと」に固定統合 */}
           <h1 className="text-2xl font-black tracking-tighter italic uppercase text-blue-500">
-            {brandConfig.name}
+            ぽすっと
           </h1>
           <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-black">
             {userType === 'SHOP' ? 'Partner Portal' : userType === 'ADMIN' ? 'System Root' : 'Admin Console'}
@@ -36,7 +36,7 @@ export default function AdminLayout({
             active={pathname === '/properties'} 
           />
 
-          {/* 追加：レポーティング（大項目：ポスティング・管理会社・店舗・住民） */}
+          {/* レポーティング（ポスティング・管理会社・店舗・住民） */}
           <AdminNavLink 
             label="レポーティング" 
             icon="📈" 
