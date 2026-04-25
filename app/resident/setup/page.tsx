@@ -10,11 +10,12 @@ export default function ResidentSetup() {
   const [selectedProperty, setSelectedProperty] = useState('');
   const [roomNumber, setRoomNumber] = useState('');
   
-  // 完全版デモグラフィック・ステート
+  // デモグラフィック・フルセット
   const [ageGroup, setAgeGroup] = useState('');
   const [gender, setGender] = useState('');
-  const [occupation, setOccupation] = useState(''); // 職業
-  const [hasPet, setHasPet] = useState<boolean | null>(null); // ペットの有無
+  const [occupation, setOccupation] = useState('');
+  const [familySize, setFamilySize] = useState(''); // 世帯人数
+  const [hasPet, setHasPet] = useState<boolean | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,9 +44,9 @@ export default function ResidentSetup() {
   }, [router]);
 
   const handleSave = async () => {
-    // 全項目入力チェック
-    if (!selectedProperty || !roomNumber || !ageGroup || !gender || !occupation || hasPet === null) {
-      alert('すべての項目を入力してください（ペットの有無も含む）');
+    // 全項目バリデーション
+    if (!selectedProperty || !roomNumber || !ageGroup || !gender || !occupation || !familySize || hasPet === null) {
+      alert('未入力の項目があります。すべての情報を入力してください。');
       return;
     }
 
@@ -54,7 +55,7 @@ export default function ResidentSetup() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // profilesテーブルを更新（完全デモグラ情報）
+      // profilesテーブルを更新
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -63,17 +64,18 @@ export default function ResidentSetup() {
           age_group: ageGroup,
           gender: gender,
           occupation: occupation,
+          family_size: familySize, // 世帯人数保存
           has_pet: hasPet
         })
         .eq('id', user.id);
 
       if (error) throw error;
 
-      alert('セットアップが完了しました！');
+      alert('登録が完了しました！');
       window.location.href = '/resident/dashboard'; 
     } catch (err) {
       console.error(err);
-      alert('保存に失敗しました。DBのカラム名（occupation, has_pet 等）を確認してください。');
+      alert('保存に失敗しました。DBのカラム名を確認してください。');
     } finally {
       setSaving(false);
     }
@@ -88,99 +90,101 @@ export default function ResidentSetup() {
   return (
     <div className="max-w-md mx-auto bg-white min-h-screen p-8 pt-16 font-sans overflow-x-hidden pb-24">
       
-      {/* ヘッダー */}
       <div className="mb-10 text-center">
-        <h1 className="text-4xl font-black tracking-tighter italic text-slate-900 mb-2">Setup.</h1>
-        <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em]">居住者情報の登録</p>
+        <h1 className="text-4xl font-black tracking-tighter italic text-slate-900 mb-2">Final Step.</h1>
+        <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em]">入居情報の最終確認</p>
       </div>
 
       <div className="space-y-10">
         
-        {/* 物件・部屋 */}
-        <div className="space-y-6">
-          <section className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Property</label>
+        {/* 基本情報 */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-4 h-1 bg-slate-900 rounded-full"></div>
+            <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Address Info</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4">
             <select 
               value={selectedProperty}
               onChange={(e) => setSelectedProperty(e.target.value)}
-              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none appearance-none"
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none"
             >
               <option value="">物件を選択</option>
               {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-          </section>
-
-          <section className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Room Number</label>
             <input 
               type="text" placeholder="部屋番号 (例: 101)" value={roomNumber}
               onChange={(e) => setRoomNumber(e.target.value)}
               className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none"
             />
-          </section>
-        </div>
+          </div>
+        </section>
 
-        <hr className="border-slate-100" />
-
-        {/* 属性セクション */}
-        <div className="space-y-8">
-          {/* 年代・性別 */}
-          <div className="grid grid-cols-2 gap-4">
-            <section className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Age Group</label>
-              <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-xs">
-                <option value="">年代</option>
-                {['10代', '20代', '30代', '40代', '50代', '60代以上'].map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </section>
-            <section className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Gender</label>
-              <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-xs">
-                <option value="">性別</option>
-                {['男性', '女性', '回答なし'].map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </section>
+        {/* 属性情報 */}
+        <section className="space-y-6">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-4 h-1 bg-slate-900 rounded-full"></div>
+            <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Demographics</h2>
           </div>
 
-          {/* 職業 */}
-          <section className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Occupation / 職業</label>
-            <select 
-              value={occupation} onChange={(e) => setOccupation(e.target.value)}
-              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-slate-900 focus:border-slate-900 outline-none"
-            >
-              <option value="">選択してください</option>
-              {['会社員', '公務員', '自営業・自由業', '専業主婦・主夫', '学生', 'パート・アルバイト', 'その他'].map(o => <option key={o} value={o}>{o}</option>)}
+          <div className="grid grid-cols-2 gap-4">
+            <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-xs">
+              <option value="">年代</option>
+              {['10代', '20代', '30代', '40代', '50代', '60代以上'].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
-          </section>
+            <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-xs">
+              <option value="">性別</option>
+              {['男性', '女性', '回答なし'].map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
 
-          {/* ペットの有無（トグルボタン風） */}
+          {/* 職業選択 */}
+          <select value={occupation} onChange={(e) => setOccupation(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 font-bold text-sm">
+            <option value="">職業を選択</option>
+            {['会社員', '公務員', '自営業', '専業主婦・主夫', '学生', 'パート・アルバイト', 'その他'].map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+
+          {/* 世帯人数選択 */}
           <section className="space-y-3">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Do you have a pet? / ペットの有無</label>
-            <div className="flex gap-4">
-              {[ {label: '飼っている', value: true, emoji: '🐶'}, {label: '飼っていない', value: false, emoji: '🏠'} ].map((item) => (
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Household Size / 世帯人数</label>
+            <div className="grid grid-cols-4 gap-2">
+              {['1人', '2人', '3人', '4人以上'].map((s) => (
                 <button
-                  key={item.label}
-                  onClick={() => setHasPet(item.value)}
-                  className={`flex-1 p-4 rounded-2xl font-bold text-sm transition-all border-2 flex flex-col items-center gap-1
-                    ${hasPet === item.value ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                  key={s} onClick={() => setFamilySize(s)}
+                  className={`py-3 rounded-xl font-bold text-[11px] transition-all border-2 
+                    ${familySize === s ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-slate-50 text-slate-400 border-slate-50'}`}
                 >
-                  <span className="text-xl">{item.emoji}</span>
-                  {item.label}
+                  {s}
                 </button>
               ))}
             </div>
           </section>
-        </div>
 
-        {/* 保存 */}
+          {/* ペットの有無 */}
+          <section className="space-y-3">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pet / ペット</label>
+            <div className="flex gap-4">
+              {[ {label: 'あり', value: true, emoji: '🐶'}, {label: 'なし', value: false, emoji: '🏠'} ].map((item) => (
+                <button
+                  key={item.label} onClick={() => setHasPet(item.value)}
+                  className={`flex-1 p-4 rounded-2xl font-bold text-xs transition-all border-2 flex items-center justify-center gap-2
+                    ${hasPet === item.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                >
+                  <span>{item.emoji}</span> {item.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        </section>
+
+        {/* 保存ボタン */}
         <div className="pt-6">
           <button 
             onClick={handleSave} disabled={saving}
             className={`w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] shadow-2xl active:scale-95 transition-all 
               ${saving ? 'opacity-50' : 'hover:bg-blue-600'}`}
           >
-            {saving ? 'SAVING...' : 'この内容で開始する'}
+            {saving ? 'SAVING...' : 'Posuttoをはじめる'}
           </button>
         </div>
       </div>
