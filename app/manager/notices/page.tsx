@@ -18,7 +18,7 @@ export default function ManagementNoticePage() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
   const [targetAudience, setTargetAudience] = useState('resident');
-  const [sendPush, setSendPush] = useState(false); // ✅ プッシュ通知トグル
+  const [sendPush, setSendPush] = useState(false); 
   
   const [isPermanent, setIsPermanent] = useState(false);
   const [expiresAt, setExpiresAt] = useState(
@@ -75,7 +75,6 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
-  // ✅ 既読数と総住民数を統合して取得
   const fetchNoticeHistory = async (propId: string) => {
     try {
       const { data: notices } = await supabase
@@ -103,7 +102,7 @@ export default function ManagementNoticePage() {
         setRecentNotices(formatted);
       }
     } catch (err) {
-      console.error('History fetch error:', err);
+      console.error('履歴取得エラー:', err);
     }
   };
 
@@ -139,7 +138,7 @@ export default function ManagementNoticePage() {
     });
 
     if (!error) {
-      alert('配信が完了しました' + (sendPush ? '（プッシュ通知リクエスト済み）' : ''));
+      alert('お知らせの配信が完了しました' + (sendPush ? '（プッシュ通知を送信しました）' : ''));
       setTitle(''); setContent(''); setPdfUrl('');
       fetchNoticeHistory(selectedProperty);
     } else {
@@ -152,7 +151,7 @@ export default function ManagementNoticePage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="text-center animate-pulse">
         <div className="w-12 h-12 bg-blue-600/20 rounded-full mx-auto mb-4" />
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Initialising Manager Console...</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">管理コンソールを起動中...</p>
       </div>
     </div>
   );
@@ -161,21 +160,21 @@ export default function ManagementNoticePage() {
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
       <div className="max-w-7xl mx-auto">
         
-        {/* HEADER */}
+        {/* ヘッダー */}
         <header className="mb-10 flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
               <span className="w-2 h-2 bg-blue-600 rounded-full animate-ping"></span>
-              <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Property Admin Suite</span>
+              <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">物件管理スイート</span>
             </div>
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">
-              Management <span className="text-blue-600">Console</span>
+              管理 <span className="text-blue-600">コンソール</span>
             </h1>
           </div>
           
           <div className="w-full lg:w-96 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center gap-4">
             <div className="flex-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 block ml-1">操作対象物件</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 block ml-1">操作対象の物件</label>
               <select 
                 className="w-full bg-transparent font-bold text-slate-700 outline-none cursor-pointer text-lg"
                 value={selectedProperty}
@@ -194,14 +193,14 @@ export default function ManagementNoticePage() {
         </header>
 
         <div className="flex flex-col xl:flex-row gap-8">
-          {/* メイン入力エリア */}
+          {/* メイン：投稿フォーム */}
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-2xl shadow-slate-200/40 border border-slate-100 space-y-12">
               
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-50 pb-10">
-                <h2 className="text-xl font-black text-slate-800 flex items-center gap-4 tracking-tighter italic">
+                <h2 className="text-xl font-black text-slate-800 flex items-center gap-4 tracking-tighter italic text-nowrap">
                   <span className="w-12 h-12 bg-blue-600 text-white rounded-[1.5rem] flex items-center justify-center text-lg shadow-xl shadow-blue-200">✉️</span> 
-                  SEND NOTIFICATION
+                  お知らせを作成
                 </h2>
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full md:w-auto">
                   {[
@@ -236,15 +235,15 @@ export default function ManagementNoticePage() {
                 </div>
 
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">表示スケジュール</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">掲載スケジュール</label>
                   <div className="bg-slate-50 p-6 rounded-[2rem] space-y-4 border border-slate-100">
                     <button type="button" onClick={() => setIsPermanent(!isPermanent)}
                       className={`w-full py-4 rounded-xl text-[10px] font-black transition-all flex items-center justify-center gap-2 ${isPermanent ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>
-                      {isPermanent ? '✅ 無期限（常設）表示' : '期間を指定して表示する'}
+                      {isPermanent ? '✅ 常にトップに固定表示' : '掲載終了日時を指定する'}
                     </button>
                     {!isPermanent && (
                       <div className="flex flex-col gap-2">
-                        <span className="text-[9px] font-bold text-slate-400 ml-1">自動掲載終了日時</span>
+                        <span className="text-[9px] font-bold text-slate-400 ml-1">自動非表示にする日時</span>
                         <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
                           className="w-full bg-white border-none p-4 rounded-xl font-bold text-sm outline-none shadow-sm focus:ring-2 focus:ring-blue-100 transition-all" />
                       </div>
@@ -255,25 +254,25 @@ export default function ManagementNoticePage() {
 
               <div className="space-y-8">
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">配信タイトル</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">タイトル</label>
                   <input className="w-full bg-slate-50 border-none p-7 rounded-[2rem] text-xl font-black text-slate-900 outline-none focus:ring-4 focus:ring-blue-50 transition-all placeholder:text-slate-300"
                     value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：【重要】4月10日 エレベーター点検のお知らせ" required />
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
                   <div className="md:col-span-2 space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">詳細内容</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">本文</label>
                     <textarea className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] h-64 text-slate-700 outline-none resize-none leading-relaxed focus:ring-4 focus:ring-blue-50 transition-all text-lg font-medium"
-                      value={content} onChange={(e) => setContent(e.target.value)} placeholder="住民に伝えたい具体的な内容を入力してください..." required />
+                      value={content} onChange={(e) => setContent(e.target.value)} placeholder="住民の方へ伝えたい内容を詳しく入力してください..." required />
                   </div>
                   
                   <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">資料・写真添付</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">添付資料 (PDF/画像)</label>
                     <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[2.5rem] h-64 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
                       {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
                         <div className="text-center p-6">
                           <span className="text-5xl mb-4 block">{pdfUrl ? '📄' : '📤'}</span>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? 'UPLOADED' : 'Drag & Drop'}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? 'アップロード完了' : 'ファイルをアップロード'}</p>
                         </div>
                       }
                       <input type="file" className="hidden" onChange={handlePdfUpload} accept="application/pdf,image/*" />
@@ -282,7 +281,7 @@ export default function ManagementNoticePage() {
                 </div>
               </div>
 
-              {/* ✅ プッシュ通知トグル（デザイン統合） */}
+              {/* プッシュ通知設定 */}
               <div className="flex items-center gap-4 p-6 bg-blue-50 rounded-[2.5rem] border border-blue-100 group cursor-pointer hover:bg-blue-100 transition-all">
                 <input 
                   type="checkbox" 
@@ -292,23 +291,23 @@ export default function ManagementNoticePage() {
                   className="w-6 h-6 accent-blue-600 rounded-lg cursor-pointer"
                 />
                 <label htmlFor="push-notify" className="flex-1 cursor-pointer">
-                  <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">Immediate Push Notification</p>
-                  <p className="text-[10px] text-blue-600 font-bold opacity-70">対象物件の全住民へ即時通知を飛ばします</p>
+                  <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">即時プッシュ通知を送信</p>
+                  <p className="text-[10px] text-blue-600 font-bold opacity-70">対象物件の全住民へスマホ通知を飛ばします</p>
                 </label>
               </div>
 
               <button disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3rem] font-black text-2xl hover:bg-slate-900 transition-all shadow-2xl shadow-blue-200 active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter italic">
-                {isSubmitting ? 'SENDING...' : 'CONFIRM & SEND NOW'}
+                {isSubmitting ? '送信中...' : 'この内容で配信する'}
               </button>
             </form>
           </div>
 
-          {/* ✅ 右サイド：元のデザインをベースに既読率を統合 */}
+          {/* 右サイド：履歴と既読率 */}
           <div className="w-full xl:w-96 space-y-6">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center justify-between mb-10">
-                <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic">RECENT LOGS</h3>
-                <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">LATEST 5</span>
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic">最新の配信履歴</h3>
+                <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">直近 5件</span>
               </div>
               
               <div className="space-y-10">
@@ -326,17 +325,17 @@ export default function ManagementNoticePage() {
                         <div className="flex-1">
                           <p className="text-sm font-black text-slate-800 line-clamp-1 mb-1">{notice.title}</p>
                           <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                            <span className="uppercase">{notice.target_audience}宛</span>
+                            <span className="uppercase">{notice.target_audience === 'resident' ? '住民' : notice.target_audience === 'shop' ? '店舗' : '業者'}宛</span>
                             <span>•</span>
                             <span>{new Date(notice.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* ✅ 既読率プログレスバー（元のUIに馴染むデザイン） */}
+                      {/* 既読率インジケーター */}
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <div className="flex justify-between items-end mb-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">Awareness</span>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">既読状況</span>
                           <span className="text-xs font-black text-blue-600">
                             {notice.actual_read_count} / {notice.total_residents}人
                           </span>
@@ -353,20 +352,20 @@ export default function ManagementNoticePage() {
                 })}
                 {recentNotices.length === 0 && (
                   <div className="text-center py-10">
-                    <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest">No logs found</p>
+                    <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest">配信履歴はありません</p>
                   </div>
                 )}
               </div>
 
               <button className="w-full mt-10 py-5 border-2 border-slate-50 rounded-2xl text-[10px] font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">
-                View All History →
+                すべての履歴を表示 →
               </button>
             </div>
           </div>
         </div>
 
         <footer className="mt-16 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto Central Ad-Hub Module v3.5 / {selectedProperty ? 'Property Connected' : 'System Standby'}
+          Posutto 管理ハブ・モジュール v3.5 / {selectedProperty ? '物件に接続済み' : 'システム待機中'}
         </footer>
       </div>
     </div>
