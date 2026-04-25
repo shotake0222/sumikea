@@ -14,7 +14,11 @@ export default function AdminPropertiesPage() {
   
   // モーダル制御
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', address: '', extra: '', join_code: '' });
+  const [newItem, setNewItem] = useState({ name: '', address: '', extra: '' });
+  
+  // 管理会社用：紐づけ物件リスト
+  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [selectedProps, setSelectedProps] = useState<{id: string, code: string}[]>([]);
 
   // データ用ステート
   const [dataList, setDataList] = useState<any[]>([]);
@@ -43,23 +47,8 @@ export default function AdminPropertiesPage() {
           return;
         }
 
-        // 1. 初回のタブデータ取得
-        await fetchTabData('posting');
-
-        // 2. 統計データのリアルタイム取得
-        const [resRes, noticeRes, storeRes, adRes] = await Promise.all([
-          supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
-          supabase.from('property_notifications').select('*', { count: 'exact', head: true }),
-          supabase.from('stores').select('*', { count: 'exact', head: true }),
-          supabase.from('local_ad_stats').select('*', { count: 'exact', head: true })
-        ]);
-
-        setStats({
-          totalResidents: resRes.count || 0,
-          activeNotices: noticeRes.count || 0,
-          totalShops: storeRes.count || 0,
-          totalAds: adRes.count || 0
-        });
+        fetchTabData('posting');
+        loadInitialData();
 
       } catch (err) {
         console.error('取得エラー:', err);
@@ -70,30 +59,44 @@ export default function AdminPropertiesPage() {
     checkAuthAndFetch();
   }, [router]);
 
-  // ✅ タブ切り替え時に本番データを取得
+  const loadInitialData = async () => {
+    const [resRes, noticeRes, storeRes, adRes, propRes] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
+      supabase.from('property_notifications').select('*', { count: 'exact', head: true }),
+      supabase.from('stores').select('*', { count: 'exact', head: true }),
+      supabase.from('local_ad_stats').select('*', { count: 'exact', head: true }),
+      supabase.from('properties').select('id, name').is('management_company_id', null) // 未紐づけの物件のみ
+    ]);
+
+    setStats({
+      totalResidents: resRes.count || 0,
+      activeNotices: noticeRes.count || 0,
+      totalShops: storeRes.count || 0,
+      totalAds: adRes.count || 0
+    });
+    setAllProperties(propRes.data || []);
+  };
+
   const fetchTabData = async (tab: ViewTab) => {
     let query: any;
     if (tab === 'posting') {
       query = supabase.from('posting_companies').select('*');
     } else if (tab === 'manager') {
-      query = supabase.from('management_companies').select('*');
+      // 管理会社の場合は物件数も取得
+      query = supabase.from('management_companies').select('*, properties(id)');
     } else {
       query = supabase.from('stores').select('*');
     }
 
     const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('データ取得失敗:', error);
-      return;
-    }
+    if (error) return console.error(error);
 
     const formatted = (data || []).map((d: any) => ({
       id: d.id,
       name: d.name,
       address: d.address || d.base_location || '住所未登録',
       category: d.category || (tab === 'posting' ? 'POSTING' : tab === 'manager' ? 'MANAGER' : 'STORE'),
-      join_code: d.join_code || null
+      propCount: d.properties?.length || 0
     }));
     setDataList(formatted);
   };
@@ -103,38 +106,58 @@ export default function AdminPropertiesPage() {
     fetchTabData(tab);
   };
 
+  // 物件紐づけの追加
+  const addPropField = () => {
+    setSelectedProps([...selectedProps, { id: '', code: Math.random().toString(36).substring(2, 7).toUpperCase() }]);
+  };
+
   const handleCreate = async () => {
     if (!newItem.name) return alert('名称を入力してください');
     
-    let table = '';
-    let payload: any = { name: newItem.name };
+    setLoading(true);
+    try {
+      let table = '';
+      let payload: any = { name: newItem.name };
 
-    if (activeTab === 'posting') {
-      table = 'posting_companies';
-      payload.base_location = newItem.address;
-    } else if (activeTab === 'manager') {
-      table = 'management_companies';
-      payload.address = newItem.address;
-      payload.join_code = newItem.join_code || Math.random().toString(36).substring(2, 7).toUpperCase();
-    } else {
-      table = 'stores';
-      payload.address = newItem.address;
-      payload.category = newItem.extra || '店舗';
-    }
+      if (activeTab === 'posting') {
+        table = 'posting_companies';
+        payload.base_location = newItem.address;
+      } else if (activeTab === 'manager') {
+        table = 'management_companies';
+        payload.address = newItem.address;
+      } else {
+        table = 'stores';
+        payload.address = newItem.address;
+        payload.category = newItem.extra || '店舗';
+      }
 
-    const { error } = await supabase.from(table).insert([payload]);
+      // 1. 会社・店舗の登録
+      const { data: created, error } = await supabase.from(table).insert([payload]).select().single();
+      if (error) throw error;
 
-    if (error) {
-      alert('エラーが発生しました: ' + error.message);
-    } else {
+      // 2. 管理会社の場合、物件にIDと招待コードを書き込む
+      if (activeTab === 'manager' && selectedProps.length > 0) {
+        for (const prop of selectedProps) {
+          if (!prop.id) continue;
+          await supabase.from('properties')
+            .update({ management_company_id: created.id, join_code: prop.code })
+            .eq('id', prop.id);
+        }
+      }
+
       alert('正常に登録されました');
       setIsModalOpen(false);
-      setNewItem({ name: '', address: '', extra: '', join_code: '' });
+      setNewItem({ name: '', address: '', extra: '' });
+      setSelectedProps([]);
       fetchTabData(activeTab);
+    } catch (err: any) {
+      alert('エラー: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading) return (
+  if (loading && dataList.length === 0) return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
       <div className="w-10 h-10 border-4 border-slate-900 border-t-blue-500 rounded-full animate-spin"></div>
     </div>
@@ -156,16 +179,12 @@ export default function AdminPropertiesPage() {
           </div>
           
           <div className="flex gap-2">
-             <button onClick={() => router.push('/management/post-ad')} className="bg-slate-900 text-white px-6 py-4 rounded-2xl hover:bg-blue-600 transition shadow-xl text-[10px] font-black uppercase tracking-widest">
-               🎯 広告を新規作成
-             </button>
-             <button onClick={() => router.push('/management/reporting')} className="bg-white border-2 border-slate-900 text-slate-900 px-6 py-4 rounded-2xl hover:bg-slate-50 transition shadow-md text-[10px] font-black uppercase tracking-widest">
-               📈 全体レポート
-             </button>
+             <button onClick={() => router.push('/management/post-ad')} className="bg-slate-900 text-white px-6 py-4 rounded-2xl hover:bg-blue-600 transition shadow-xl text-[10px] font-black uppercase tracking-widest">🎯 広告を新規作成</button>
+             <button onClick={() => router.push('/management/reporting')} className="bg-white border-2 border-slate-900 text-slate-900 px-6 py-4 rounded-2xl hover:bg-slate-50 transition shadow-md text-[10px] font-black uppercase tracking-widest">📈 全体レポート</button>
           </div>
         </header>
 
-        {/* 統計概要：実データからカウント */}
+        {/* 統計セクション */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[
             { label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600', path: '/management/reporting?target=resident' },
@@ -179,7 +198,6 @@ export default function AdminPropertiesPage() {
                 <span className={`text-4xl font-black tracking-tighter ${item.color}`}>{item.value.toLocaleString()}</span>
                 <span className="text-xs font-bold text-slate-300">{item.unit}</span>
               </div>
-              <div className="mt-4 h-1 w-0 group-hover:w-full bg-slate-100 transition-all duration-500"></div>
             </div>
           ))}
         </div>
@@ -191,30 +209,26 @@ export default function AdminPropertiesPage() {
               <button 
                 key={t}
                 onClick={() => handleTabChange(t)}
-                className={`px-8 py-3 rounded-2xl text-[11px] font-black transition-all ${activeTab === t ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-8 py-3 rounded-2xl text-[11px] font-black transition-all ${activeTab === t ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}
               >
                 {t === 'posting' ? 'ポスティング業者' : t === 'manager' ? '管理会社' : '提携店舗'}
               </button>
             ))}
           </div>
-          
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg w-full md:w-auto"
-          >
+          <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg w-full md:w-auto">
             + {activeTab === 'posting' ? '業者' : activeTab === 'manager' ? '管理会社' : '店舗'}を登録
           </button>
         </div>
 
-        {/* 本番データリスト */}
+        {/* リスト表示 */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 group hover:border-blue-200 transition-all flex flex-col relative overflow-hidden">
               <div className="flex justify-between items-start mb-2 relative z-10">
                 <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">{item.category}</p>
-                {item.join_code && (
+                {item.propCount > 0 && (
                   <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-3 py-1 rounded-full">
-                    CODE: {item.join_code}
+                    {item.propCount} 物件管理中
                   </span>
                 )}
               </div>
@@ -223,83 +237,82 @@ export default function AdminPropertiesPage() {
               
               <div className="flex gap-2 mt-auto relative z-10">
                 <button className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition">詳細情報</button>
-                <button 
-                  onClick={() => router.push(`/management/reporting?id=${item.id}`)}
-                  className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md"
-                >
-                  実績分析
-                </button>
-              </div>
-              
-              {/* 背景の装飾 */}
-              <div className="absolute -right-4 -bottom-4 text-slate-50 text-6xl font-black italic opacity-0 group-hover:opacity-100 transition-opacity">
-                {activeTab.toUpperCase().slice(0,1)}
+                <button onClick={() => router.push(`/management/reporting?id=${item.id}`)} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">実績分析</button>
               </div>
             </div>
           ))}
-          
-          {dataList.length === 0 && (
-            <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
-              <p className="font-black text-slate-300 uppercase tracking-widest text-xs italic">
-                {activeTab} カテゴリに登録データがありません
-              </p>
-            </div>
-          )}
         </div>
       </div>
 
       {/* 登録モーダル */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-lg p-10 shadow-2xl relative">
+          <div className="bg-white rounded-[3rem] w-full max-w-2xl p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-black italic mb-6 uppercase tracking-tighter">
-              新規登録: <span className="text-blue-600">{activeTab === 'manager' ? '管理会社' : activeTab.toUpperCase()}</span>
+              新規登録: <span className="text-blue-600">{activeTab.toUpperCase()}</span>
             </h2>
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Name / 名称</label>
-                <input 
-                  className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold"
-                  placeholder="会社名・屋号"
-                  value={newItem.name}
-                  onChange={(e) => setNewItem({...newItem, name: e.target.value})}
-                />
-              </div>
-
-              {activeTab === 'manager' && (
+            
+            <div className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-blue-500 ml-2 uppercase tracking-widest">Invitation Code (任意)</label>
-                  <input 
-                    className="w-full p-5 bg-blue-50/30 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold text-blue-600 placeholder:text-blue-300"
-                    placeholder="未入力の場合は自動生成されます"
-                    value={newItem.join_code}
-                    onChange={(e) => setNewItem({...newItem, join_code: e.target.value})}
-                  />
+                  <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Name / 名称</label>
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" placeholder="会社名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
                 </div>
-              )}
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Location / 住所</label>
-                <input 
-                  className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold"
-                  placeholder="所在地"
-                  value={newItem.address}
-                  onChange={(e) => setNewItem({...newItem, address: e.target.value})}
-                />
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Address / 住所</label>
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
+                </div>
               </div>
 
-              {activeTab === 'shop' && (
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Category</label>
-                  <input 
-                    className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold"
-                    placeholder="例: スーパー、ジム、美容室等"
-                    value={newItem.extra}
-                    onChange={(e) => setNewItem({...newItem, extra: e.target.value})}
-                  />
+              {/* ✅ 管理会社のみ：物件紐づけセクション */}
+              {activeTab === 'manager' && (
+                <div className="pt-6 border-t border-slate-100">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">管理物件と招待コードの設定</h3>
+                    <button onClick={addPropField} className="text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-full hover:bg-blue-100 transition">+ 物件を追加</button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {selectedProps.map((item, index) => (
+                      <div key={index} className="flex gap-3 items-center bg-slate-50 p-4 rounded-2xl">
+                        <select 
+                          className="flex-[2] bg-white p-3 rounded-xl font-bold text-xs outline-none border border-slate-200"
+                          value={item.id}
+                          onChange={(e) => {
+                            const newArr = [...selectedProps];
+                            newArr[index].id = e.target.value;
+                            setSelectedProps(newArr);
+                          }}
+                        >
+                          <option value="">物件を選択してください</option>
+                          {allProperties.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <div className="flex-1">
+                          <input 
+                            className="w-full bg-white p-3 rounded-xl font-black text-blue-600 text-xs outline-none border border-slate-200"
+                            placeholder="CODE"
+                            value={item.code}
+                            onChange={(e) => {
+                              const newArr = [...selectedProps];
+                              newArr[index].code = e.target.value;
+                              setSelectedProps(newArr);
+                            }}
+                          />
+                        </div>
+                        <button 
+                          onClick={() => setSelectedProps(selectedProps.filter((_, i) => i !== index))}
+                          className="text-slate-300 hover:text-red-500 font-bold px-2"
+                        >✕</button>
+                      </div>
+                    ))}
+                    {selectedProps.length === 0 && <p className="text-center py-4 text-xs text-slate-300 font-bold italic">物件が選択されていません</p>}
+                  </div>
                 </div>
               )}
             </div>
+
             <div className="flex gap-3 mt-10">
               <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-xs uppercase tracking-widest">キャンセル</button>
               <button onClick={handleCreate} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-700 transition">登録を確定する</button>
