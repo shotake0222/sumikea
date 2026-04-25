@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(req: NextRequest) {
-  // 何も判定せず、すべてをそのまま通す
+  // すべてのチェックをスルーして、ページ側の遷移ロジックに任せる
   return NextResponse.next();
 }
 
-// matcherも一旦すべてを対象から外す（空にする）
+// matcherを空にすることで、ミドルウェアが介入するページをゼロにします
 export const config = {
   matcher: [],
 };
