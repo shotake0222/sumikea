@@ -34,21 +34,21 @@ export default function ManagementNoticePage() {
   const [showPreview, setShowPreview] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // --- 初期データ取得 ---
+  // --- 初期データ取得 (Ad Consoleの動くロジックをベースに統合) ---
   useEffect(() => {
     const fetchAuthAndData = async () => {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) { router.push('/login?type=manager'); return; }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { router.push('/login?type=manager'); return; }
 
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
         const role = profile?.role?.toUpperCase() || 'USER';
         
         if (role !== 'ADMIN' && role !== 'MANAGER') { router.push('/login?type=manager'); return; }
         
         let propertyList: any[] = [];
         if (role === 'ADMIN') {
-          // ADMIN: 全物件を取得し、MANAGERと同じデータ構造に map する
+          // invite_codeも含めて取得
           const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
           if (allProps) {
             propertyList = allProps.map(p => ({
@@ -57,34 +57,20 @@ export default function ManagementNoticePage() {
             }));
           }
         } else {
-          // MANAGER: 紐付けテーブルから取得。properties!inner を使い、配列ではなくオブジェクトとして取得を試みる
+          // invite_codeも含めて結合取得
           const { data: managerProps } = await supabase
             .from('property_managers')
-            .select(`
-              property_id,
-              properties:properties!inner (
-                name,
-                invite_code
-              )
-            `)
+            .select('property_id, properties(name, invite_code)')
             .eq('user_id', user.id);
-          
-          if (managerProps) {
-            // properties が配列で返ってくる可能性を考慮して整形
-            propertyList = managerProps.map((p: any) => ({
-              property_id: p.property_id,
-              properties: Array.isArray(p.properties) ? p.properties[0] : p.properties
-            }));
-          }
+          if (managerProps) propertyList = managerProps;
         }
         
-        if (propertyList && propertyList.length > 0) {
+        if (propertyList.length > 0) {
           setManagedProperties(propertyList);
-          // 初期選択物件をセット
-          const initialProp = propertyList[0];
-          setSelectedProperty(initialProp.property_id);
-          setSelectedPropertyData(initialProp.properties);
-          fetchNoticeHistory(initialProp.property_id);
+          // Ad Consoleと同様に初期値をセット
+          setSelectedProperty(propertyList[0].property_id);
+          setSelectedPropertyData(propertyList[0].properties);
+          fetchNoticeHistory(propertyList[0].property_id);
         }
       } catch (err) {
         console.error('データ取得エラー:', err);
@@ -246,7 +232,7 @@ export default function ManagementNoticePage() {
             </button>
             <div className="flex-1 text-center md:text-left">
               <h2 className="text-2xl md:text-3xl font-black mb-3 tracking-tight italic">
-                「{selectedPropertyData?.name || '選択物件'}」の住民登録用チラシを作成
+                「{selectedPropertyData?.name || '物件を選択してください'}」の住民登録用チラシを作成
               </h2>
               <p className="text-slate-400 text-base font-bold leading-relaxed max-w-2xl">
                 招待コード「{selectedPropertyData?.invite_code || '------'}」が記載された専用チラシを出力します。<br />
@@ -268,9 +254,6 @@ export default function ManagementNoticePage() {
                     </button>
                   ))}
                 </div>
-                <button type="button" onClick={() => setShowPreview(true)} className="text-[10px] font-black text-blue-500 hover:underline italic uppercase">
-                  送信前プレビュー 👁️
-                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
