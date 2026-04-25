@@ -13,11 +13,11 @@ export default function ManagementNoticePage() {
   const [selectedProperty, setSelectedProperty] = useState('');
   const [recentNotices, setRecentNotices] = useState<any[]>([]);
   
-  // 配信設定用
+  // 配信設定用（住民宛固定）
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
-  const [targetAudience, setTargetAudience] = useState('resident');
+  const [targetAudience] = useState('resident'); // 住民宛に固定
   const [sendPush, setSendPush] = useState(false); 
   
   const [isPermanent, setIsPermanent] = useState(false);
@@ -138,7 +138,7 @@ export default function ManagementNoticePage() {
     });
 
     if (!error) {
-      alert('お知らせの配信が完了しました' + (sendPush ? '（プッシュ通知を送信しました）' : ''));
+      alert('住民へのお知らせ配信が完了しました' + (sendPush ? '（プッシュ通知を送信しました）' : ''));
       setTitle(''); setContent(''); setPdfUrl('');
       fetchNoticeHistory(selectedProperty);
     } else {
@@ -168,7 +168,7 @@ export default function ManagementNoticePage() {
               <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">物件管理スイート</span>
             </div>
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">
-              管理 <span className="text-blue-600">コンソール</span>
+              住民お知らせ <span className="text-blue-600">配信</span>
             </h1>
           </div>
           
@@ -200,19 +200,10 @@ export default function ManagementNoticePage() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-50 pb-10">
                 <h2 className="text-xl font-black text-slate-800 flex items-center gap-4 tracking-tighter italic text-nowrap">
                   <span className="w-12 h-12 bg-blue-600 text-white rounded-[1.5rem] flex items-center justify-center text-lg shadow-xl shadow-blue-200">✉️</span> 
-                  お知らせを作成
+                  新規お知らせ作成
                 </h2>
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full md:w-auto">
-                  {[
-                    { id: 'resident', label: '住民' },
-                    { id: 'shop', label: '店舗' },
-                    { id: 'posting', label: '業者' },
-                  ].map((t) => (
-                    <button key={t.id} type="button" onClick={() => setTargetAudience(t.id)}
-                      className={`px-6 py-3 rounded-xl text-[10px] font-black transition-all ${targetAudience === t.id ? 'bg-white shadow-md text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
-                      {t.label}宛
-                    </button>
-                  ))}
+                <div className="bg-blue-50 px-6 py-3 rounded-2xl border border-blue-100">
+                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic">配信対象：全住民</span>
                 </div>
               </div>
 
@@ -292,12 +283,12 @@ export default function ManagementNoticePage() {
                 />
                 <label htmlFor="push-notify" className="flex-1 cursor-pointer">
                   <p className="text-sm font-black text-blue-900 uppercase italic tracking-tighter">即時プッシュ通知を送信</p>
-                  <p className="text-[10px] text-blue-600 font-bold opacity-70">対象物件の全住民へスマホ通知を飛ばします</p>
+                  <p className="text-[10px] text-blue-600 font-bold opacity-70">住民のスマートフォンへ即座に通知を届けます</p>
                 </label>
               </div>
 
               <button disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3rem] font-black text-2xl hover:bg-slate-900 transition-all shadow-2xl shadow-blue-200 active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter italic">
-                {isSubmitting ? '送信中...' : 'この内容で配信する'}
+                {isSubmitting ? '送信中...' : '住民へ配信を開始する'}
               </button>
             </form>
           </div>
@@ -307,7 +298,7 @@ export default function ManagementNoticePage() {
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center justify-between mb-10">
                 <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic">最新の配信履歴</h3>
-                <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">直近 5件</span>
+                <span className="text-[9px] bg-slate-100 px-2 py-1 rounded font-bold">住民向け</span>
               </div>
               
               <div className="space-y-10">
@@ -325,7 +316,7 @@ export default function ManagementNoticePage() {
                         <div className="flex-1">
                           <p className="text-sm font-black text-slate-800 line-clamp-1 mb-1">{notice.title}</p>
                           <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                            <span className="uppercase">{notice.target_audience === 'resident' ? '住民' : notice.target_audience === 'shop' ? '店舗' : '業者'}宛</span>
+                            <span className="uppercase text-blue-600/60">住民宛</span>
                             <span>•</span>
                             <span>{new Date(notice.created_at).toLocaleDateString()}</span>
                           </div>
@@ -335,7 +326,7 @@ export default function ManagementNoticePage() {
                       {/* 既読率インジケーター */}
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <div className="flex justify-between items-end mb-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">既読状況</span>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">閲覧数</span>
                           <span className="text-xs font-black text-blue-600">
                             {notice.actual_read_count} / {notice.total_residents}人
                           </span>
@@ -365,7 +356,7 @@ export default function ManagementNoticePage() {
         </div>
 
         <footer className="mt-16 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
-          Posutto 管理ハブ・モジュール v3.5 / {selectedProperty ? '物件に接続済み' : 'システム待機中'}
+          Posutto 管理コンソール v3.5 / {selectedProperty ? 'オンライン' : '待機中'}
         </footer>
       </div>
     </div>
