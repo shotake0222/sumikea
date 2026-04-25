@@ -24,35 +24,43 @@ export default function ResidentDashboard() {
 
   const fetchResidentData = async () => {
     try {
+      console.log('--- Dashboard Fetch Start ---');
       const { data: { user } } = await supabase.auth.getUser();
+      
       if (!user) {
-        // window.location.href を使うことで確実にリダイレクト
+        console.log('No user session found. Redirecting to login.');
         window.location.href = '/login?type=user';
         return;
       }
 
       // プロフィール・物件情報の取得
-      const { data: prof } = await supabase
+      const { data: prof, error: profError } = await supabase
         .from('profiles')
         .select('*, properties(*)')
         .eq('id', user.id)
         .single();
 
+      if (profError) console.error('DB Fetch Error:', profError);
+
       // ロールの正規化
       const role = (prof?.role || 'USER').toUpperCase();
+      console.log('Current User Role:', role);
+      console.log('Property ID Status:', prof?.property_id ? 'Attached' : 'Empty');
 
-      // 【修正ポイント】
-      // 1. ロールが「USER」かつ「物件IDがない」場合のみセットアップへ
-      // ADMINやSHOPは物件IDがなくてもここをスルーして表示を継続します
+      // 【重要：リダイレクト条件の厳格化】
+      // ロールが「USER（一般住民）」かつ「物件IDが紐づいていない」場合のみセットアップへ
+      // ADMIN, SHOP, MANAGER 等は物件IDがなくてもこの画面を表示し続ける
       if (role === 'USER' && !prof?.property_id) {
-        router.push('/resident/setup');
+        console.log('Redirecting to Setup (User without property)');
+        window.location.href = '/resident/setup';
         return;
       }
 
+      // データのセット
       setProfile(prof);
       setGarbageCalendars(prof?.monthly_garbage_calendars || {});
 
-      // 物件IDがある場合のみ、関連データを取得
+      // 物件IDがある場合のみ、関連データをDBから取得
       if (prof?.property_id) {
         // 1. 掲示板データの取得
         const { data: rawNotices } = await supabase
@@ -72,14 +80,14 @@ export default function ResidentDashboard() {
         setTrashSchedules(trashData || []);
       }
 
-      // 3. 近隣店舗広告（静的またはDBから取得）
+      // 3. 近隣店舗広告（静的サンプル）
       setAds([
         { id: 1, shop: "駅前スーパー ぽすっと店", title: "タイムセール開催中！", discount: "10% OFF", emoji: "🍎" },
         { id: 2, shop: "クリーニング 24", title: "衣替えキャンペーン", discount: "1点無料", emoji: "👔" }
       ]);
 
     } catch (err) {
-      console.error('Data fetch error:', err);
+      console.error('Critical fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -151,7 +159,7 @@ export default function ResidentDashboard() {
           <div className="flex items-center gap-2 mb-2">
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-              {profile?.properties?.name || 'My Residence'}
+              {profile?.properties?.name || 'Portal View'}
             </span>
           </div>
           <h1 className="text-4xl font-black tracking-tighter italic">
@@ -163,7 +171,7 @@ export default function ResidentDashboard() {
 
       <div className="p-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 今日のゴミ出し（テキスト表示） */}
+        {/* 今日のゴミ出し */}
         <section>
           <div className="flex justify-between items-end px-2 mb-4">
             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Today's Trash</h2>
@@ -185,7 +193,7 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* ゴミカレンダー画像・PDF表示エリア */}
+        {/* ゴミカレンダー表示 */}
         <section className="bg-white rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 border border-white">
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Garbage Calendar</h2>
@@ -291,9 +299,8 @@ export default function ResidentDashboard() {
         </button>
       </nav>
 
-      {/* バージョン表記のみのシンプルなフッター */}
       <footer className="mt-4 pb-12 text-[8px] text-slate-300 text-center font-bold uppercase tracking-[0.4em]">
-        Posutto v2.8
+        Posutto v2.9
       </footer>
     </div>
   );
