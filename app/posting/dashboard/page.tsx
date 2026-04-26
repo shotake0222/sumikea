@@ -90,7 +90,6 @@ export default function PostingDigitalDashboard() {
             ctr: ctr
           });
         }
-      // ✅ 修正: ここのカッコの対応を正しく直しました
       } catch (err: any) {
         console.error("初期データ取得エラー:", err);
       } finally {
@@ -109,13 +108,13 @@ export default function PostingDigitalDashboard() {
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const url = await uploadImage(file, 'digital-leaflets');
+        // ✅ 修正: 第2引数にバケット名、第3引数にフォルダ名を指定
+        const url = await uploadImage(file, 'sumikea-images', 'digital-leaflets');
         newFilesData.push({ name: file.name, url: url });
       }
 
       setUploadedFiles(prev => [...prev, ...newFilesData]);
     } catch (err: any) {
-      // ✅ 修正: ここが本来のエラーメッセージを表示する場所です
       console.error("アップロード詳細エラー:", err);
       alert(`アップロードに失敗しました。詳細: ${err.message || JSON.stringify(err)}`);
     } finally {

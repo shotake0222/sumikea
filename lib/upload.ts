@@ -1,17 +1,24 @@
 // src/lib/upload.ts
-// 修正前: import { supabase } from './supabase';
-import { supabase } from '../lib/supabase'; // 同階層または明示的な相対パス
+import { supabase } from '../lib/supabase';
 
-export const uploadImage = async (file: File, folder: string) => {
-  const fileName = `${folder}/${Date.now()}_${file.name}`;
+/**
+ * ファイルをSupabase Storageにアップロードする
+ * @param file アップロードするファイル
+ * @param bucket バケット名 (デフォルト: 'sumikea-images')
+ * @param folder バケット内のフォルダパス (オプション)
+ */
+export const uploadImage = async (file: File, bucket: string = 'sumikea-images', folder: string = '') => {
+  // フォルダ指定がある場合はパスに含める
+  const filePath = folder ? `${folder}/${Date.now()}_${file.name}` : `${Date.now()}_${file.name}`;
+
   const { data, error } = await supabase.storage
-    .from('sumikea-images')
-    .upload(fileName, file);
+    .from(bucket)
+    .upload(filePath, file);
 
   if (error) throw error;
 
   const { data: { publicUrl } } = supabase.storage
-    .from('sumikea-images')
+    .from(bucket)
     .getPublicUrl(data.path);
 
   return publicUrl;
