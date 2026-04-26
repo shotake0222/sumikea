@@ -1,11 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase'; // @ に書き換え
-import AdminLayout from '@/components/AdminLayout'; // @ に書き換え
+import { supabase } from '@/lib/supabase';
+import AdminLayout from '@/components/AdminLayout';
 import { useRouter } from 'next/navigation';
-
-// ...（以下、ロジックは既存のものを維持）
 
 type ViewTab = 'posting' | 'manager' | 'shop';
 
@@ -72,6 +70,7 @@ export default function AdminPropertiesPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
+          // 未ログイン時はログイン画面へ（プランB対応：リダイレクト先を /login?type=admin に維持）
           router.push('/login?type=admin');
           return;
         }
@@ -79,6 +78,7 @@ export default function AdminPropertiesPage() {
         const role = profile?.role || 'USER';
         setUserRole(role);
         
+        // ADMINまたはMANAGER以外はこのページを閲覧不可
         if (role !== 'ADMIN' && role !== 'MANAGER') {
           router.push('/login?type=admin');
           return;
@@ -131,7 +131,6 @@ export default function AdminPropertiesPage() {
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
-      // 1. Supabase Authentication に登録
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
@@ -142,7 +141,6 @@ export default function AdminPropertiesPage() {
       if (!authData.user) throw new Error('Auth作成失敗');
       createdAuthUser = authData.user;
 
-      // 2. profiles テーブルへ挿入（ログインガード用）
       const { error: profError } = await supabase.from('profiles').upsert({
         id: createdAuthUser.id,
         email: newItem.email,
@@ -151,7 +149,6 @@ export default function AdminPropertiesPage() {
       });
       if (profError) throw new Error(`Profile保存失敗: ${profError.message}`);
 
-      // 3. 各業種テーブルへ挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error: insError } = await supabase.from(table).insert([{
         id: createdAuthUser.id,
@@ -165,14 +162,10 @@ export default function AdminPropertiesPage() {
       }]);
       if (insError) throw new Error(`テーブル保存失敗: ${insError.message}`);
 
-      // 4. 管理物件の紐付け (管理会社の場合のみ実行)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
-          await supabase.from('properties').update({ 
-            management_company_id: createdAuthUser.id, 
-            join_code: prop.code 
-          }).eq('id', prop.id);
+          await supabase.from('properties').update({ management_company_id: createdAuthUser.id, join_code: prop.code }).eq('id', prop.id);
         }
       }
 
@@ -187,7 +180,6 @@ export default function AdminPropertiesPage() {
       fetchTabData(activeTab);
 
     } catch (err: any) {
-      // 幽霊ユーザー対策の警告を含むエラー表示
       const errorMsg = `登録エラー: ${err.message}\n\n※「User already registered」が出る場合は、Authentication > Users からこのメールを削除してからやり直してください。`;
       alert(errorMsg);
       console.error(err);
@@ -235,7 +227,6 @@ export default function AdminPropertiesPage() {
     setLoading(true);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
-      // 関連データの掃除
       await supabase.from('profiles').delete().eq('id', selectedItem.id);
       const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
       if (error) throw error;
@@ -269,7 +260,6 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計カード */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -286,7 +276,6 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* タブとボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -300,7 +289,6 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
-        {/* リスト表示 */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -308,9 +296,6 @@ export default function AdminPropertiesPage() {
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
                   {item.status === 'active' ? '利用中' : '招待中'}
                 </span>
-                {activeTab === 'manager' && (
-                  <span className="text-[10px] font-black text-slate-300">管理物件: {item.propCount}</span>
-                )}
               </div>
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 tracking-tighter">{item.name}</h3>
               <p className="text-[11px] text-blue-600 font-bold mb-1">📧 {item.email}</p>
@@ -323,7 +308,6 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* 登録モーダル */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
@@ -334,23 +318,6 @@ export default function AdminPropertiesPage() {
                   <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
                   <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-blue-600" placeholder="ログインメールアドレス" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
                   <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
-                  
-                  {activeTab === 'manager' && (
-                    <div className="pt-4 border-t border-slate-100">
-                      <button onClick={addPropField} className="text-[10px] font-black text-blue-600 mb-4">+ 管理物件を割り当て</button>
-                      <div className="space-y-2">
-                        {selectedProps.map((item, index) => (
-                          <div key={index} className="flex gap-2 bg-slate-50 p-2 rounded-xl">
-                            <select className="flex-1 bg-transparent p-2 font-bold text-xs" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
-                              <option value="">物件を選択</option>
-                              {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                            <div className="w-24 flex items-center justify-center font-black text-blue-600 text-[10px] bg-white rounded-lg">Code: {item.code}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
                 <div className="flex gap-3 mt-10">
                   <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px]">キャンセル</button>
@@ -372,7 +339,6 @@ export default function AdminPropertiesPage() {
         </div>
       )}
 
-      {/* 管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">

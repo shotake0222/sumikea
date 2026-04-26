@@ -76,11 +76,10 @@ function LoginContent() {
         const dbRole = (profile?.role || 'USER').toUpperCase().trim();
         
         // ==========================================
-        // 🚨 【追加】セキュリティ検問ロジック
+        // 🚨 【セキュリティ検問ロジック】
         // ==========================================
         let isAuthorized = false;
 
-        // 現在の入り口(typeParam)に対して、アカウントの権限(dbRole)が妥当かチェック
         if (typeParam === 'admin') {
           if (dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'manager') {
@@ -92,11 +91,9 @@ function LoginContent() {
         } else if (isUserMode) {
           if (dbRole === 'USER' || dbRole === 'ADMIN') isAuthorized = true;
         } else {
-          // パラメータがない場合は一旦許可
           isAuthorized = true;
         }
 
-        // 権限がない場合は即座にサインアウトさせてエラーを表示
         if (!isAuthorized) {
           await supabase.auth.signOut();
           throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(権限: ${dbRole})`);
@@ -108,12 +105,13 @@ function LoginContent() {
         let targetPath = '';
 
         if (dbRole === 'ADMIN') {
-          // ADMINは指定されたパラメータに従う。指定がなければ管理パネルへ。
+          // ADMINは指定されたパラメータに従う。
           if (typeParam === 'user') targetPath = '/resident/dashboard';
           else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
           else if (typeParam === 'shop') targetPath = '/shop/post';
-          else targetPath = '/admin/properties'; 
+          // ✅ プランB：フォルダ階層に合わせて /admin/properties から /properties に修正
+          else targetPath = '/properties'; 
         } 
         else if (dbRole === 'MANAGER') {
           targetPath = '/manager/notices'; 
@@ -125,13 +123,10 @@ function LoginContent() {
           targetPath = '/shop/post';
         } 
         else {
-          // 一般ユーザー（USER）
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
         console.log('Authorized Login:', dbRole, 'Redirecting to:', targetPath);
-        
-        // 状態を完全にリセットするため window.location.href を使用
         window.location.href = targetPath;
       }
 
