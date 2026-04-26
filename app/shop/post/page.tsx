@@ -79,8 +79,8 @@ export default function ShopPostPage() {
           setMyStore(currentStore);
           setStoreName(currentStore.name);
           fetchHistory(currentStore.id);
-          // 初期検索
-          await handleRadiusSearch(currentStore, 1, 'all');
+          // 初期検索実行
+          await triggerSearch(currentStore, radiusKm, targetType);
         } else {
           alert('店舗データが登録されていません。管理者に連絡してください。');
           router.push('/login?type=shop');
@@ -94,24 +94,9 @@ export default function ShopPostPage() {
     initializePortal();
   }, [router]);
 
-  const fetchHistory = async (storeId: string) => {
-    if (storeId?.startsWith('00000000')) return;
-    const { data } = await supabase
-      .from('local_ads')
-      .select('*')
-      .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-    if (data) setRecentAds(data);
-  };
-
-  // 🎯 検索ボタン機能の心臓部
-  const handleRadiusSearch = async (store: any, radius: number, type: string) => {
+  // 🎯 検索実行コアロジック（ステートに依存せず引数で動くように修正）
+  const triggerSearch = async (store: any, radius: number, type: string) => {
     if (!store?.lat || !store?.lng) return;
-    
-    // UIを即時更新
-    setRadiusKm(radius);
-    setTargetType(type);
     
     const { data: nearby, error } = await supabase.rpc('get_properties_within_radius_v2', {
       target_lat: store.lat,
@@ -126,6 +111,28 @@ export default function ShopPostPage() {
       console.error('物件検索エラー:', error);
       setNearbyProperties([]);
     }
+  };
+
+  // ボタンから呼ばれるハンドラー
+  const handleTargetChange = (newType: string) => {
+    setTargetType(newType); // UI反映用
+    triggerSearch(myStore, radiusKm, newType); // 検索用
+  };
+
+  const handleRadiusChange = (newRadius: number) => {
+    setRadiusKm(newRadius); // UI反映用
+    triggerSearch(myStore, newRadius, targetType); // 検索用
+  };
+
+  const fetchHistory = async (storeId: string) => {
+    if (storeId?.startsWith('00000000')) return;
+    const { data } = await supabase
+      .from('local_ads')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (data) setRecentAds(data);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -258,7 +265,7 @@ export default function ShopPostPage() {
                   />
                 </div>
 
-                {/* 🎯 配信設定：可愛いテイストに刷新 */}
+                {/* 🎯 配信設定：可愛いテイストに刷新 & 修正済みボタン */}
                 <div className="bg-gradient-to-br from-orange-400 to-pink-500 p-8 md:p-12 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
                     <span className="text-[10rem]">🎈</span>
@@ -283,7 +290,7 @@ export default function ShopPostPage() {
                           <button 
                             key={t.id} 
                             type="button" 
-                            onClick={() => handleRadiusSearch(myStore, radiusKm, t.id)} 
+                            onClick={() => handleTargetChange(t.id)} 
                             className={`flex-1 flex flex-col items-center gap-1 py-4 px-2 rounded-2xl text-[10px] font-black transition-all border-2 ${targetType === t.id ? 'bg-white text-orange-600 border-white shadow-lg scale-105' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
                           >
                             <span className="text-xl">{t.icon}</span>
@@ -300,7 +307,7 @@ export default function ShopPostPage() {
                           <button 
                             key={r} 
                             type="button" 
-                            onClick={() => handleRadiusSearch(myStore, r, targetType)} 
+                            onClick={() => handleRadiusChange(r)} 
                             className={`flex-1 py-5 rounded-2xl border-2 text-[11px] font-black transition-all ${radiusKm === r ? 'bg-white text-orange-600 border-white shadow-lg scale-105' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
                           >
                             {r >= 1 ? `${r}km` : `500m`}
@@ -326,7 +333,6 @@ export default function ShopPostPage() {
                   </div>
                 </div>
 
-                {/* 広告内容入力 */}
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の見出し（タイトル）</label>
@@ -371,7 +377,6 @@ export default function ShopPostPage() {
             </div>
           </div>
 
-          {/* 右サイドバー：履歴 */}
           <div className="w-full lg:w-96">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">
