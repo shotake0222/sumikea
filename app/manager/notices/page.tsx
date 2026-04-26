@@ -39,10 +39,17 @@ export default function ManagementNoticePage() {
   const [newPropAddress, setNewPropAddress] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // --- 🌐 座標取得ロジック ---
+  // --- 🌐 座標取得ロジック (Adminパネルと同等に強化) ---
   const getCoordinates = async (address: string) => {
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`,
+        {
+          headers: {
+            'User-Agent': 'PosuttoManager/1.0' // 必須ヘッダー
+          }
+        }
+      );
       const data = await response.json();
       if (data && data.length > 0) {
         return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
@@ -144,7 +151,20 @@ export default function ManagementNoticePage() {
     setIsRegistering(true);
 
     try {
+      // 1. 座標取得
       const coords = await getCoordinates(newPropAddress);
+      
+      // 2. 座標取得失敗時の確認
+      if (!coords.lat || !coords.lng) {
+        const proceed = confirm(
+          `住所「${newPropAddress}」から正しい位置情報を取得できませんでした。\n\n【解決策】ビル名や号室を削除し、「番地まで」にすると成功しやすくなります。\n\nこのまま登録しますか？（半径検索等の位置情報機能は利用できません）`
+        );
+        if (!proceed) {
+          setIsRegistering(false);
+          return;
+        }
+      }
+
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
       const { data: newProp, error: propError } = await supabase
@@ -167,7 +187,7 @@ export default function ManagementNoticePage() {
 
       if (managerError) throw managerError;
 
-      alert(`「${newPropName}」を登録しました。座標: ${coords.lat}, ${coords.lng}`);
+      alert(`「${newPropName}」を登録しました。位置情報: ${coords.lat ? '取得成功' : '未設定'}`);
       setNewPropName('');
       setNewPropAddress('');
       setIsRegisterModalOpen(false);
@@ -425,7 +445,7 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
-        {/* --- 物件登録モーダル --- */}
+        {/* --- 物件登録モーダル (住所ヒントを追加) --- */}
         {isRegisterModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[150] flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-xl rounded-[4rem] p-10 shadow-2xl animate-in zoom-in duration-300">
@@ -442,19 +462,23 @@ export default function ManagementNoticePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">所在地（住所）</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex justify-between">
+                    <span>所在地（住所）</span>
+                    <span className="text-blue-500 font-black italic text-[8px]">※番地までを推奨</span>
+                  </label>
                   <input 
                     className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" 
-                    placeholder="例：東京都立川市..." 
+                    placeholder="例：東京都立川市緑町3-1" 
                     value={newPropAddress} 
                     onChange={(e) => setNewPropAddress(e.target.value)} 
                     required
                   />
+                  <p className="text-[9px] font-bold text-slate-400 ml-4">ビル名・部屋番号を入れると位置特定に失敗する場合があります</p>
                 </div>
                 <div className="flex gap-4 pt-6">
                   <button type="button" onClick={() => setIsRegisterModalOpen(false)} className="flex-1 py-5 rounded-[2rem] font-black text-slate-400 uppercase tracking-widest">Cancel</button>
                   <button type="submit" disabled={isRegistering} className="flex-1 bg-blue-600 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all">
-                    {isRegistering ? '登録中...' : '登録して配信へ'}
+                    {isRegistering ? '座標取得中...' : '登録して配信へ'}
                   </button>
                 </div>
               </form>
@@ -462,7 +486,7 @@ export default function ManagementNoticePage() {
           </div>
         )}
 
-        {/* --- 案内印刷モーダル (ステップ詳細化) --- */}
+        {/* --- 案内印刷モーダル --- */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>

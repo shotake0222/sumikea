@@ -107,7 +107,7 @@ export default function AdminPropertiesPage() {
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`,
         {
           headers: {
-            'User-Agent': 'PosuttoAdmin/1.0' // 必須ヘッダー
+            'User-Agent': 'PosuttoAdmin/1.0' 
           }
         }
       );
@@ -136,7 +136,9 @@ export default function AdminPropertiesPage() {
       // 1. 住所を座標に変換
       const coords = await getCoordinates(newItem.address);
       if (!coords.lat || !coords.lng) {
-        const proceed = confirm("住所から正しい位置情報を取得できませんでした。このまま登録しますか？（半径検索には反映されません）");
+        const proceed = confirm(
+          `住所「${newItem.address}」から正しい位置情報を取得できませんでした。\n\n【ヒント】ビル名や部屋番号を削除して「番地まで」にすると成功率が上がります。\n\nこのまま登録しますか？（半径検索には反映されません）`
+        );
         if (!proceed) {
           setLoading(false);
           return;
@@ -173,7 +175,7 @@ export default function AdminPropertiesPage() {
         email: newItem.email,
         address: newItem.address,
         lat: coords.lat,
-        lng: coords.lng, // ここで経度を保存
+        lng: coords.lng,
         initial_password: initialPassword,
         status: 'invited'
       }]);
@@ -213,14 +215,19 @@ export default function AdminPropertiesPage() {
     setLoading(true);
     try {
       const coords = await getCoordinates(selectedItem.address);
+      if (!coords.lat || !coords.lng) {
+        alert("住所の解析に失敗したため、座標は更新されませんでした。住所の書き方を見直してください。");
+      }
+
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).update({
         name: selectedItem.name,
         email: selectedItem.email,
         address: selectedItem.address,
-        lat: coords.lat,
-        lng: coords.lng
+        lat: coords.lat || selectedItem.lat, // 失敗した場合は旧値を保持
+        lng: coords.lng || selectedItem.lng
       }).eq('id', selectedItem.id);
+
       if (error) throw error;
       alert('情報を更新しました');
       setIsManageModalOpen(false);
@@ -324,8 +331,10 @@ export default function AdminPropertiesPage() {
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
                   {item.status === 'active' ? '利用中' : '招待中'}
                 </span>
-                {item.lat && (
-                  <span className="text-[10px] text-emerald-500 font-black">📍 GPS ON</span>
+                {item.lat ? (
+                  <span className="text-[9px] text-emerald-500 font-mono">📍 {item.lat.toFixed(3)}, {item.lng.toFixed(3)}</span>
+                ) : (
+                  <span className="text-[9px] text-red-400 font-black italic">📍 GPS ERROR</span>
                 )}
               </div>
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 tracking-tighter">{item.name}</h3>
@@ -357,7 +366,7 @@ export default function AdminPropertiesPage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Location (Address)</label>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="住所を入力（緯度経度が自動計算されます）" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
+                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="住所（番地までを推奨。ビル名は除外）" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   </div>
                   
                   {activeTab === 'manager' && (
