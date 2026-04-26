@@ -39,6 +39,21 @@ export default function ManagementNoticePage() {
   const [newPropAddress, setNewPropAddress] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
+  // --- 🌐 座標取得ロジック ---
+  const getCoordinates = async (address: string) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+      const data = await response.json();
+      if (data && data.length > 0) {
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      }
+      return { lat: null, lng: null };
+    } catch (err) {
+      console.error('ジオコーディングエラー:', err);
+      return { lat: null, lng: null };
+    }
+  };
+
   // --- 初期データ取得 ---
   useEffect(() => {
     const fetchAuthAndData = async () => {
@@ -125,15 +140,22 @@ export default function ManagementNoticePage() {
 
   const handleRegisterProperty = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPropName) return;
+    if (!newPropName || !newPropAddress) return;
     setIsRegistering(true);
 
     try {
+      const coords = await getCoordinates(newPropAddress);
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
       const { data: newProp, error: propError } = await supabase
         .from('properties')
-        .insert([{ name: newPropName, address: newPropAddress, invite_code: inviteCode }])
+        .insert([{ 
+          name: newPropName, 
+          address: newPropAddress, 
+          invite_code: inviteCode,
+          lat: coords.lat,
+          lng: coords.lng
+        }])
         .select()
         .single();
 
@@ -145,7 +167,7 @@ export default function ManagementNoticePage() {
 
       if (managerError) throw managerError;
 
-      alert(`「${newPropName}」を登録しました。すぐに配信可能です。`);
+      alert(`「${newPropName}」を登録しました。座標: ${coords.lat}, ${coords.lng}`);
       setNewPropName('');
       setNewPropAddress('');
       setIsRegisterModalOpen(false);
@@ -426,6 +448,7 @@ export default function ManagementNoticePage() {
                     placeholder="例：東京都立川市..." 
                     value={newPropAddress} 
                     onChange={(e) => setNewPropAddress(e.target.value)} 
+                    required
                   />
                 </div>
                 <div className="flex gap-4 pt-6">
@@ -439,7 +462,7 @@ export default function ManagementNoticePage() {
           </div>
         )}
 
-        {/* --- 案内印刷モーダル --- */}
+        {/* --- 案内印刷モーダル (ステップ詳細化) --- */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
@@ -467,14 +490,30 @@ export default function ManagementNoticePage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center mb-20">
-                  <div className="space-y-8">
+                  <div className="space-y-8 text-left">
                     <h4 className="text-3xl font-black border-l-[12px] border-blue-600 pl-6 mb-10 italic">ご利用の手順</h4>
                     <div className="space-y-10">
                       {[
-                        { step: '1', title: 'スキャン', desc: '右記のQRコードをスマートフォンで読み取ります。' },
-                        { step: '2', title: 'アカウント作成', desc: 'メールアドレスを入力し、ご自身で決めたパスワードを入力して登録します。（※1回目に入力したものがご自身の初期パスワードになります）' },
-                        { step: '3', title: '招待コードの入力', desc: `ログイン後、画面の指示に従って上記の招待コード [ ${displayInviteCode} ] を入力してください。` },
-                        { step: '4', title: '完了', desc: 'お住まいの物件のお知らせやゴミの日がスマホで確認できるようになります。' }
+                        { 
+                          step: '1', 
+                          title: 'スキャン', 
+                          desc: '右記のQRコードをスマートフォンで読み取ります。' 
+                        },
+                        { 
+                          step: '2', 
+                          title: 'アカウント作成', 
+                          desc: 'メールアドレスと「ご自身で決めたパスワード」を入力して登録します。※1回目に入力したものが今後のログインパスワードになります。' 
+                        },
+                        { 
+                          step: '3', 
+                          title: '招待コードの入力', 
+                          desc: `ログイン後のセットアップ画面で、上記の招待コード [ ${displayInviteCode} ] を入力してください。` 
+                        },
+                        { 
+                          step: '4', 
+                          title: '完了', 
+                          desc: 'お住まいの物件のお知らせやゴミの日カレンダーがスマホでいつでも確認できるようになります。' 
+                        }
                       ].map((item) => (
                         <div key={item.step} className="flex gap-6 items-start">
                           <span className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shrink-0 text-xl shadow-lg">{item.step}</span>
@@ -492,10 +531,11 @@ export default function ManagementNoticePage() {
                         <img src={getQrCodeUrl()} alt="Property QR Code" className="w-56 h-56 object-contain" />
                       )}
                     </div>
+                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-4">Scan to start</p>
                   </div>
                 </div>
                 <div className="bg-blue-600 rounded-[4rem] p-12 text-white text-center shadow-xl">
-                  <h4 className="text-2xl font-black italic">マイページで、暮らしをもっとスマートに。</h4>
+                  <h4 className="text-2xl font-black italic tracking-tighter">マイページで、マンションの暮らしをもっとスマートに。</h4>
                 </div>
               </div>
             </div>
