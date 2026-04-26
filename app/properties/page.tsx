@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import AdminLayout from '../../components/AdminLayout';
+import { supabase } from '@/lib/supabase'; // @ に書き換え
+import AdminLayout from '@/components/AdminLayout'; // @ に書き換え
 import { useRouter } from 'next/navigation';
+
+// ...（以下、ロジックは既存のものを維持）
 
 type ViewTab = 'posting' | 'manager' | 'shop';
 
