@@ -70,7 +70,6 @@ export default function AdminPropertiesPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          // 未ログイン時はログイン画面へ（プランB対応：リダイレクト先を /login?type=admin に維持）
           router.push('/login?type=admin');
           return;
         }
@@ -78,7 +77,6 @@ export default function AdminPropertiesPage() {
         const role = profile?.role || 'USER';
         setUserRole(role);
         
-        // ADMINまたはMANAGER以外はこのページを閲覧不可
         if (role !== 'ADMIN' && role !== 'MANAGER') {
           router.push('/login?type=admin');
           return;
@@ -111,7 +109,6 @@ export default function AdminPropertiesPage() {
       }
       return { lat: null, lng: null };
     } catch (err) {
-      console.error("ジオコーディングエラー:", err);
       return { lat: null, lng: null };
     }
   };
@@ -131,6 +128,7 @@ export default function AdminPropertiesPage() {
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
+      // 1. Auth登録
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
@@ -141,14 +139,15 @@ export default function AdminPropertiesPage() {
       if (!authData.user) throw new Error('Auth作成失敗');
       createdAuthUser = authData.user;
 
+      // 2. profiles 挿入 (emailカラムなし版)
       const { error: profError } = await supabase.from('profiles').upsert({
         id: createdAuthUser.id,
-        email: newItem.email,
         role: assignRole,
         name: newItem.name
       });
       if (profError) throw new Error(`Profile保存失敗: ${profError.message}`);
 
+      // 3. 各業種テーブル挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error: insError } = await supabase.from(table).insert([{
         id: createdAuthUser.id,
@@ -162,10 +161,14 @@ export default function AdminPropertiesPage() {
       }]);
       if (insError) throw new Error(`テーブル保存失敗: ${insError.message}`);
 
+      // 4. 管理物件の紐付け (ギミック維持)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
-          await supabase.from('properties').update({ management_company_id: createdAuthUser.id, join_code: prop.code }).eq('id', prop.id);
+          await supabase.from('properties').update({ 
+            management_company_id: createdAuthUser.id, 
+            join_code: prop.code 
+          }).eq('id', prop.id);
         }
       }
 
@@ -180,8 +183,7 @@ export default function AdminPropertiesPage() {
       fetchTabData(activeTab);
 
     } catch (err: any) {
-      const errorMsg = `登録エラー: ${err.message}\n\n※「User already registered」が出る場合は、Authentication > Users からこのメールを削除してからやり直してください。`;
-      alert(errorMsg);
+      alert(`登録エラー: ${err.message}\n\n※Authentication > Users から ${newItem.email} を削除してからやり直してください。`);
       console.error(err);
     } finally {
       setLoading(false);
@@ -223,7 +225,7 @@ export default function AdminPropertiesPage() {
   };
 
   const handleDeleteItem = async () => {
-    if (!confirm('本当に削除しますか？\nSQLトリガーによりAuthアカウントも自動消去されます。')) return;
+    if (!confirm('本当に削除しますか？\nAuthアカウントも自動消去されます。')) return;
     setLoading(true);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
@@ -260,6 +262,7 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
+        {/* 統計セクション */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -276,6 +279,7 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
+        {/* 操作セクション */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -289,6 +293,7 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
+        {/* リスト表示 */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -296,6 +301,9 @@ export default function AdminPropertiesPage() {
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
                   {item.status === 'active' ? '利用中' : '招待中'}
                 </span>
+                {activeTab === 'manager' && (
+                  <span className="text-[10px] font-black text-slate-300">物件: {item.propCount}</span>
+                )}
               </div>
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 tracking-tighter">{item.name}</h3>
               <p className="text-[11px] text-blue-600 font-bold mb-1">📧 {item.email}</p>
@@ -308,49 +316,92 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
+      {/* 登録モーダル（崩れ修正版） */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             {!registeredInfo ? (
               <>
                 <h2 className="text-2xl font-black italic mb-6 uppercase">新規パートナーを <span className="text-blue-600">登録</span></h2>
                 <div className="space-y-5">
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
-                  <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-blue-600" placeholder="ログインメールアドレス" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Name</label>
+                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Email</label>
+                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none text-blue-600" placeholder="ログインメールアドレス" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Address</label>
+                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
+                  </div>
+                  
+                  {/* 管理物件紐付けギミック */}
+                  {activeTab === 'manager' && (
+                    <div className="pt-6 border-t border-slate-100">
+                      <div className="flex justify-between items-center mb-4">
+                        <label className="text-[10px] font-black text-slate-900 uppercase italic">Assign Properties</label>
+                        <button onClick={addPropField} className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-full">+ 物件を追加</button>
+                      </div>
+                      <div className="space-y-3">
+                        {selectedProps.map((item, index) => (
+                          <div key={index} className="flex flex-col sm:flex-row gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                            <select 
+                              className="flex-1 bg-white p-3 rounded-xl font-bold text-xs outline-none border border-slate-200" 
+                              value={item.id} 
+                              onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}
+                            >
+                              <option value="">物件を選択</option>
+                              {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            <div className="sm:w-32 flex items-center justify-center font-black text-blue-600 text-[10px] bg-white rounded-xl border border-slate-200 p-3">
+                              Code: {item.code}
+                            </div>
+                          </div>
+                        ))}
+                        {selectedProps.length === 0 && <p className="text-[10px] text-slate-400 italic text-center py-4">紐付ける物件を選択してください（任意）</p>}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-3 mt-10">
-                  <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px]">キャンセル</button>
-                  <button onClick={handleRegister} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">認証アカウントを作成</button>
+                <div className="flex flex-col sm:flex-row gap-3 mt-10">
+                  <button onClick={() => setIsModalOpen(false)} className="order-2 sm:order-1 flex-1 py-4 font-black text-slate-400 text-[10px] uppercase">Cancel</button>
+                  <button onClick={handleRegister} className="order-1 sm:order-2 flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg hover:bg-slate-900 transition-all">Create Account</button>
                 </div>
               </>
             ) : (
-              <div className="text-center animate-in fade-in zoom-in duration-300">
+              <div className="text-center py-4 animate-in fade-in zoom-in duration-300">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
                 <h2 className="text-2xl font-black mb-6 italic uppercase">Registration <span className="text-emerald-600">Complete</span></h2>
-                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8">
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">ID (Email)</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
+                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-slate-100">
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Login ID</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">Temp Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
+                  <div className="pt-2"><p className="text-[9px] text-slate-400 font-bold leading-relaxed">※このパスワードは一度しか表示されません。必ずメモを取るよう伝えてください。</p></div>
                 </div>
-                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">閉じる</button>
+                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all">Close</button>
               </div>
             )}
           </div>
         </div>
       )}
 
+      {/* 管理モーダル（崩れ修正版） */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
-            <h2 className="text-2xl font-black italic mb-6 uppercase">アカウント <span className="text-blue-600">管理</span></h2>
+            <h2 className="text-2xl font-black italic mb-8 uppercase">パートナー <span className="text-blue-600">管理</span></h2>
             <div className="space-y-6">
-              <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase">🔑 PW再発行</button>
-                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase">🗑️ 完全に削除</button>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Partner Name</label>
+                <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-6 border-t border-slate-100">
+                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-orange-100 transition-all">🔑 PW再発行</button>
+                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-100 transition-all">🗑️ 完全に削除</button>
               </div>
             </div>
-            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-6 py-4 font-black text-slate-400 text-[10px]">キャンセル</button>
+            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-8 py-4 font-black text-slate-400 text-[10px] uppercase">キャンセル</button>
           </div>
         </div>
       )}
