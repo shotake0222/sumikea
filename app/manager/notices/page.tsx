@@ -33,41 +33,50 @@ export default function ManagementNoticePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // --- 物件登録用ステート ---
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [newPropName, setNewPropName] = useState('');
   const [newPropAddress, setNewPropAddress] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // --- 🌐 座標取得ロジック (削りリトライ機能付き) ---
+  // --- 🌐 最強座標取得ロジック（正規化 + 5段階リトライ） ---
   const getCoordinates = async (rawAddress: string) => {
-    // 検索を試行するパターンの配列（精密 -> 広域）
+    // 1. 日本の住所の表記ゆれを修正
+    const normalized = rawAddress
+      .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角数字 -> 半角
+      .replace(/[－ー－―ー−-]/g, '-') // あらゆるハイフンを半角マイナスに統一
+      .replace(/[　]/g, ' ') // 全角スペースを半角に
+      .trim();
+
+    // 2. 検索パターンの構築（精密 -> 広域）
+    const base = normalized.split(' ')[0]; // ビル名（スペース以降）を除去した基本住所
+    
     const searchPatterns = [
-      rawAddress, // 1. 入力されたそのまま
-      rawAddress.split(/[ 　]/)[0], // 2. スペース（全角半角）以降のビル名を削除
-      rawAddress.replace(/[−-][^−-]+$/, ''), // 3. 最後のハイフン以降（部屋番号等）を削除
-      rawAddress.replace(/[−-]\d+[−-]\d+$/, ''), // 4. 番地以下を削除
+      normalized,             // パターン1: そのまま（ビル名込）
+      base,                   // パターン2: ビル名なし
+      base.replace(/-\d+$/, ''), // パターン3: 枝番を1つ削る (1-1-1 -> 1-1)
+      base.replace(/-\d+$/, '').replace(/-\d+$/, ''), // パターン4: さらに削る (1-1 -> 1)
+      base.replace(/\d+.*$/, '') // パターン5: 町名まで (羽衣町1-1 -> 羽衣町)
     ];
 
-    // 重複を削除し、短すぎる文字列は除外
-    const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 5);
+    // 重複を削除
+    const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 3);
 
     for (const query of uniquePatterns) {
       try {
+        console.log(`Trying geocode: "${query}"`);
         const response = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-          { headers: { 'User-Agent': 'PosuttoManager/1.2' } }
+          { headers: { 'User-Agent': 'PosuttoManager/1.3' } }
         );
         const data = await response.json();
         
         if (data && data.length > 0) {
-          console.log(`Geocoding success for: "${query}"`);
+          console.log(`Geocoding Success! Matched: "${query}"`);
           return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         }
-        // 連続リクエストを避けるための微小な待機
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 200)); // 負荷対策
       } catch (err) {
-        console.error('API Error:', err);
+        console.error('Geocoder Fetch Error:', err);
       }
     }
     return { lat: null, lng: null };
@@ -163,13 +172,13 @@ export default function ManagementNoticePage() {
     setIsRegistering(true);
 
     try {
-      // 1. 座標取得 (リトライ機能を使用)
+      // 1. 座標取得
       const coords = await getCoordinates(newPropAddress);
       
       // 2. 座標取得失敗時の確認
       if (!coords.lat || !coords.lng) {
         const proceed = confirm(
-          `住所「${newPropAddress}」の位置を特定できませんでした。\nこのまま登録しますか？（半径検索には反映されなくなります）`
+          `住所の位置を特定できませんでした。このまま登録しますか？\n（特定できなくても登録自体は可能です）`
         );
         if (!proceed) {
           setIsRegistering(false);
@@ -183,7 +192,7 @@ export default function ManagementNoticePage() {
         .from('properties')
         .insert([{ 
           name: newPropName, 
-          address: newPropAddress, // 生の住所をそのまま保存
+          address: newPropAddress, // DBには生の綺麗な住所を保存
           invite_code: inviteCode,
           lat: coords.lat,
           lng: coords.lng
@@ -199,7 +208,7 @@ export default function ManagementNoticePage() {
 
       if (managerError) throw managerError;
 
-      alert(`「${newPropName}」を登録しました。座標: ${coords.lat ? '特定成功' : '未設定'}`);
+      alert(`「${newPropName}」を登録しました。位置特定: ${coords.lat ? '成功' : '失敗'}`);
       setNewPropName('');
       setNewPropAddress('');
       setIsRegisterModalOpen(false);
@@ -476,7 +485,7 @@ export default function ManagementNoticePage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex justify-between">
                     <span>所在地（住所）</span>
-                    <span className="text-blue-500 font-black italic text-[8px]">※自動解析リトライ機能ON</span>
+                    <span className="text-blue-500 font-black italic text-[8px]">※最強解析リトライ機能ON</span>
                   </label>
                   <input 
                     className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" 
@@ -485,7 +494,7 @@ export default function ManagementNoticePage() {
                     onChange={(e) => setNewPropAddress(e.target.value)} 
                     required
                   />
-                  <p className="text-[9px] font-bold text-slate-400 ml-4">ビル名が入っていてもOKです。裏側で削って座標を特定します。</p>
+                  <p className="text-[9px] font-bold text-slate-400 ml-4">ビル名・全角数字なども自動補正して座標を特定します。</p>
                 </div>
                 <div className="flex gap-4 pt-6">
                   <button type="button" onClick={() => setIsRegisterModalOpen(false)} className="flex-1 py-5 rounded-[2rem] font-black text-slate-400 uppercase tracking-widest">Cancel</button>
