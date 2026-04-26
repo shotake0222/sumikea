@@ -118,9 +118,9 @@ export default function AdminPropertiesPage() {
   };
 
   const handleRegister = async () => {
-    // 🚨 フロントエンドでの入力バリデーション強化
+    // バリデーション強化
     if (!newItem.name || !newItem.email || !newItem.address) return alert('必須項目を入力してください');
-    if (!newItem.email.includes('@')) return alert('有効なメールアドレスを入力してください（@が必要です）');
+    if (!newItem.email.includes('@')) return alert('有効なメールアドレスを入力してください');
     
     setLoading(true);
     let createdAuthUser = null;
@@ -130,7 +130,6 @@ export default function AdminPropertiesPage() {
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
-      // 1. Auth登録
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
@@ -141,7 +140,6 @@ export default function AdminPropertiesPage() {
       if (!authData.user) throw new Error('Auth作成失敗');
       createdAuthUser = authData.user;
 
-      // 2. profiles 挿入 (emailカラムなし版)
       const { error: profError } = await supabase.from('profiles').upsert({
         id: createdAuthUser.id,
         role: assignRole,
@@ -149,7 +147,6 @@ export default function AdminPropertiesPage() {
       });
       if (profError) throw new Error(`Profile保存失敗: ${profError.message}`);
 
-      // 3. 各業種テーブル挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error: insError } = await supabase.from(table).insert([{
         id: createdAuthUser.id,
@@ -163,7 +160,6 @@ export default function AdminPropertiesPage() {
       }]);
       if (insError) throw new Error(`テーブル保存失敗: ${insError.message}`);
 
-      // 4. 管理物件紐付け (ギミック維持)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
@@ -245,11 +241,14 @@ export default function AdminPropertiesPage() {
     }
   };
 
-  if (loading && dataList.length === 0) return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50">
-      <div className="w-10 h-10 border-4 border-slate-900 border-t-blue-500 rounded-full animate-spin" />
-    </div>
-  );
+  // 読み込み中の表示
+  if (loading && dataList.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="w-10 h-10 border-4 border-slate-900 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <AdminLayout userType={userRole === 'ADMIN' ? 'ADMIN' : 'MANAGER'}>
@@ -264,7 +263,7 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計 */}
+        {/* 統計エリア */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -281,7 +280,7 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* 操作 */}
+        {/* フィルター・登録ボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -295,7 +294,7 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
-        {/* リスト */}
+        {/* データグリッド */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -304,7 +303,7 @@ export default function AdminPropertiesPage() {
                   {item.status === 'active' ? '利用中' : '招待中'}
                 </span>
                 {activeTab === 'manager' && (
-                  <span className="text-[10px] font-black text-slate-300">物件: {item.propCount}</span>
+                  <span className="text-[10px] font-black text-slate-300 italic">管理物件: {item.propCount}</span>
                 )}
               </div>
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 tracking-tighter">{item.name}</h3>
@@ -318,93 +317,86 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* 登録モーダル（レイアウト修正版） */}
+      {/* 登録モーダル */}
       {(isModalOpen || registeredInfo) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative my-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative max-h-[90vh] flex flex-col">
             {!registeredInfo ? (
               <>
-                <h2 className="text-2xl font-black italic mb-6 uppercase">新規パートナーを <span className="text-blue-600">登録</span></h2>
-                <div className="space-y-5 max-h-[60vh] overflow-y-auto px-1 pr-2 custom-scrollbar">
+                <h2 className="text-2xl font-black italic mb-6 uppercase flex-shrink-0">新規パートナーを <span className="text-blue-600">登録</span></h2>
+                <div className="space-y-5 overflow-y-auto pr-2 custom-scrollbar">
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Name</label>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Name</label>
+                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none transition-all" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Email address</label>
-                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none text-blue-600" placeholder="example@test.com" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Email address</label>
+                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none text-blue-600" placeholder="example@posutto.com" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Location</label>
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Location</label>
                     <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   </div>
                   
                   {activeTab === 'manager' && (
                     <div className="pt-6 border-t border-slate-100">
                       <div className="flex justify-between items-center mb-4">
-                        <label className="text-[10px] font-black text-slate-900 uppercase italic tracking-tighter">Assign Properties</label>
-                        <button onClick={addPropField} className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-full transition-colors">+ 物件追加</button>
+                        <label className="text-[10px] font-black text-slate-900 uppercase italic">Assign Properties</label>
+                        <button onClick={addPropField} className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-full">+ 物件を追加</button>
                       </div>
                       <div className="space-y-3">
                         {selectedProps.map((item, index) => (
                           <div key={index} className="flex flex-col sm:flex-row gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                            <select 
-                              className="flex-1 bg-white p-3 rounded-xl font-bold text-xs outline-none border border-slate-200" 
-                              value={item.id} 
-                              onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}
-                            >
+                            <select className="flex-1 bg-white p-3 rounded-xl font-bold text-xs border-none outline-none" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
                               <option value="">物件を選択</option>
                               {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
-                            <div className="sm:w-32 flex items-center justify-center font-black text-blue-600 text-[10px] bg-white rounded-xl border border-slate-200 p-3">
-                              Code: {item.code}
-                            </div>
+                            <div className="sm:w-32 flex items-center justify-center font-black text-blue-600 text-[10px] bg-white rounded-xl p-3 uppercase">Code: {item.code}</div>
                           </div>
                         ))}
-                        {selectedProps.length === 0 && <p className="text-[10px] text-slate-400 italic text-center py-4">物件は後からでも紐付け可能です</p>}
                       </div>
                     </div>
                   )}
                 </div>
-                <div className="flex flex-col sm:flex-row gap-3 mt-10">
+                <div className="flex flex-col sm:flex-row gap-3 mt-8 flex-shrink-0">
                   <button onClick={() => setIsModalOpen(false)} className="order-2 sm:order-1 flex-1 py-4 font-black text-slate-400 text-[10px] uppercase">Cancel</button>
-                  <button onClick={handleRegister} className="order-1 sm:order-2 flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg hover:bg-slate-900 transition-all">Create Account</button>
+                  <button onClick={handleRegister} className="order-1 sm:order-2 flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">Create Account</button>
                 </div>
               </>
             ) : (
-              <div className="text-center py-4">
+              <div className="text-center py-4 animate-in fade-in zoom-in duration-300">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
                 <h2 className="text-2xl font-black mb-6 italic uppercase">Registration <span className="text-emerald-600">Complete</span></h2>
                 <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-slate-100">
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Login Email</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Temp Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Login ID</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
                 </div>
-                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all">Close Window</button>
+                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all">Close</button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* 管理モーダル */}
+      {/* アカウント管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
-            <h2 className="text-2xl font-black italic mb-8 uppercase">パートナー <span className="text-blue-600">設定</span></h2>
+            <h2 className="text-2xl font-black italic mb-8 uppercase">パートナー <span className="text-blue-600">管理</span></h2>
             <div className="space-y-6">
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Name</label>
-                <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
+                <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none transition-all" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-6 border-t border-slate-100">
                 <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-orange-100 transition-all">🔑 PW再発行</button>
                 <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-100 transition-all">🗑️ 完全に削除</button>
               </div>
             </div>
-            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-8 py-4 font-black text-slate-400 text-[10px] uppercase">閉じる</button>
+            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-8 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">キャンセル</button>
           </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }
