@@ -12,11 +12,15 @@ export default function AdminPropertiesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ViewTab>('posting');
   
-  // モーダル制御
+  // モーダル制御（新規登録用）
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newItem, setNewItem] = useState({ name: '', email: '' });
   
-  // 登録完了後の情報表示用
+  // モーダル制御（管理・編集用）
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  
+  // 登録・再発行時の情報表示用
   const [registeredInfo, setRegisteredInfo] = useState<{url: string, email: string, pw: string} | null>(null);
 
   const [allProperties, setAllProperties] = useState<any[]>([]);
@@ -77,6 +81,7 @@ export default function AdminPropertiesPage() {
     const { data, error } = await supabase.from(table).select(tab === 'manager' ? '*, properties(id)' : '*').order('created_at', { ascending: false });
     if (error) return console.error(error);
     setDataList((data || []).map((d: any) => ({
+      ...d,
       id: d.id,
       name: d.name,
       email: d.email || '未設定',
@@ -94,47 +99,87 @@ export default function AdminPropertiesPage() {
     setSelectedProps([...selectedProps, { id: '', code: Math.random().toString(36).substring(2, 7).toUpperCase() }]);
   };
 
-  // ✅ 修正：初期PW発行フロー
+  // 新規登録
   const handleRegister = async () => {
     if (!newItem.name || !newItem.email) return alert('名称とメールアドレスを入力してください');
-    
     setLoading(true);
     try {
-      // 1. 初期パスワードを生成 (8文字)
       const initialPassword = Math.random().toString(36).slice(-8);
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
-      
-      // 2. DBに業者情報を登録（emailと初期パスワードを保存）
-      // ※DB側に initial_password カラムがある前提です。
       const { data: created, error } = await supabase.from(table).insert([{
         name: newItem.name,
         email: newItem.email,
-        initial_password: initialPassword, // 運営が確認するための保存
+        initial_password: initialPassword,
         status: 'invited'
       }]).select().single();
-
       if (error) throw error;
-
-      // 3. 物件紐付け（管理会社のみ）
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
           await supabase.from('properties').update({ management_company_id: created.id, join_code: prop.code }).eq('id', prop.id);
         }
       }
-
-      // 4. 完了情報をステートにセット（表示用）
-      setRegisteredInfo({
-        url: `${window.location.origin}/login`,
-        email: newItem.email,
-        pw: initialPassword
-      });
-
+      setRegisteredInfo({ url: `${window.location.origin}/login`, email: newItem.email, pw: initialPassword });
       setNewItem({ name: '', email: '' });
       setSelectedProps([]);
       fetchTabData(activeTab);
     } catch (err: any) {
       alert('エラー: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ 修正：管理機能（更新・再発行・削除）
+  const handleUpdateItem = async () => {
+    if (!selectedItem.name || !selectedItem.email) return;
+    setLoading(true);
+    try {
+      let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
+      const { error } = await supabase.from(table).update({
+        name: selectedItem.name,
+        email: selectedItem.email
+      }).eq('id', selectedItem.id);
+      if (error) throw error;
+      alert('更新しました');
+      setIsManageModalOpen(false);
+      fetchTabData(activeTab);
+    } catch (err: any) {
+      alert('更新エラー: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!confirm('パスワードを再発行しますか？現在のパスワードは上書きされます。')) return;
+    const newPassword = Math.random().toString(36).slice(-8);
+    try {
+      let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
+      const { error } = await supabase.from(table).update({
+        initial_password: newPassword,
+        status: 'invited' // 再発行時は未ログイン状態に戻す
+      }).eq('id', selectedItem.id);
+      if (error) throw error;
+      setRegisteredInfo({ url: `${window.location.origin}/login`, email: selectedItem.email, pw: newPassword });
+      setIsManageModalOpen(false);
+    } catch (err: any) {
+      alert('再発行エラー: ' + err.message);
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!confirm('本当に削除しますか？この操作は取り消せません。')) return;
+    setLoading(true);
+    try {
+      let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
+      const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
+      if (error) throw error;
+      alert('削除しました');
+      setIsManageModalOpen(false);
+      fetchTabData(activeTab);
+    } catch (err: any) {
+      alert('削除エラー: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -206,8 +251,16 @@ export default function AdminPropertiesPage() {
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 group-hover:text-blue-600 transition-colors tracking-tighter relative z-10">{item.name}</h3>
               <p className="text-[11px] text-blue-600 font-bold mb-6 relative z-10">📧 {item.email}</p>
               <div className="flex gap-2 mt-auto relative z-10">
-                <button className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest">ログイン情報再送</button>
-                <button onClick={() => router.push(`/management/reporting?id=${item.id}`)} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">管理</button>
+                <button className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition">ログイン情報再送</button>
+                <button 
+                  onClick={() => {
+                    setSelectedItem(item);
+                    setIsManageModalOpen(true);
+                  }} 
+                  className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md"
+                >
+                  管理
+                </button>
               </div>
             </div>
           ))}
@@ -255,9 +308,8 @@ export default function AdminPropertiesPage() {
             ) : (
               <div className="text-center">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-                <h2 className="text-2xl font-black mb-2">登録完了</h2>
-                <p className="text-slate-400 font-bold text-xs mb-8 uppercase tracking-widest">Login Information Created</p>
-                
+                <h2 className="text-2xl font-black mb-2">情報発行</h2>
+                <p className="text-slate-400 font-bold text-xs mb-8 uppercase tracking-widest">Account Credentials</p>
                 <div className="bg-slate-50 p-6 rounded-[2rem] text-left space-y-4 mb-8">
                   <div>
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Login URL</label>
@@ -272,21 +324,69 @@ export default function AdminPropertiesPage() {
                     <p className="text-lg font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p>
                   </div>
                 </div>
-
                 <button 
                   onClick={() => {
                     const text = `【ぽすっと】ログイン情報\nURL: ${registeredInfo.url}\nID: ${registeredInfo.email}\nPW: ${registeredInfo.pw}`;
                     navigator.clipboard.writeText(text);
-                    alert('コピーしました。メールやチャットで送信してください。');
+                    alert('コピーしました。');
                     setRegisteredInfo(null);
                     setIsModalOpen(false);
                   }}
                   className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl"
                 >
-                  情報をコピーして閉じる
+                  コピーして閉じる
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 管理・編集用モーダル */}
+      {isManageModalOpen && selectedItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
+            <h2 className="text-2xl font-black italic mb-6 uppercase">アカウント <span className="text-blue-600">管理</span></h2>
+            
+            <div className="space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Company Name</label>
+                <input 
+                  className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
+                  value={selectedItem.name} 
+                  onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} 
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Email Address</label>
+                <input 
+                  type="email" 
+                  className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold text-blue-600" 
+                  value={selectedItem.email} 
+                  onChange={(e) => setSelectedItem({...selectedItem, email: e.target.value})} 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+                <button 
+                  onClick={handleResetPassword}
+                  className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-100 transition"
+                >
+                  🔑 パスワード再発行
+                </button>
+                <button 
+                  onClick={handleDeleteItem}
+                  className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-100 transition"
+                >
+                  🗑️ アカウント削除
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-10">
+              <button onClick={() => setIsManageModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">キャンセル</button>
+              <button onClick={handleUpdateItem} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-blue-600 transition">変更を保存</button>
+            </div>
           </div>
         </div>
       )}
