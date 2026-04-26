@@ -76,10 +76,13 @@ export default function AdminPropertiesPage() {
         const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
         const role = profile?.role || 'USER';
         setUserRole(role);
+        
+        // 管理権限がない場合はログインへ戻す
         if (role !== 'ADMIN' && role !== 'MANAGER') {
           router.push('/login?type=admin');
           return;
         }
+        
         await Promise.all([
           fetchTabData(activeTab),
           loadInitialData()
@@ -116,9 +119,6 @@ export default function AdminPropertiesPage() {
     setSelectedProps([...selectedProps, { id: '', code: Math.random().toString(36).substring(2, 7).toUpperCase() }]);
   };
 
-  // ==========================================
-  // 【完全版】新規登録ロジック
-  // ==========================================
   const handleRegister = async () => {
     if (!newItem.name || !newItem.email || !newItem.address) return alert('必須項目を入力してください');
     
@@ -128,7 +128,6 @@ export default function AdminPropertiesPage() {
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
-      // 1. Supabase Authentication に登録
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
@@ -142,7 +141,6 @@ export default function AdminPropertiesPage() {
 
       const userId = authData.user.id;
 
-      // 2. profiles テーブルへ挿入（ログイン後の権限ガード用）
       await supabase.from('profiles').upsert({
         id: userId,
         email: newItem.email,
@@ -150,7 +148,6 @@ export default function AdminPropertiesPage() {
         name: newItem.name
       });
 
-      // 3. 各業種テーブルへの挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { data: created, error: insertError } = await supabase.from(table).insert([{
         id: userId,
@@ -165,7 +162,6 @@ export default function AdminPropertiesPage() {
 
       if (insertError) throw insertError;
 
-      // 4. 管理物件の紐付け (管理会社の場合のみ)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
@@ -232,26 +228,22 @@ export default function AdminPropertiesPage() {
     }
   };
 
-  // ==========================================
-  // 【完全同期版】削除ロジック
-  // ==========================================
   const handleDeleteItem = async () => {
-    // SQLトリガーにより、ここでの削除が自動的にAuthアカウントの削除に繋がります
-    if (!confirm('本当に削除しますか？\nこの操作により、ログインアカウント（Authentication）も自動的に完全に削除されます。')) return;
+    if (!confirm('本当に削除しますか？\nこの操作により、ログインアカウントも自動的に抹消されます。')) return;
     
     setLoading(true);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       
-      // 先にprofilesを消しておく（任意ですが綺麗にするため）
+      // profilesを先に消すと確実です
       await supabase.from('profiles').delete().eq('id', selectedItem.id);
       
-      // メインテーブルから削除。これによりSQLトリガーが走り、auth.usersからも消えます。
+      // メインテーブルから削除。SQLトリガーによりauth.usersも消えます。
       const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
       
       if (error) throw error;
       
-      alert('正常に削除されました。');
+      alert('完全に削除されました。');
       setIsManageModalOpen(false);
       fetchTabData(activeTab);
       loadInitialData();
@@ -281,7 +273,6 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計セクション */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -298,7 +289,6 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* 切り替えタブと追加ボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -312,7 +302,6 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
-        {/* メインリスト */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -332,7 +321,6 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* 登録モーダル / 完了画面 */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
@@ -366,7 +354,7 @@ export default function AdminPropertiesPage() {
                 </div>
               </>
             ) : (
-              <div className="text-center">
+              <div className="text-center animate-in fade-in zoom-in duration-300">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
                 <h2 className="text-2xl font-black mb-6 italic uppercase">Registration <span className="text-emerald-600">Complete</span></h2>
                 <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8">
@@ -381,7 +369,6 @@ export default function AdminPropertiesPage() {
         </div>
       )}
 
-      {/* 管理・編集モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">

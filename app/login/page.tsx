@@ -66,35 +66,41 @@ function LoginContent() {
 
         if (profileError) console.error('Profile DB Error:', profileError);
 
+        // ロールを正規化（大文字・空白除去）
         const dbRole = (profile?.role || 'USER').toUpperCase().trim();
         
         let targetPath = '';
 
-        // --- ロールに基づいたパス判定（厳密に /manager/notices を指定） ---
+        // --- ロールに基づいたリダイレクト判定 ---
         if (dbRole === 'ADMIN') {
-          // ADMINは全画面へ行けるが、パラメータによって振り分ける
+          // ADMIN（全体管理者）の場合
           if (typeParam === 'user') targetPath = '/resident/dashboard';
           else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
           else if (typeParam === 'shop') targetPath = '/shop/post';
-          else targetPath = '/properties'; // デフォルトは物件一覧
+          // 管理者ログイン（?type=admin）または指定なしの場合は管理パネルへ
+          else targetPath = '/admin/properties'; 
         } 
         else if (dbRole === 'MANAGER') {
           // 管理会社ロールは一律で掲示板管理へ
           targetPath = '/manager/notices'; 
         } 
         else if (dbRole === 'POSTING') {
+          // ポスティング業者
           targetPath = '/posting/dashboard';
         } 
         else if (dbRole === 'SHOP') {
+          // 提携店舗
           targetPath = '/shop/post';
         } 
         else {
-          // 一般ユーザー（USER）
+          // 一般住民（USER）
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
-        console.log('Final Redirect Path:', targetPath);
+        console.log('User Role:', dbRole, 'Redirecting to:', targetPath);
+        
+        // 遷移実行
         window.location.href = targetPath;
       }
 
@@ -114,10 +120,13 @@ function LoginContent() {
             <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
               isUserMode ? 'bg-blue-100 text-blue-600' : 
               typeParam === 'manager' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 
+              typeParam === 'admin' ? 'bg-slate-900 text-white' :
               'bg-orange-100 text-orange-600'
             }`}>
               {isUserMode ? (isSignUp ? 'Resident Sign Up' : 'Resident Login') : 
-               typeParam === 'manager' ? 'Property Management Login' : `Auth Mode: ${typeParam || 'Staff'}`}
+               typeParam === 'manager' ? 'Property Management Login' : 
+               typeParam === 'admin' ? 'System Administrator' :
+               `Auth Mode: ${typeParam || 'Staff'}`}
             </span>
           </div>
         </div>
@@ -143,7 +152,7 @@ function LoginContent() {
 
         <button 
           className={`w-full py-5 rounded-[2rem] font-black transition-all active:scale-[0.98] shadow-xl text-white ${
-            typeParam === 'manager' ? 'bg-blue-600 hover:bg-slate-900' : 'bg-slate-900 hover:bg-orange-600'
+            typeParam === 'manager' || typeParam === 'admin' ? 'bg-blue-600 hover:bg-slate-900' : 'bg-slate-900 hover:bg-orange-600'
           }`}
           disabled={loading}
         >
