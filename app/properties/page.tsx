@@ -12,15 +12,14 @@ export default function AdminPropertiesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ViewTab>('posting');
   
-  // モーダル制御（新規登録用）
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', email: '' });
+  // モーダル制御
+  const [isModalOpen, setIsModalOpen] = useState(false); // 新規登録用
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false); // 管理・編集用
   
-  // モーダル制御（管理・編集用）
-  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [newItem, setNewItem] = useState({ name: '', email: '' });
   const [selectedItem, setSelectedItem] = useState<any>(null);
   
-  // 登録・再発行時の情報表示用
+  // 登録・再発行時の情報表示用ステート
   const [registeredInfo, setRegisteredInfo] = useState<{url: string, email: string, pw: string} | null>(null);
 
   const [allProperties, setAllProperties] = useState<any[]>([]);
@@ -119,6 +118,7 @@ export default function AdminPropertiesPage() {
           await supabase.from('properties').update({ management_company_id: created.id, join_code: prop.code }).eq('id', prop.id);
         }
       }
+      // 発行情報を表示用にセット
       setRegisteredInfo({ url: `${window.location.origin}/login`, email: newItem.email, pw: initialPassword });
       setNewItem({ name: '', email: '' });
       setSelectedProps([]);
@@ -130,7 +130,7 @@ export default function AdminPropertiesPage() {
     }
   };
 
-  // ✅ 修正：管理機能（更新・再発行・削除）
+  // アカウント情報更新
   const handleUpdateItem = async () => {
     if (!selectedItem.name || !selectedItem.email) return;
     setLoading(true);
@@ -151,6 +151,7 @@ export default function AdminPropertiesPage() {
     }
   };
 
+  // ✅ 修正：パスワード再発行（完了画面を表示するように）
   const handleResetPassword = async () => {
     if (!confirm('パスワードを再発行しますか？現在のパスワードは上書きされます。')) return;
     const newPassword = Math.random().toString(36).slice(-8);
@@ -158,11 +159,19 @@ export default function AdminPropertiesPage() {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).update({
         initial_password: newPassword,
-        status: 'invited' // 再発行時は未ログイン状態に戻す
+        status: 'invited' 
       }).eq('id', selectedItem.id);
+      
       if (error) throw error;
-      setRegisteredInfo({ url: `${window.location.origin}/login`, email: selectedItem.email, pw: newPassword });
+
+      // 管理モーダルを閉じ、完了情報を表示用ステートに入れる（これで新規登録と同じ完了画面が出る）
       setIsManageModalOpen(false);
+      setRegisteredInfo({ 
+        url: `${window.location.origin}/login`, 
+        email: selectedItem.email, 
+        pw: newPassword 
+      });
+      
     } catch (err: any) {
       alert('再発行エラー: ' + err.message);
     }
@@ -208,7 +217,7 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計 */}
+        {/* 統計カード */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600', path: '/management/reporting?target=resident' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500', path: '/properties' },
@@ -251,7 +260,17 @@ export default function AdminPropertiesPage() {
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 group-hover:text-blue-600 transition-colors tracking-tighter relative z-10">{item.name}</h3>
               <p className="text-[11px] text-blue-600 font-bold mb-6 relative z-10">📧 {item.email}</p>
               <div className="flex gap-2 mt-auto relative z-10">
-                <button className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition">ログイン情報再送</button>
+                <button 
+                  onClick={() => {
+                    // クイックコピー機能
+                    const text = `【ぽすっと】ログイン情報\nURL: ${window.location.origin}/login\nID: ${item.email}\nPW: (管理画面から再発行してください)`;
+                    navigator.clipboard.writeText(text);
+                    alert('基本ログイン情報をコピーしました。');
+                  }}
+                  className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition"
+                >
+                  基本情報コピー
+                </button>
                 <button 
                   onClick={() => {
                     setSelectedItem(item);
@@ -267,8 +286,8 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* 登録用モーダル */}
-      {isModalOpen && (
+      {/* 登録用・情報表示用モーダル共通コンテナ */}
+      {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
             {!registeredInfo ? (
@@ -306,11 +325,12 @@ export default function AdminPropertiesPage() {
                 </div>
               </>
             ) : (
-              <div className="text-center">
+              <div className="text-center animate-in fade-in zoom-in duration-300">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-                <h2 className="text-2xl font-black mb-2">情報発行</h2>
-                <p className="text-slate-400 font-bold text-xs mb-8 uppercase tracking-widest">Account Credentials</p>
-                <div className="bg-slate-50 p-6 rounded-[2rem] text-left space-y-4 mb-8">
+                <h2 className="text-2xl font-black mb-2 italic uppercase">Credentials <span className="text-emerald-600">Issued</span></h2>
+                <p className="text-slate-400 font-bold text-[9px] mb-8 uppercase tracking-widest">ログイン情報の作成・更新が完了しました</p>
+                
+                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-slate-100">
                   <div>
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Login URL</label>
                     <p className="text-xs font-bold text-blue-600 break-all">{registeredInfo.url}</p>
@@ -321,20 +341,21 @@ export default function AdminPropertiesPage() {
                   </div>
                   <div>
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Initial Password</label>
-                    <p className="text-lg font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p>
+                    <p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p>
                   </div>
                 </div>
+
                 <button 
                   onClick={() => {
                     const text = `【ぽすっと】ログイン情報\nURL: ${registeredInfo.url}\nID: ${registeredInfo.email}\nPW: ${registeredInfo.pw}`;
                     navigator.clipboard.writeText(text);
-                    alert('コピーしました。');
+                    alert('クリップボードにコピーしました！');
                     setRegisteredInfo(null);
                     setIsModalOpen(false);
                   }}
-                  className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl"
+                  className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-colors"
                 >
-                  コピーして閉じる
+                  情報をコピーして閉じる
                 </button>
               </div>
             )}
@@ -342,7 +363,7 @@ export default function AdminPropertiesPage() {
         </div>
       )}
 
-      {/* ✅ 管理・編集用モーダル */}
+      {/* アカウント詳細管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
