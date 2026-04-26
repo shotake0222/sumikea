@@ -22,7 +22,7 @@ export default function ShopPostPage() {
   const [linkUrl, setLinkUrl] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [radiusKm, setRadiusKm] = useState(1);
-  const [targetType, setTargetType] = useState('all'); // ✅ セグメント状態
+  const [targetType, setTargetType] = useState('all'); 
   const [expiresAt, setExpiresAt] = useState(
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
@@ -86,13 +86,11 @@ export default function ShopPostPage() {
     if (data) setRecentAds(data);
   };
 
-  // ✅ 属性フィルタ付きの半径検索
   const handleRadiusSearch = async (store: any, radius: number, type: string) => {
     if (!store?.lat || !store?.lng) return;
     setRadiusKm(radius);
     setTargetType(type);
     
-    // get_properties_within_radius_v2 を呼び出し
     const { data: nearby, error } = await supabase.rpc('get_properties_within_radius_v2', {
       target_lat: store.lat,
       target_lng: store.lng,
@@ -113,12 +111,15 @@ export default function ShopPostPage() {
     if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadImage(file, 'shop-ads');
+      // ✅ 修正: 日本語ファイル名対応 & バケット名指定 (sumikea-images 内の shop-ads フォルダへ)
+      const url = await uploadImage(file, 'sumikea-images', 'shop-ads');
       setPdfUrl(url);
-    } catch (err) {
-      alert('アップロードに失敗しました。');
+    } catch (err: any) {
+      console.error("アップロード詳細エラー:", err);
+      alert(`アップロードに失敗しました。詳細: ${err.message || 'Invalid key errorが出る場合はファイル名を半角英数字にしてみてください。'}`);
     } finally {
       setUploading(false);
+      e.target.value = ''; // 入力をリセット
     }
   };
 
@@ -152,7 +153,7 @@ export default function ShopPostPage() {
       link_url: linkUrl,
       pdf_url: pdfUrl,
       radius_km: radiusKm,
-      target_segment: targetType, // セグメント情報も保存
+      target_segment: targetType,
       expires_at: new Date(`${expiresAt}T23:59:59`).toISOString(),
       view_count: 0
     }));
@@ -217,7 +218,6 @@ export default function ShopPostPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-12">
-                {/* メッセージ入力 */}
                 <div className="space-y-4">
                   <label className="text-[11px] font-black text-orange-500 uppercase tracking-widest ml-1 italic">【必須】今日の一言・アピール</label>
                   <input 
@@ -229,7 +229,6 @@ export default function ShopPostPage() {
                   />
                 </div>
 
-                {/* 配信セグメント・範囲設定 */}
                 <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
                   <div className="grid md:grid-cols-2 gap-8 relative z-10">
                     <div>
@@ -277,7 +276,6 @@ export default function ShopPostPage() {
                   <div className="absolute -right-10 -bottom-10 text-[8rem] font-black italic opacity-5 select-none uppercase tracking-tighter pointer-events-none">Target</div>
                 </div>
 
-                {/* 物件プレビュー */}
                 {nearbyProperties.length > 0 && (
                   <div className="px-6 py-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">🎯 配信予定の物件（一部）:</p>
@@ -335,7 +333,6 @@ export default function ShopPostPage() {
             </div>
           </div>
 
-          {/* サイドバー */}
           <div className="w-full lg:w-96">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">

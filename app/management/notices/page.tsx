@@ -14,11 +14,12 @@ export default function ManagementNoticePage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
-  const [targetAudience, setTargetAudience] = useState('resident'); // ターゲット選択
+  const [targetAudience, setTargetAudience] = useState('resident'); 
   
   const [isPermanent, setIsPermanent] = useState(false);
   const [expiresAt, setExpiresAt] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16));
   const [pdfUrl, setPdfUrl] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState(''); // 表示用ファイル名
   const [uploading, setUploading] = useState(false);
   
   const [loading, setLoading] = useState(true);
@@ -65,14 +66,21 @@ export default function ManagementNoticePage() {
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setUploading(true);
     try {
-      const url = await uploadImage(file, 'management-docs');
+      // ✅ 修正: 日本語ファイル名エラー回避済みの新uploadImageを呼び出し
+      // 引数: ファイル, バケット名, フォルダ名
+      const url = await uploadImage(file, 'sumikea-images', 'management-docs');
+      
       setPdfUrl(url);
-    } catch (err) {
-      alert('アップロードに失敗しました');
+      setUploadedFileName(file.name); // 画面表示用に元の名前を保持
+    } catch (err: any) {
+      console.error("アップロード詳細エラー:", err);
+      alert(`アップロードに失敗しました。詳細: ${err.message || 'ファイル名に特殊な文字が含まれている可能性があります。'}`);
     } finally {
       setUploading(false);
+      e.target.value = ''; // インプットをクリア
     }
   };
 
@@ -81,13 +89,12 @@ export default function ManagementNoticePage() {
     if (!selectedProperty) return alert('対象を選択してください');
     setIsSubmitting(true);
     
-    // property_notificationsテーブルを外部広告・お知らせの共通基盤として使用
     const { error } = await supabase.from('property_notifications').insert({
       property_id: selectedProperty,
       title,
       content,
       category,
-      target_audience: targetAudience, // 追加したターゲット区分
+      target_audience: targetAudience,
       pdf_url: pdfUrl,
       is_permanent: isPermanent,
       expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
@@ -96,7 +103,7 @@ export default function ManagementNoticePage() {
 
     if (!error) {
       alert('配信・更新が完了しました');
-      setTitle(''); setContent(''); setPdfUrl('');
+      setTitle(''); setContent(''); setPdfUrl(''); setUploadedFileName('');
     } else {
       alert('エラー: ' + error.message);
     }
@@ -212,7 +219,7 @@ export default function ManagementNoticePage() {
               <div className="md:col-span-2 space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">詳細内容・説明文</label>
                 <textarea className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] h-64 text-slate-700 outline-none resize-none leading-relaxed focus:ring-4 focus:ring-blue-100 transition-all text-lg font-medium"
-                  value={content} onChange={(e) => setContent(e.target.value)} placeholder="ユーザーに伝えたい詳細情報を入力してください。将来的にポップアップ内のコンテンツとして表示されます。" required />
+                  value={content} onChange={(e) => setContent(e.target.value)} placeholder="ユーザーに伝えたい詳細情報を入力してください。" required />
               </div>
               
               <div className="space-y-3">
@@ -221,11 +228,23 @@ export default function ManagementNoticePage() {
                   {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
                     <div className="text-center p-6">
                       <span className="text-5xl mb-4 block">{pdfUrl ? '🖼️' : '📁'}</span>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? 'READY TO POST' : 'Upload Image/PDF'}</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        {pdfUrl ? 'READY TO POST' : 'Upload Image/PDF'}
+                      </p>
+                      {uploadedFileName && (
+                        <p className="mt-2 text-[10px] font-bold text-blue-600 truncate max-w-[150px]">
+                          {uploadedFileName}
+                        </p>
+                      )}
                     </div>
                   }
                   <input type="file" className="hidden" onChange={handlePdfUpload} accept="application/pdf,image/*" />
                 </label>
+                {pdfUrl && (
+                  <button type="button" onClick={() => {setPdfUrl(''); setUploadedFileName('');}} className="text-[9px] font-black text-red-500 uppercase tracking-widest w-full text-center hover:underline">
+                    ファイルを削除する
+                  </button>
+                )}
               </div>
             </div>
           </div>
