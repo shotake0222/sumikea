@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { uploadImage } from '../../../lib/upload';
+import { uploadImage } from '@/lib/upload';
 
 export default function ShopPostPage() {
   const router = useRouter();
@@ -38,13 +38,30 @@ export default function ShopPostPage() {
     const initializePortal = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { router.push('/login?type=shop'); return; }
+        if (!user) { 
+          router.push('/login?type=shop'); 
+          return; 
+        }
 
         const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
         const role = profile?.role?.toUpperCase() || 'USER';
         setUserRole(role);
         
-        if (role !== 'ADMIN' && role !== 'SHOP') { router.push('/login?type=shop'); return; }
+        // ==========================================
+        // 🚨 【修正】一般ユーザーの迷い込みガード
+        // ==========================================
+        if (role === 'USER') {
+          alert('このアカウントは店舗用ではありません。住民用画面へ移動します。');
+          router.push('/resident/dashboard'); // 住民用ダッシュボードへ誘導
+          return;
+        }
+
+        if (role !== 'ADMIN' && role !== 'SHOP') { 
+          alert('アクセス権限がありません。');
+          await supabase.auth.signOut();
+          router.push('/login?type=shop'); 
+          return; 
+        }
 
         let storeQuery = supabase.from('stores').select('*');
         if (role === 'SHOP') storeQuery = storeQuery.eq('owner_id', user.id);
@@ -68,7 +85,8 @@ export default function ShopPostPage() {
           fetchHistory(currentStore.id);
           await handleRadiusSearch(currentStore, 1, 'all');
         } else {
-          alert('店舗情報が見つかりません。設定を確認してください。');
+          // SHOPロールなのに店舗がない場合のみ、設定画面へ
+          alert('店舗情報の登録が必要です。設定画面へ移動します。');
           router.push('/shop/settings');
         }
       } catch (err) {
@@ -81,7 +99,7 @@ export default function ShopPostPage() {
   }, [router]);
 
   const fetchHistory = async (storeId: string) => {
-    if (storeId.startsWith('00000000')) return;
+    if (storeId?.startsWith('00000000')) return;
     const { data } = await supabase
       .from('local_ads')
       .select('*')
@@ -148,7 +166,6 @@ export default function ShopPostPage() {
     setIsSubmitLoading(true);
     
     try {
-      // 1. 保存用データの作成（物件ごとに1行作成）
       const insertData = nearbyProperties.map(p => ({
         store_id: myStore.id,
         store_name: storeName,
@@ -164,20 +181,15 @@ export default function ShopPostPage() {
         view_count: 0
       }));
 
-      // 2. まとめてDBへ挿入
       const { error } = await supabase.from('local_ads').insert(insertData);
-      
       if (error) throw error;
 
       alert(`${nearbyProperties.length}件のマンションへ配信予約が完了しました！`);
       
-      // フォームリセット
       setTitle(''); 
       setContent(''); 
       setShopMessage(''); 
       setPdfUrl('');
-      
-      // 履歴更新
       fetchHistory(myStore.id);
 
     } catch (err: any) {
@@ -198,6 +210,7 @@ export default function ShopPostPage() {
     <div className="min-h-screen bg-[#F8FAFC]">
       <div className="p-4 md:p-10 max-w-7xl mx-auto">
         
+        {/* ナビゲーションボタン */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
           {[
             { label: '過去の広告一覧・管理', icon: '📢', path: '/shop/ads', color: 'hover:border-orange-500' },
@@ -247,6 +260,7 @@ export default function ShopPostPage() {
                   />
                 </div>
 
+                {/* 配信設定カード */}
                 <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
                   <div className="grid md:grid-cols-2 gap-8 relative z-10">
                     <div>
@@ -293,6 +307,7 @@ export default function ShopPostPage() {
                   </div>
                 </div>
 
+                {/* 広告内容 */}
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の見出し（タイトル）</label>
@@ -337,6 +352,7 @@ export default function ShopPostPage() {
             </div>
           </div>
 
+          {/* 右サイドバー：履歴 */}
           <div className="w-full lg:w-96">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">

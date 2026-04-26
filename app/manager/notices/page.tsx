@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { uploadImage } from '../../../lib/upload';
+import { uploadImage } from '@/lib/upload';
 
 export default function ManagementNoticePage() {
   const router = useRouter();
@@ -13,6 +13,7 @@ export default function ManagementNoticePage() {
   const [selectedProperty, setSelectedProperty] = useState('');
   const [selectedPropertyData, setSelectedPropertyData] = useState<any>(null);
   const [recentNotices, setRecentNotices] = useState<any[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -25,12 +26,18 @@ export default function ManagementNoticePage() {
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
   );
   const [pdfUrl, setPdfUrl] = useState('');
-  const [uploadedFileName, setUploadedFileName] = useState(''); // ✅ 追加：表示用ファイル名
+  const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploading, setUploading] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+
+  // --- 物件登録用ステート ---
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [newPropName, setNewPropName] = useState('');
+  const [newPropAddress, setNewPropAddress] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // --- 初期データ取得 ---
   useEffect(() => {
@@ -38,36 +45,14 @@ export default function ManagementNoticePage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { router.push('/login?type=manager'); return; }
+        setCurrentUserId(user.id);
 
         const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
         const role = profile?.role?.toUpperCase() || 'USER';
         
         if (role !== 'ADMIN' && role !== 'MANAGER') { router.push('/login?type=manager'); return; }
         
-        let propertyList: any[] = [];
-        if (role === 'ADMIN') {
-          const { data: allProps } = await supabase.from('properties').select('id, name');
-          if (allProps) {
-            propertyList = allProps.map(p => ({
-              property_id: p.id,
-              properties: { id: p.id, name: p.name } 
-            }));
-          }
-        } else {
-          const { data: managerProps } = await supabase
-            .from('property_managers')
-            .select('property_id, properties(id, name)')
-            .eq('user_id', user.id);
-          if (managerProps) propertyList = managerProps;
-        }
-        
-        if (propertyList && propertyList.length > 0) {
-          setManagedProperties(propertyList);
-          const firstProp = propertyList[0];
-          setSelectedProperty(firstProp.property_id);
-          setSelectedPropertyData(firstProp.properties);
-          fetchNoticeHistory(firstProp.property_id);
-        }
+        await refreshPropertyList(user.id, role);
       } catch (err) {
         console.error('データ取得エラー:', err);
       } finally {
@@ -76,6 +61,41 @@ export default function ManagementNoticePage() {
     };
     fetchAuthAndData();
   }, [router]);
+
+  // 物件リストを再取得する関数（新規登録後にも呼び出す）
+  const refreshPropertyList = async (userId: string, role: string, targetNewId?: string) => {
+    let propertyList: any[] = [];
+    if (role === 'ADMIN') {
+      const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
+      if (allProps) {
+        propertyList = allProps.map(p => ({
+          property_id: p.id,
+          properties: p
+        }));
+      }
+    } else {
+      const { data: managerProps } = await supabase
+        .from('property_managers')
+        .select('property_id, properties(id, name, invite_code)')
+        .eq('user_id', userId);
+      if (managerProps) propertyList = managerProps;
+    }
+    
+    setManagedProperties(propertyList);
+
+    if (propertyList.length > 0) {
+      // targetNewIdがあればそれを選択、なければ最初を選択
+      const target = targetNewId 
+        ? propertyList.find(p => p.property_id === targetNewId) 
+        : propertyList[0];
+      
+      if (target) {
+        setSelectedProperty(target.property_id);
+        setSelectedPropertyData(target.properties);
+        fetchNoticeHistory(target.property_id);
+      }
+    }
+  };
 
   const fetchNoticeHistory = async (propId: string) => {
     try {
@@ -105,6 +125,47 @@ export default function ManagementNoticePage() {
     }
   };
 
+  // 物件新規登録ロジック
+  const handleRegisterProperty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPropName) return;
+    setIsRegistering(true);
+
+    try {
+      const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      // 1. propertiesテーブルに挿入
+      const { data: newProp, error: propError } = await supabase
+        .from('properties')
+        .insert([{ name: newPropName, address: newPropAddress, invite_code: inviteCode }])
+        .select()
+        .single();
+
+      if (propError) throw propError;
+
+      // 2. property_managersテーブルに紐付け
+      const { error: managerError } = await supabase
+        .from('property_managers')
+        .insert([{ property_id: newProp.id, user_id: currentUserId }]);
+
+      if (managerError) throw managerError;
+
+      alert(`「${newPropName}」を登録しました。すぐに配信可能です。`);
+      setNewPropName('');
+      setNewPropAddress('');
+      setIsRegisterModalOpen(false);
+      
+      // リストを更新して、新しく作った物件を自動選択
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', currentUserId).single();
+      await refreshPropertyList(currentUserId, profile?.role || 'MANAGER', newProp.id);
+
+    } catch (err: any) {
+      alert('物件登録エラー: ' + err.message);
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
   const handlePropertyChange = (propId: string) => {
     setSelectedProperty(propId);
     const found = managedProperties.find(p => p.property_id === propId);
@@ -117,22 +178,13 @@ export default function ManagementNoticePage() {
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // ✅ 重複チェック
-    if (uploadedFileName === file.name) {
-      alert(`「${file.name}」は既に選択されています。`);
-      return;
-    }
-
     setUploading(true);
     try {
-      // ✅ 修正：バケット名とフォルダ名を指定して日本語エラーを回避
       const url = await uploadImage(file, 'sumikea-images', 'management-docs');
       setPdfUrl(url);
       setUploadedFileName(file.name);
     } catch (err: any) {
-      console.error("アップロード詳細エラー:", err);
-      alert(`アップロードに失敗しました。詳細: ${err.message || 'ファイル名を確認してください。'}`);
+      alert(`アップロードに失敗しました: ${err.message}`);
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -182,7 +234,7 @@ export default function ManagementNoticePage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans text-slate-900">
       <style jsx global>{`
         @media print {
           body * { visibility: hidden; }
@@ -190,6 +242,8 @@ export default function ManagementNoticePage() {
           #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none !important; }
           .no-print { display: none !important; }
         }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
       `}</style>
 
       <div className="max-w-7xl mx-auto">
@@ -202,9 +256,17 @@ export default function ManagementNoticePage() {
                   {selectedPropertyData?.name || '---'}
                 </h1>
               </div>
-              <p className="text-slate-400 font-bold text-xl flex items-center gap-2">
-                <span className="text-2xl text-blue-600">🏢</span> 住民お知らせコンソール
-              </p>
+              <div className="flex flex-wrap gap-4 items-center">
+                <p className="text-slate-400 font-bold text-xl flex items-center gap-2">
+                  <span className="text-2xl text-blue-600">🏢</span> 住民お知らせコンソール
+                </p>
+                <button 
+                  onClick={() => setIsRegisterModalOpen(true)}
+                  className="bg-slate-900 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg active:scale-95"
+                >
+                  + 物件を追加登録
+                </button>
+              </div>
             </div>
             
             <div className="w-full lg:w-auto">
@@ -347,6 +409,43 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
+        {/* --- 物件登録モーダル --- */}
+        {isRegisterModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[150] flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-xl rounded-[4rem] p-10 shadow-2xl animate-in zoom-in duration-300">
+              <h3 className="text-3xl font-black italic uppercase mb-8 tracking-tighter">新規物件を <span className="text-blue-600">登録</span></h3>
+              <form onSubmit={handleRegisterProperty} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">物件名称</label>
+                  <input 
+                    className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" 
+                    placeholder="例：スカイハイツ立川" 
+                    value={newPropName} 
+                    onChange={(e) => setNewPropName(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">所在地（住所）</label>
+                  <input 
+                    className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" 
+                    placeholder="例：東京都立川市..." 
+                    value={newPropAddress} 
+                    onChange={(e) => setNewPropAddress(e.target.value)} 
+                  />
+                </div>
+                <div className="flex gap-4 pt-6">
+                  <button type="button" onClick={() => setIsRegisterModalOpen(false)} className="flex-1 py-5 rounded-[2rem] font-black text-slate-400 uppercase tracking-widest">Cancel</button>
+                  <button type="submit" disabled={isRegistering} className="flex-1 bg-blue-600 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all">
+                    {isRegistering ? '登録中...' : '登録して配信へ'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* --- 案内印刷モーダル --- */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
