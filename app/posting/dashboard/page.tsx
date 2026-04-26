@@ -11,11 +11,18 @@ import { uploadImage } from '../../../lib/upload';
 export default function PostingDigitalDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [targetProperties, setTargetProperties] = useState<any[]>([]);
+  const [allProperties, setAllProperties] = useState<any[]>([]); // 全物件リスト
+  const [filteredProperties, setFilteredProperties] = useState<any[]>([]); // 配信対象の物件リスト
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
 
-  // ✅ 動的統計データ用のステート
+  // 配信エリア管理
+  const [deliveryMode, setDeliveryMode] = useState<'all' | 'area' | 'specific'>('area');
+  const [address, setAddress] = useState('');
+  const [radius, setRadius] = useState<number>(3); // デフォルト3km
+  const [isSearchingArea, setIsSearchingArea] = useState(false);
+
+  // 動的統計データ用のステート
   const [totalStats, setTotalStats] = useState({
     impressions: 0,
     ctr: '0.00'
@@ -24,6 +31,8 @@ export default function PostingDigitalDashboard() {
   // 状態管理
   const [pdfUrls, setPdfUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  
+  // ターゲット属性
   const [demographics, setDemographics] = useState({
     family: false, single: false, senior: false, highIncome: false
   });
@@ -51,9 +60,10 @@ export default function PostingDigitalDashboard() {
           return; 
         }
 
-        // 1. 物件リスト取得
-        const { data: props } = await supabase.from('properties').select('id, name');
-        setTargetProperties(props || []);
+        // 1. 全物件リスト取得
+        const { data: props } = await supabase.from('properties').select('id, name, lat, lng'); // lat, lngがある想定
+        setAllProperties(props || []);
+        setFilteredProperties(props || []); // 初期状態は全件
 
         // 2. 最近のキャンペーン取得
         const { data: campaigns } = await supabase
@@ -63,7 +73,7 @@ export default function PostingDigitalDashboard() {
           .limit(3);
         setRecentCampaigns(campaigns || []);
 
-        // ✅ 3. インプレッション数とCTRのリアルタイム集計
+        // 3. インプレッション数とCTRのリアルタイム集計
         const { data: adStats } = await supabase.from('local_ad_stats').select('views_count, clicks_count');
         
         if (adStats) {
@@ -105,14 +115,65 @@ export default function PostingDigitalDashboard() {
     setPdfUrls(prev => prev.filter((_, i) => i !== index));
   };
 
+  // 全選択トグル処理
+  const toggleSelectAllDemographics = () => {
+    const allSelected = Object.values(demographics).every(val => val);
+    setDemographics({
+      family: !allSelected,
+      single: !allSelected,
+      senior: !allSelected,
+      highIncome: !allSelected
+    });
+  };
+
+  // 圏内検索ロジック (既存のギミックをここに繋ぎこみます)
+  const handleSearchArea = async () => {
+    if (!address) return;
+    setIsSearchingArea(true);
+    
+    try {
+      // TODO: ここに既存の緯度経度取得＆物件絞り込みロジックを接続
+      // 例: const coords = await getCoordinatesFromAddress(address);
+      // const nearbyProps = calculatePropertiesInRadius(allProperties, coords, radius);
+      
+      // 仮のシミュレーション処理（通信と絞り込みをモック化）
+      await new Promise(res => setTimeout(res, 800));
+      const simulatedResult = allProperties.slice(0, Math.max(1, Math.floor(allProperties.length * Math.random())));
+      
+      setFilteredProperties(simulatedResult);
+      alert(`指定エリア圏内で ${simulatedResult.length} 件の物件が見つかりました`);
+    } catch (error) {
+      alert('エリア検索に失敗しました');
+    } finally {
+      setIsSearchingArea(false);
+    }
+  };
+
   const onSendAd = async (data: any) => {
     if (pdfUrls.length === 0) {
       alert('チラシPDFをアップロードしてください');
       return;
     }
+
+    // 配信先ターゲットの決定
+    let targetPropertyIds: string[] = [];
+    if (deliveryMode === 'specific' && data.property_id) {
+      targetPropertyIds = [data.property_id];
+    } else if (deliveryMode === 'area') {
+      if (filteredProperties.length === 0) {
+        alert('エリア内に配信可能な物件がありません。検索をやり直すか、物件を指定してください。');
+        return;
+      }
+      targetPropertyIds = filteredProperties.map(p => p.id);
+    } else {
+      targetPropertyIds = allProperties.map(p => p.id); // 全物件
+    }
+
     setIsSubmitting(true);
-    const { error } = await supabase.from('digital_flyers').insert({
-      property_id: data.property_id,
+
+    // 複数物件に対してインサート処理
+    const inserts = targetPropertyIds.map(pid => ({
+      property_id: pid,
       title: data.title,
       content: data.content,
       pdf_url: pdfUrls.join(','), 
@@ -121,12 +182,15 @@ export default function PostingDigitalDashboard() {
       starts_at: new Date(startDate).toISOString(),
       expires_at: new Date(endDate).toISOString(),
       status: 'active'
-    });
+    }));
+
+    const { error } = await supabase.from('digital_flyers').insert(inserts);
 
     if (!error) {
-      alert('デジタル投函（チラシ配布）を開始しました！');
+      alert(`計 ${inserts.length} 件の物件にデジタル投函を開始しました！`);
       reset();
       setPdfUrls([]);
+      setAddress('');
     } else {
       alert('エラー: ' + error.message);
     }
@@ -152,7 +216,6 @@ export default function PostingDigitalDashboard() {
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">総インプレッション数</p>
-              {/* ✅ リアルデータを反映 */}
               <p className="text-3xl font-black text-slate-900 tracking-tighter">{totalStats.impressions.toLocaleString()}</p>
             </div>
             <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full">LIVE</div>
@@ -160,7 +223,6 @@ export default function PostingDigitalDashboard() {
           <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center relative overflow-hidden">
             <div className="relative z-10">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">平均クリック率 (CTR)</p>
-              {/* ✅ リアルデータを反映 */}
               <p className="text-3xl font-black tracking-tighter">{totalStats.ctr}%</p>
             </div>
             <div className="absolute -right-4 -bottom-4 text-6xl italic font-black opacity-10">%</div>
@@ -177,6 +239,67 @@ export default function PostingDigitalDashboard() {
               </h2>
 
               <div className="space-y-8">
+                
+                {/* 1. 配信エリア・物件の指定 */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">配信エリアの指定</label>
+                     <div className="flex bg-slate-100 rounded-full p-1">
+                        <button type="button" onClick={() => setDeliveryMode('area')} className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === 'area' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>圏内指定</button>
+                        <button type="button" onClick={() => setDeliveryMode('specific')} className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === 'specific' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>物件指定</button>
+                        <button type="button" onClick={() => { setDeliveryMode('all'); setFilteredProperties(allProperties); }} className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === 'all' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>全物件配信</button>
+                     </div>
+                  </div>
+
+                  {deliveryMode === 'area' && (
+                    <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100 space-y-4">
+                      <div className="flex gap-4">
+                        <input 
+                          type="text" 
+                          value={address} 
+                          onChange={(e) => setAddress(e.target.value)} 
+                          placeholder="基準となる住所や店舗名を入力..." 
+                          className="flex-1 bg-white p-4 rounded-2xl font-bold text-sm border border-slate-200 outline-none focus:border-indigo-400"
+                        />
+                        <select 
+                          value={radius} 
+                          onChange={(e) => setRadius(Number(e.target.value))}
+                          className="bg-white p-4 rounded-2xl font-bold text-sm border border-slate-200 outline-none focus:border-indigo-400 w-32"
+                        >
+                          <option value={1}>半径 1km</option>
+                          <option value={3}>半径 3km</option>
+                          <option value={5}>半径 5km</option>
+                          <option value={10}>半径 10km</option>
+                        </select>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={handleSearchArea}
+                        disabled={isSearchingArea || !address}
+                        className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl text-sm hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
+                      >
+                        {isSearchingArea ? '検索中...' : 'この圏内にある物件を検索'}
+                      </button>
+                      <p className="text-[10px] font-bold text-indigo-600 text-right mt-2">
+                        現在、対象エリア内に <span className="text-lg font-black">{filteredProperties.length}</span> 件の物件が設定されています。
+                      </p>
+                    </div>
+                  )}
+
+                  {deliveryMode === 'specific' && (
+                    <select {...register('property_id')} className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20">
+                      <option value="">配信先（マンション）を選択してください</option>
+                      {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  )}
+                  
+                  {deliveryMode === 'all' && (
+                    <div className="bg-slate-50 p-6 rounded-[2rem] text-center border border-slate-100">
+                       <p className="text-sm font-black text-slate-600">登録されているすべての物件（{allProperties.length}件）に配信します</p>
+                    </div>
+                  )}
+                </div>
+
                 {/* 期間設定 */}
                 <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">配信スケジュール設定</label>
@@ -216,7 +339,17 @@ export default function PostingDigitalDashboard() {
 
                   {/* セグメントターゲット */}
                   <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ターゲット属性の絞り込み</label>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ターゲット属性の絞り込み</label>
+                      <button 
+                        type="button" 
+                        onClick={toggleSelectAllDemographics}
+                        className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100 transition-colors"
+                      >
+                        {Object.values(demographics).every(val => val) ? '選択解除' : '全選択'}
+                      </button>
+                    </div>
+                    
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         { key: 'family', label: 'ファミリー層' },
@@ -235,10 +368,6 @@ export default function PostingDigitalDashboard() {
 
                 {/* 基本情報 */}
                 <div className="space-y-4">
-                  <select {...register('property_id')} className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20">
-                    <option value="">配信先（マンション）を選択してください</option>
-                    {targetProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
                   <input {...register('title')} placeholder="プッシュ通知のタイトル（例：今週のチラシが届きました）" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
                   <textarea {...register('content')} placeholder="通知内容の詳細を入力してください..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm border-none resize-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
                 </div>
@@ -267,7 +396,6 @@ export default function PostingDigitalDashboard() {
                         <h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4>
                       </div>
                       <div className="text-right">
-                        {/* 仮でインプレッションを表示 */}
                         <p className="text-xl font-black text-slate-900 leading-none">{(1200 - i * 100).toLocaleString()}</p>
                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p>
                       </div>
