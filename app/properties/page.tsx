@@ -12,9 +12,9 @@ export default function AdminPropertiesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ViewTab>('posting');
   
-  // モーダル制御
+  // モーダル制御: SaaSフロー用に項目を整理（住所は本人が後で入れる）
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', address: '', extra: '' });
+  const [newItem, setNewItem] = useState({ name: '', email: '' });
   
   // 管理会社用：紐づけ物件リスト
   const [allProperties, setAllProperties] = useState<any[]>([]);
@@ -65,7 +65,7 @@ export default function AdminPropertiesPage() {
       supabase.from('property_notifications').select('*', { count: 'exact', head: true }),
       supabase.from('stores').select('*', { count: 'exact', head: true }),
       supabase.from('local_ad_stats').select('*', { count: 'exact', head: true }),
-      supabase.from('properties').select('id, name').is('management_company_id', null) // 未紐づけの物件のみ
+      supabase.from('properties').select('id, name').is('management_company_id', null)
     ]);
 
     setStats({
@@ -82,7 +82,6 @@ export default function AdminPropertiesPage() {
     if (tab === 'posting') {
       query = supabase.from('posting_companies').select('*');
     } else if (tab === 'manager') {
-      // 管理会社の場合は物件数も取得
       query = supabase.from('management_companies').select('*, properties(id)');
     } else {
       query = supabase.from('stores').select('*');
@@ -94,7 +93,8 @@ export default function AdminPropertiesPage() {
     const formatted = (data || []).map((d: any) => ({
       id: d.id,
       name: d.name,
-      address: d.address || d.base_location || '住所未登録',
+      email: d.email || '未設定',
+      status: d.status || 'invited', // 'invited' または 'active'
       category: d.category || (tab === 'posting' ? 'POSTING' : tab === 'manager' ? 'MANAGER' : 'STORE'),
       propCount: d.properties?.length || 0
     }));
@@ -111,31 +111,24 @@ export default function AdminPropertiesPage() {
     setSelectedProps([...selectedProps, { id: '', code: Math.random().toString(36).substring(2, 7).toUpperCase() }]);
   };
 
-  const handleCreate = async () => {
-    if (!newItem.name) return alert('名称を入力してください');
+  // ✅ SaaSフロー：招待送信ロジック
+  const handleInvite = async () => {
+    if (!newItem.name || !newItem.email) return alert('名称とメールアドレスを入力してください');
     
     setLoading(true);
     try {
-      let table = '';
-      let payload: any = { name: newItem.name };
+      let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
+      
+      // 1. 各テーブルに最小限の情報を "status: invited" で保存
+      const { data: created, error } = await supabase.from(table).insert([{
+        name: newItem.name,
+        email: newItem.email,
+        status: 'invited'
+      }]).select().single();
 
-      if (activeTab === 'posting') {
-        table = 'posting_companies';
-        payload.base_location = newItem.address;
-      } else if (activeTab === 'manager') {
-        table = 'management_companies';
-        payload.address = newItem.address;
-      } else {
-        table = 'stores';
-        payload.address = newItem.address;
-        payload.category = newItem.extra || '店舗';
-      }
-
-      // 1. 会社・店舗の登録
-      const { data: created, error } = await supabase.from(table).insert([payload]).select().single();
       if (error) throw error;
 
-      // 2. 管理会社の場合、物件にIDと招待コードを書き込む
+      // 2. 管理会社の場合、物件に紐付け
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
@@ -145,9 +138,18 @@ export default function AdminPropertiesPage() {
         }
       }
 
-      alert('正常に登録されました');
+      // 3. 招待テーブルへのトークン発行 (オンボーディングURL用)
+      const inviteToken = Math.random().toString(36).substring(2, 15);
+      await supabase.from('invitations').insert([{
+        email: newItem.email,
+        role: activeTab.toUpperCase(),
+        target_id: created.id,
+        token: inviteToken
+      }]);
+
+      alert(`${newItem.email} へ招待を送りました。\n(開発用トークン: ${inviteToken})`);
       setIsModalOpen(false);
-      setNewItem({ name: '', address: '', extra: '' });
+      setNewItem({ name: '', email: '' });
       setSelectedProps([]);
       fetchTabData(activeTab);
     } catch (err: any) {
@@ -175,7 +177,7 @@ export default function AdminPropertiesPage() {
                 ぽすっと <span className="text-blue-600">管理パネル</span>
               </h1>
             </div>
-            <p className="text-slate-400 text-[10px] font-bold tracking-[0.3em] ml-5 uppercase">Posutto System Admin Portfolio</p>
+            <p className="text-slate-400 text-[10px] font-bold tracking-[0.3em] ml-5 uppercase">Posutto System SaaS Admin</p>
           </div>
           
           <div className="flex gap-2">
@@ -215,8 +217,8 @@ export default function AdminPropertiesPage() {
               </button>
             ))}
           </div>
-          <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition shadow-lg w-full md:w-auto">
-            + {activeTab === 'posting' ? '業者' : activeTab === 'manager' ? '管理会社' : '店舗'}を登録
+          <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-900 transition shadow-lg w-full md:w-auto">
+            + {activeTab === 'posting' ? '業者' : activeTab === 'manager' ? '管理会社' : '店舗'}を招待
           </button>
         </div>
 
@@ -225,50 +227,49 @@ export default function AdminPropertiesPage() {
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 group hover:border-blue-200 transition-all flex flex-col relative overflow-hidden">
               <div className="flex justify-between items-start mb-2 relative z-10">
-                <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">{item.category}</p>
+                <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
+                  {item.status === 'active' ? '利用中' : '招待中(未登録)'}
+                </span>
                 {item.propCount > 0 && (
                   <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-3 py-1 rounded-full">
-                    {item.propCount} 物件管理中
+                    {item.propCount} 物件
                   </span>
                 )}
               </div>
-              <h3 className="text-2xl font-black text-slate-900 italic mb-4 group-hover:text-blue-600 transition-colors tracking-tighter relative z-10">{item.name}</h3>
-              <p className="text-[11px] text-slate-400 font-bold mb-6 italic relative z-10">📍 {item.address}</p>
+              <h3 className="text-2xl font-black text-slate-900 italic mb-1 group-hover:text-blue-600 transition-colors tracking-tighter relative z-10">{item.name}</h3>
+              <p className="text-[11px] text-blue-600 font-bold mb-6 relative z-10">📧 {item.email}</p>
               
               <div className="flex gap-2 mt-auto relative z-10">
-                <button className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition">詳細情報</button>
-                <button onClick={() => router.push(`/management/reporting?id=${item.id}`)} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">実績分析</button>
+                <button className="flex-1 bg-slate-50 text-slate-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-100 transition">招待を再送</button>
+                <button onClick={() => router.push(`/management/reporting?id=${item.id}`)} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">管理</button>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* 登録モーダル */}
+      {/* 招待モーダル */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-2xl p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-black italic mb-6 uppercase tracking-tighter">
-              新規登録: <span className="text-blue-600">{activeTab.toUpperCase()}</span>
+              新規招待: <span className="text-blue-600">{activeTab.toUpperCase()}</span>
             </h2>
             
             <div className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Name / 名称</label>
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" placeholder="会社名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Address / 住所</label>
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
-                </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Company Name / 会社・店舗名</label>
+                <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" placeholder="株式会社 〇〇" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Email / 招待送信先アドレス</label>
+                <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold text-blue-600" placeholder="contact@example.com" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
               </div>
 
-              {/* ✅ 管理会社のみ：物件紐づけセクション */}
               {activeTab === 'manager' && (
                 <div className="pt-6 border-t border-slate-100">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">管理物件と招待コードの設定</h3>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">管理物件の事前割り当て</h3>
                     <button onClick={addPropField} className="text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-full hover:bg-blue-100 transition">+ 物件を追加</button>
                   </div>
                   
@@ -284,22 +285,13 @@ export default function AdminPropertiesPage() {
                             setSelectedProps(newArr);
                           }}
                         >
-                          <option value="">物件を選択してください</option>
+                          <option value="">物件を選択</option>
                           {allProperties.map(p => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
-                        <div className="flex-1">
-                          <input 
-                            className="w-full bg-white p-3 rounded-xl font-black text-blue-600 text-xs outline-none border border-slate-200"
-                            placeholder="CODE"
-                            value={item.code}
-                            onChange={(e) => {
-                              const newArr = [...selectedProps];
-                              newArr[index].code = e.target.value;
-                              setSelectedProps(newArr);
-                            }}
-                          />
+                        <div className="flex-1 text-center font-black text-blue-600 text-xs">
+                          {item.code}
                         </div>
                         <button 
                           onClick={() => setSelectedProps(selectedProps.filter((_, i) => i !== index))}
@@ -307,7 +299,6 @@ export default function AdminPropertiesPage() {
                         >✕</button>
                       </div>
                     ))}
-                    {selectedProps.length === 0 && <p className="text-center py-4 text-xs text-slate-300 font-bold italic">物件が選択されていません</p>}
                   </div>
                 </div>
               )}
@@ -315,7 +306,7 @@ export default function AdminPropertiesPage() {
 
             <div className="flex gap-3 mt-10">
               <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-xs uppercase tracking-widest">キャンセル</button>
-              <button onClick={handleCreate} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-700 transition">登録を確定する</button>
+              <button onClick={handleInvite} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-700 transition">招待を送信する</button>
             </div>
           </div>
         </div>
