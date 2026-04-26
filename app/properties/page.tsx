@@ -30,35 +30,8 @@ export default function AdminPropertiesPage() {
     totalShops: 0
   });
 
-  useEffect(() => {
-    const checkAuthAndFetch = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.push('/login?type=admin');
-          return;
-        }
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-        const role = profile?.role || 'USER';
-        setUserRole(role);
-        if (role !== 'ADMIN' && role !== 'MANAGER') {
-          router.push('/login?type=admin');
-          return;
-        }
-        // キャッシュに頼らず最新データを取得
-        fetchTabData('posting');
-        loadInitialData();
-      } catch (err) {
-        console.error('取得エラー:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    checkAuthAndFetch();
-  }, [router]);
-
+  // ✅ データ取得関数をuseEffectの外に定義（再利用しやすくするため）
   const loadInitialData = async () => {
-    // 統計データも最新を反映させる
     const [resRes, noticeRes, storeRes, adRes, propRes] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
       supabase.from('property_notifications').select('*', { count: 'exact', head: true }),
@@ -77,9 +50,6 @@ export default function AdminPropertiesPage() {
 
   const fetchTabData = async (tab: ViewTab) => {
     let table = tab === 'posting' ? 'posting_companies' : tab === 'manager' ? 'management_companies' : 'stores';
-    
-    // ✅ SupabaseのJSクライアントはデフォルトで常に最新を追うため、
-    // ここでデータを取得すればブラウザのキャッシュ問題は解決します。
     const { data, error } = await supabase
       .from(table)
       .select(tab === 'manager' ? '*, properties(id)' : '*')
@@ -95,6 +65,34 @@ export default function AdminPropertiesPage() {
       propCount: d.properties?.length || 0
     })));
   };
+
+  useEffect(() => {
+    const checkAuthAndFetch = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push('/login?type=admin');
+          return;
+        }
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+        const role = profile?.role || 'USER';
+        setUserRole(role);
+        if (role !== 'ADMIN' && role !== 'MANAGER') {
+          router.push('/login?type=admin');
+          return;
+        }
+        await Promise.all([
+          fetchTabData('posting'),
+          loadInitialData()
+        ]);
+      } catch (err) {
+        console.error('取得エラー:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkAuthAndFetch();
+  }, [router]);
 
   const handleTabChange = (tab: ViewTab) => {
     setActiveTab(tab);
@@ -132,6 +130,7 @@ export default function AdminPropertiesPage() {
       }
       const initialPassword = Math.random().toString(36).slice(-8);
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
+      
       const { data: created, error } = await supabase.from(table).insert([{
         name: newItem.name,
         email: newItem.email,
@@ -141,13 +140,16 @@ export default function AdminPropertiesPage() {
         initial_password: initialPassword,
         status: 'invited'
       }]).select().single();
+
       if (error) throw error;
+
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
           await supabase.from('properties').update({ management_company_id: created.id, join_code: prop.code }).eq('id', prop.id);
         }
       }
+
       setRegisteredInfo({ url: `${window.location.origin}/login`, email: newItem.email, pw: initialPassword });
       setNewItem({ name: '', email: '', address: '' });
       setSelectedProps([]);
@@ -206,7 +208,6 @@ export default function AdminPropertiesPage() {
       if (error) throw error;
       alert('削除しました');
       setIsManageModalOpen(false);
-      // ✅ 削除後のリスト更新を確実に行う
       await fetchTabData(activeTab);
       await loadInitialData();
     } catch (err: any) {
@@ -302,22 +303,6 @@ export default function AdminPropertiesPage() {
                     <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Office/Store Address</label>
                     <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="東京都立川市..." value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   </div>
-                  {activeTab === 'manager' && (
-                    <div className="pt-4 border-t border-slate-100">
-                      <button onClick={addPropField} className="text-[10px] font-black text-blue-600">+ 管理物件を割り当て</button>
-                      <div className="mt-4 space-y-2">
-                        {selectedProps.map((item, index) => (
-                          <div key={index} className="flex gap-2 bg-slate-50 p-2 rounded-xl">
-                            <select className="flex-1 bg-transparent p-2 font-bold text-xs" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
-                              <option value="">物件選択</option>
-                              {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                            <div className="w-20 flex items-center justify-center font-black text-blue-600 text-xs bg-white rounded-lg">{item.code}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
                 <div className="flex gap-3 mt-10">
                   <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px]">キャンセル</button>
@@ -325,13 +310,13 @@ export default function AdminPropertiesPage() {
                 </div>
               </>
             ) : (
-              <div className="text-center">
+              <div className="text-center animate-in fade-in zoom-in duration-300">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
                 <h2 className="text-2xl font-black mb-2 italic uppercase">Credentials <span className="text-emerald-600">Issued</span></h2>
                 <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8">
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Login URL</label><p className="text-xs font-bold text-blue-600">{registeredInfo.url}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Login URL</label><p className="text-xs font-bold text-blue-600 break-all">{registeredInfo.url}</p></div>
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">ID</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Password</label><p className="text-2xl font-black text-orange-600">{registeredInfo.pw}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
                 </div>
                 <button onClick={() => { navigator.clipboard.writeText(`ID: ${registeredInfo.email}\nPW: ${registeredInfo.pw}`); setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">コピーして閉じる</button>
               </div>
