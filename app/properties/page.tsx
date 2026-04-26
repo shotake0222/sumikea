@@ -57,7 +57,8 @@ export default function AdminPropertiesPage() {
         setLoading(false);
       }
     };
-    checkAuthAuthAndFetch();
+    // ✅ ここを修正しました (checkAuthAndFetch)
+    checkAuthAndFetch();
   }, [router]);
 
   const loadInitialData = async () => {
@@ -201,7 +202,6 @@ export default function AdminPropertiesPage() {
       if (error) throw error;
       alert('削除しました');
       setIsManageModalOpen(false);
-      // ✅ 削除後にデータを再取得して表示を更新
       fetchTabData(activeTab);
       loadInitialData();
     } catch (err: any) {
@@ -278,7 +278,6 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* モーダル類は変更なしのため省略せずそのまま保持（以下、モーダルコード継続） */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
