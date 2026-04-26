@@ -8,6 +8,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { adSchema } from '../../../lib/validations';
 import { uploadImage } from '../../../lib/upload';
 
+// 🌎 本番用：2地点間の距離（キロメートル）を計算する関数（ハバサイン公式）
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; // 地球の半径 (km)
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function PostingDigitalDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -32,9 +44,9 @@ export default function PostingDigitalDashboard() {
   const [pdfUrls, setPdfUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   
-  // ターゲット属性
+  // ターゲット属性 (富裕層を削除)
   const [demographics, setDemographics] = useState({
-    family: false, single: false, senior: false, highIncome: false
+    family: false, single: false, senior: false
   });
 
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 16));
@@ -60,10 +72,10 @@ export default function PostingDigitalDashboard() {
           return; 
         }
 
-        // 1. 全物件リスト取得
-        const { data: props } = await supabase.from('properties').select('id, name, lat, lng'); // lat, lngがある想定
+        // 1. 全物件リスト取得 (lat, lngがある想定)
+        const { data: props } = await supabase.from('properties').select('id, name, address, lat, lng');
         setAllProperties(props || []);
-        setFilteredProperties(props || []); // 初期状態は全件
+        setFilteredProperties(props || []);
 
         // 2. 最近のキャンペーン取得
         const { data: campaigns } = await supabase
@@ -115,33 +127,56 @@ export default function PostingDigitalDashboard() {
     setPdfUrls(prev => prev.filter((_, i) => i !== index));
   };
 
-  // 全選択トグル処理
+  // 🎯 全選択トグル処理
   const toggleSelectAllDemographics = () => {
     const allSelected = Object.values(demographics).every(val => val);
     setDemographics({
       family: !allSelected,
       single: !allSelected,
-      senior: !allSelected,
-      highIncome: !allSelected
+      senior: !allSelected
     });
   };
 
-  // 圏内検索ロジック (既存のギミックをここに繋ぎこみます)
+  // 📍 圏内検索ロジック (本番データ対応)
   const handleSearchArea = async () => {
     if (!address) return;
     setIsSearchingArea(true);
     
     try {
-      // TODO: ここに既存の緯度経度取得＆物件絞り込みロジックを接続
-      // 例: const coords = await getCoordinatesFromAddress(address);
-      // const nearbyProps = calculatePropertiesInRadius(allProperties, coords, radius);
+      // ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+      // TODO: 他ページで使っているジオコーディング（住所→緯度経度変換）をここに繋ぎます
+      // 例: const coords = await fetchGeocodeFromAddress(address);
+      //     const targetLat = coords.lat;
+      //     const targetLng = coords.lng;
+      // ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
       
-      // 仮のシミュレーション処理（通信と絞り込みをモック化）
-      await new Promise(res => setTimeout(res, 800));
-      const simulatedResult = allProperties.slice(0, Math.max(1, Math.floor(allProperties.length * Math.random())));
+      let targetLat: number | null = null;
+      let targetLng: number | null = null;
+
+      // 開発用モック：本来は上記のTODOで取得した値が入ります
+      // targetLat = 35.6895; 
+      // targetLng = 139.6917;
+
+      let result = [];
+
+      if (targetLat && targetLng) {
+        // 緯度経度が取得できた場合、半径計算で絞り込み
+        result = allProperties.filter(p => {
+          if (!p.lat || !p.lng) return false; // 座標がない物件は除外
+          const distance = getDistanceFromLatLonInKm(targetLat, targetLng, p.lat, p.lng);
+          return distance <= radius;
+        });
+      } else {
+        // ジオコーディングAPIが未接続の場合のフォールバック（住所文字列での部分一致）
+        result = allProperties.filter(p => p.name?.includes(address) || p.address?.includes(address));
+      }
       
-      setFilteredProperties(simulatedResult);
-      alert(`指定エリア圏内で ${simulatedResult.length} 件の物件が見つかりました`);
+      setFilteredProperties(result);
+      if (result.length > 0) {
+        alert(`指定エリア圏内で ${result.length} 件の物件が見つかりました`);
+      } else {
+        alert('指定エリア内に配信可能な物件がありませんでした');
+      }
     } catch (error) {
       alert('エリア検索に失敗しました');
     } finally {
@@ -171,7 +206,6 @@ export default function PostingDigitalDashboard() {
 
     setIsSubmitting(true);
 
-    // 複数物件に対してインサート処理
     const inserts = targetPropertyIds.map(pid => ({
       property_id: pid,
       title: data.title,
@@ -280,6 +314,8 @@ export default function PostingDigitalDashboard() {
                       >
                         {isSearchingArea ? '検索中...' : 'この圏内にある物件を検索'}
                       </button>
+                      
+                      {/* ダミーではなく、実際に検索にヒットした本番データ件数を表示 */}
                       <p className="text-[10px] font-bold text-indigo-600 text-right mt-2">
                         現在、対象エリア内に <span className="text-lg font-black">{filteredProperties.length}</span> 件の物件が設定されています。
                       </p>
@@ -337,25 +373,24 @@ export default function PostingDigitalDashboard() {
                     )}
                   </div>
 
-                  {/* セグメントターゲット */}
+                  {/* セグメントターゲット (ボタン化) */}
                   <div className="space-y-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ターゲット属性の絞り込み</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">ターゲット属性の絞り込み</label>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* 全選択ボタン */}
                       <button 
                         type="button" 
                         onClick={toggleSelectAllDemographics}
-                        className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100 transition-colors"
+                        className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${Object.values(demographics).every(val => val) ? 'bg-indigo-900 border-indigo-900 text-white shadow-lg' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}
                       >
-                        {Object.values(demographics).every(val => val) ? '選択解除' : '全選択'}
+                        {Object.values(demographics).every(val => val) ? '全選択を解除' : '全選択する'}
                       </button>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3">
+
                       {[
                         { key: 'family', label: 'ファミリー層' },
                         { key: 'single', label: '単身者層' },
-                        { key: 'senior', label: 'シニア層' },
-                        { key: 'highIncome', label: '富裕層' }
+                        { key: 'senior', label: 'シニア層' }
                       ].map((target) => (
                         <button key={target.key} type="button" onClick={() => setDemographics(d => ({ ...d, [target.key]: !d[target.key as keyof typeof demographics] }))}
                           className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${demographics[target.key as keyof typeof demographics] ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
@@ -396,12 +431,14 @@ export default function PostingDigitalDashboard() {
                         <h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4>
                       </div>
                       <div className="text-right">
-                        <p className="text-xl font-black text-slate-900 leading-none">{(1200 - i * 100).toLocaleString()}</p>
+                        {/* ダミーの計算(1200-i*100)を撤去し、DBの実データ(views_count)を表示 */}
+                        <p className="text-xl font-black text-slate-900 leading-none">{(camp.views_count || 0).toLocaleString()}</p>
                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p>
                       </div>
                     </div>
                     <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-600 shadow-[0_0_10px_rgba(79,70,229,0.4)]" style={{ width: '65%' }}></div>
+                      {/* バーの長さも実データに基づき表示（表示が0の場合は0%） */}
+                      <div className="h-full bg-indigo-600 shadow-[0_0_10px_rgba(79,70,229,0.4)]" style={{ width: camp.views_count ? '100%' : '0%' }}></div>
                     </div>
                   </div>
                 ))}
