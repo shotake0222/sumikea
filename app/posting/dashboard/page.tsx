@@ -102,13 +102,25 @@ export default function PostingDigitalDashboard() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    // 🚨 修正: 画面上のリストに既に同じ名前のファイルがないかチェック
+    const duplicateFiles = Array.from(files).filter(newFile => 
+      uploadedFiles.some(existingFile => existingFile.name === newFile.name)
+    );
+
+    if (duplicateFiles.length > 0) {
+      const duplicateNames = duplicateFiles.map(f => f.name).join(', ');
+      alert(`【エラー】以下のファイルは既にリストに存在します。\n\n${duplicateNames}\n\n別のファイルを選択するか、リストから削除してください。`);
+      e.target.value = ''; // ファイル選択をリセット
+      return; // 処理をストップ
+    }
+
     setUploading(true);
     try {
       const newFilesData: {name: string, url: string}[] = [];
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        // ✅ 修正: 第2引数にバケット名、第3引数にフォルダ名を指定
         const url = await uploadImage(file, 'sumikea-images', 'digital-leaflets');
         newFilesData.push({ name: file.name, url: url });
       }
@@ -119,6 +131,7 @@ export default function PostingDigitalDashboard() {
       alert(`アップロードに失敗しました。詳細: ${err.message || JSON.stringify(err)}`);
     } finally {
       setUploading(false);
+      e.target.value = ''; // 成功時もインプットをリセット
     }
   };
 
