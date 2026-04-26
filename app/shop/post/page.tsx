@@ -47,33 +47,34 @@ export default function ShopPostPage() {
         const role = profile?.role?.toUpperCase() || 'USER';
         setUserRole(role);
         
-        // ==========================================
-        // 🚨 【修正】一般ユーザーの迷い込みガード
-        // ==========================================
+        // --- 一般ユーザー（住民）は自分のダッシュボードへ強制送還 ---
         if (role === 'USER') {
-          alert('このアカウントは店舗用ではありません。住民用画面へ移動します。');
-          router.push('/resident/dashboard'); // 住民用ダッシュボードへ誘導
+          router.push('/resident/dashboard');
           return;
         }
 
+        // --- SHOPまたはADMIN以外はログインへ ---
         if (role !== 'ADMIN' && role !== 'SHOP') { 
-          alert('アクセス権限がありません。');
           await supabase.auth.signOut();
           router.push('/login?type=shop'); 
           return; 
         }
 
+        // --- 店舗情報の取得 ---
+        // 管理者登録時に id: createdAuthUser.id でインサートしているため、id で検索します
         let storeQuery = supabase.from('stores').select('*');
-        if (role === 'SHOP') storeQuery = storeQuery.eq('owner_id', user.id);
+        if (role === 'SHOP') {
+          storeQuery = storeQuery.eq('id', user.id);
+        }
         
         const { data: storeData } = await storeQuery.limit(1).maybeSingle();
         let currentStore = storeData;
 
-        // 管理者プレビュー用のダミーUUID
+        // 管理者プレビュー用のダミー
         if (!currentStore && role === 'ADMIN') {
           currentStore = { 
             id: '00000000-0000-0000-0000-000000000000', 
-            name: 'サンプルショップ立川', 
+            name: 'サンプルショップ', 
             lat: 35.6997, 
             lng: 139.4137 
           };
@@ -85,9 +86,9 @@ export default function ShopPostPage() {
           fetchHistory(currentStore.id);
           await handleRadiusSearch(currentStore, 1, 'all');
         } else {
-          // SHOPロールなのに店舗がない場合のみ、設定画面へ
-          alert('店舗情報の登録が必要です。設定画面へ移動します。');
-          router.push('/shop/settings');
+          // 店舗が見つからない＝権限があるのにデータがない異常事態
+          alert('店舗データが登録されていません。管理者に連絡してください。');
+          router.push('/login?type=shop');
         }
       } catch (err) {
         console.error(err);
@@ -210,7 +211,6 @@ export default function ShopPostPage() {
     <div className="min-h-screen bg-[#F8FAFC]">
       <div className="p-4 md:p-10 max-w-7xl mx-auto">
         
-        {/* ナビゲーションボタン */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
           {[
             { label: '過去の広告一覧・管理', icon: '📢', path: '/shop/ads', color: 'hover:border-orange-500' },
@@ -260,7 +260,6 @@ export default function ShopPostPage() {
                   />
                 </div>
 
-                {/* 配信設定カード */}
                 <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
                   <div className="grid md:grid-cols-2 gap-8 relative z-10">
                     <div>
@@ -307,7 +306,6 @@ export default function ShopPostPage() {
                   </div>
                 </div>
 
-                {/* 広告内容 */}
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の見出し（タイトル）</label>
@@ -352,7 +350,6 @@ export default function ShopPostPage() {
             </div>
           </div>
 
-          {/* 右サイドバー：履歴 */}
           <div className="w-full lg:w-96">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">

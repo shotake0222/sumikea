@@ -69,7 +69,7 @@ function LoginContent() {
 
         if (profileError) {
           await supabase.auth.signOut();
-          throw new Error('プロフィールが見つかりません。アカウントが未完了の可能性があります。');
+          throw new Error('プロフィールが見つかりません。');
         }
 
         // ロールを正規化
@@ -80,6 +80,7 @@ function LoginContent() {
         // ==========================================
         let isAuthorized = false;
 
+        // 現在の入り口(typeParam)に対して、アカウントの権限(dbRole)が妥当かチェック
         if (typeParam === 'admin') {
           if (dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'manager') {
@@ -87,6 +88,7 @@ function LoginContent() {
         } else if (typeParam === 'posting') {
           if (dbRole === 'POSTING' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'shop') {
+          // 店舗入り口は SHOP または ADMIN のみ許可
           if (dbRole === 'SHOP' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (isUserMode) {
           if (dbRole === 'USER' || dbRole === 'ADMIN') isAuthorized = true;
@@ -94,9 +96,11 @@ function LoginContent() {
           isAuthorized = true;
         }
 
+        // 権限がない場合は即座にサインアウトさせてエラーを表示
+        // これにより、一般ユーザーが店舗ページにログインして「店舗情報がない」と言われるのを防ぐ
         if (!isAuthorized) {
           await supabase.auth.signOut();
-          throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(権限: ${dbRole})`);
+          throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(あなたの権限: ${dbRole})`);
         }
 
         // ==========================================
@@ -105,12 +109,11 @@ function LoginContent() {
         let targetPath = '';
 
         if (dbRole === 'ADMIN') {
-          // ADMINは指定されたパラメータに従う。
           if (typeParam === 'user') targetPath = '/resident/dashboard';
           else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
           else if (typeParam === 'shop') targetPath = '/shop/post';
-          // ✅ プランB：フォルダ階層に合わせて /admin/properties から /properties に修正
+          // ✅ プランB：/admin/properties ではなく /properties に飛ばす
           else targetPath = '/properties'; 
         } 
         else if (dbRole === 'MANAGER') {
@@ -123,10 +126,13 @@ function LoginContent() {
           targetPath = '/shop/post';
         } 
         else {
+          // 一般ユーザー（USER）
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
         console.log('Authorized Login:', dbRole, 'Redirecting to:', targetPath);
+        
+        // 状態を完全にクリアするため window.location.href を使用
         window.location.href = targetPath;
       }
 

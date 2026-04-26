@@ -118,7 +118,6 @@ export default function AdminPropertiesPage() {
   };
 
   const handleRegister = async () => {
-    // バリデーション強化
     if (!newItem.name || !newItem.email || !newItem.address) return alert('必須項目を入力してください');
     if (!newItem.email.includes('@')) return alert('有効なメールアドレスを入力してください');
     
@@ -130,6 +129,7 @@ export default function AdminPropertiesPage() {
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
+      // 1. Auth登録
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
@@ -140,6 +140,7 @@ export default function AdminPropertiesPage() {
       if (!authData.user) throw new Error('Auth作成失敗');
       createdAuthUser = authData.user;
 
+      // 2. profiles 挿入 (emailカラムなし版)
       const { error: profError } = await supabase.from('profiles').upsert({
         id: createdAuthUser.id,
         role: assignRole,
@@ -147,6 +148,7 @@ export default function AdminPropertiesPage() {
       });
       if (profError) throw new Error(`Profile保存失敗: ${profError.message}`);
 
+      // 3. 各業種テーブル挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error: insError } = await supabase.from(table).insert([{
         id: createdAuthUser.id,
@@ -160,6 +162,7 @@ export default function AdminPropertiesPage() {
       }]);
       if (insError) throw new Error(`テーブル保存失敗: ${insError.message}`);
 
+      // 4. 管理物件の紐付け
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
@@ -241,7 +244,6 @@ export default function AdminPropertiesPage() {
     }
   };
 
-  // 読み込み中の表示
   if (loading && dataList.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
@@ -263,7 +265,7 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計エリア */}
+        {/* 統計 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -280,7 +282,7 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* フィルター・登録ボタン */}
+        {/* タブ */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -294,7 +296,7 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
-        {/* データグリッド */}
+        {/* リスト */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -319,12 +321,12 @@ export default function AdminPropertiesPage() {
 
       {/* 登録モーダル */}
       {(isModalOpen || registeredInfo) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative my-auto max-h-[90vh] flex flex-col">
             {!registeredInfo ? (
               <>
                 <h2 className="text-2xl font-black italic mb-6 uppercase flex-shrink-0">新規パートナーを <span className="text-blue-600">登録</span></h2>
-                <div className="space-y-5 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-5 overflow-y-auto pr-2 flex-grow custom-scrollbar">
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Name</label>
                     <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none transition-all" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
@@ -378,7 +380,7 @@ export default function AdminPropertiesPage() {
         </div>
       )}
 
-      {/* アカウント管理モーダル */}
+      {/* 管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
