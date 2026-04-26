@@ -11,7 +11,6 @@ export default function ResidentDashboard() {
   
   const [postingNotices, setPostingNotices] = useState<any[]>([]);
   const [notices, setNotices] = useState<any[]>([]);
-  const [trashSchedules, setTrashSchedules] = useState<any[]>([]);
   const [ads, setAds] = useState<any[]>([]); 
   
   const [loading, setLoading] = useState(true);
@@ -36,35 +35,23 @@ export default function ResidentDashboard() {
   const uiTexts: any = {
     ja: {
       room: '号室', mypage: 'マイページ', postTitle: '重要ポスト', noPost: '新しいお知らせを待機中...',
-      boardTitle: 'デジタル掲示板', noBoard: '現在、掲示物はありません', trashTitle: '本日の収集', noTrash: '本日の収集予定なし',
-      calendarNotSet: 'カレンダー未登録', set: '設定', complete: '完了',
-      uploadText: 'の画像を登録', contactText: '粗大ゴミ等の問い合わせ', sending: '送信中...',
+      boardTitle: 'デジタル掲示板', noBoard: '現在、掲示物はありません', 
+      trashTitle: 'ゴミ収集カレンダー', 
+      trashHint: 'お手持ちのゴミカレンダーを撮影してアップロードすると、いつでもここから確認できて便利です！',
+      calendarNotSet: 'カレンダーがまだ登録されていません', set: '写真を登録する', complete: '保存完了',
+      uploadText: 'の画像を登録', contactText: '粗大ゴミ等の問い合わせ先', sending: '送信中...',
       adsTitle: '近隣のトピックス', noAds: '周辺のお得な情報を探索中...', home: 'ホーム', settings: '設定', logout: 'ログアウト',
       langLabel: 'TRANSLATE / 多言語表示'
     },
     en: {
       room: ' Room', mypage: 'My Page', postTitle: 'PRIORITY POST', noPost: 'Waiting for updates...',
-      boardTitle: 'BULLETIN BOARD', noBoard: 'No notices at the moment.', trashTitle: "TODAY'S WASTE", noTrash: 'No collection today',
-      calendarNotSet: 'Not set', set: 'Set', complete: 'Done',
-      uploadText: ' Upload Image', contactText: 'Trash Contact', sending: 'Sending...',
+      boardTitle: 'BULLETIN BOARD', noBoard: 'No notices at the moment.', 
+      trashTitle: 'TRASH CALENDAR', 
+      trashHint: 'Upload a photo of your local trash calendar to check it anytime here!',
+      calendarNotSet: 'No calendar registered yet', set: 'Upload Photo', complete: 'Done',
+      uploadText: ' Upload Image', contactText: 'Trash Contact Info', sending: 'Sending...',
       adsTitle: 'LOCAL TOPICS', noAds: 'Exploring local deals...', home: 'Home', settings: 'Settings', logout: 'Logout',
       langLabel: 'TRANSLATE'
-    },
-    zh: {
-      room: '号室', mypage: '我的主页', postTitle: '重要邮政', noPost: '等待新通知...',
-      boardTitle: '电子公告板', noBoard: '目前没有公告。', trashTitle: '今日垃圾收集', noTrash: '今日无收集予定',
-      calendarNotSet: '未注册', set: '设置', complete: '完成',
-      uploadText: ' 上传图片', contactText: '大件垃圾联系', sending: '发送中...',
-      adsTitle: '附近优惠信息', noAds: '正在寻找优惠情報...', home: '主页', settings: '设置', logout: '登出',
-      langLabel: '翻译'
-    },
-    vi: {
-      room: ' Phòng', mypage: 'Trang của tôi', postTitle: 'HỘP THƯ ƯU TIÊN', noPost: 'Đang đợi thông báo mới...',
-      boardTitle: 'BẢNG TIN ĐIỆN TỬ', noBoard: 'Hiện không có thông báo.', trashTitle: 'THU GOM RÁC', noTrash: 'Không có lịch hôm nay',
-      calendarNotSet: 'Chưa đăng ký', set: 'Cài đặt', complete: 'Xong',
-      uploadText: ' Tải ảnh lên', contactText: 'Liên hệ rác cỡ lớn', sending: 'Đang gửi...',
-      adsTitle: 'TIN TỨC ĐỊA PHƯƠNG', noAds: 'Đang tìm kiếm ưu đãi...', home: 'Trang chủ', settings: 'Cài đặt', logout: 'Đăng xuất',
-      langLabel: 'DỊCH'
     }
   };
   const t = uiTexts[targetLang] || uiTexts.ja;
@@ -129,9 +116,6 @@ export default function ResidentDashboard() {
         setNotices(rawNotices || []);
         setTranslatedNotices(rawNotices || []);
 
-        const { data: trashData } = await supabase.from('trash_schedules').select('*').eq('property_id', prof.property_id);
-        setTrashSchedules(trashData || []);
-
         const { data: rawAds } = await supabase.from('digital_flyers').select('*').eq('property_id', prof.property_id).eq('status', 'active').order('created_at', { ascending: false });
         setAds(rawAds || []);
       }
@@ -164,12 +148,6 @@ export default function ResidentDashboard() {
     else alert('詳細を準備中です');
   };
 
-  const getTodayTrash = () => {
-    const dayMap = ["日", "月", "火", "水", "木", "金", "土"];
-    const todayStr = dayMap[new Date().getDay()];
-    return trashSchedules.filter(item => item.day_of_week === todayStr);
-  };
-
   const handleCalendarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -182,8 +160,9 @@ export default function ResidentDashboard() {
       const updatedCalendars = { ...garbageCalendars, [selectedYearMonth]: publicUrl };
       await supabase.from('profiles').update({ monthly_garbage_calendars: updatedCalendars }).eq('id', user?.id);
       setGarbageCalendars(updatedCalendars);
-      alert(`${selectedYearMonth} ${t.complete}`);
-    } catch (err) { alert('失敗'); } finally { setUploading(false); }
+      setIsEditingCalendar(false);
+      alert(`${selectedYearMonth} のカレンダーを更新しました`);
+    } catch (err) { alert('アップロード失敗'); } finally { setUploading(false); }
   };
 
   const saveContactInfo = async () => {
@@ -195,7 +174,7 @@ export default function ResidentDashboard() {
     <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="flex flex-col items-center gap-4">
         <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Checking Data...</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Loading Resident Data...</p>
       </div>
     </div>
   );
@@ -205,7 +184,6 @@ export default function ResidentDashboard() {
       
       {/* 🌟 Dynamic Immersive Header */}
       <div className="relative bg-slate-900 pt-16 pb-20 px-8 rounded-b-[4.5rem] shadow-2xl overflow-hidden">
-        {/* 背景のアートワーク（多言語・近未来感を演出） */}
         <div className="absolute top-0 left-0 w-full h-full opacity-30">
           <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-blue-600 rounded-full blur-[80px]"></div>
           <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-indigo-600 rounded-full blur-[80px]"></div>
@@ -221,12 +199,8 @@ export default function ResidentDashboard() {
                  {profile?.room_number ? `${profile.room_number}${t.room}` : t.mypage}
               </h1>
             </div>
-            <div className="w-12 h-12 bg-white/10 rounded-2xl backdrop-blur-md border border-white/20 flex items-center justify-center text-xl">
-              👤
-            </div>
           </div>
 
-          {/* 🌐 Premium Language Panel */}
           <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-5 rounded-[2.5rem] shadow-2xl">
             <div className="flex items-center justify-between mb-4 px-1">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">{t.langLabel}</span>
@@ -255,7 +229,7 @@ export default function ResidentDashboard() {
 
       <div className="px-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 1. ポスト (High Contrast) */}
+        {/* 1. 重要ポスト */}
         <section className="bg-slate-900 rounded-[3.5rem] shadow-2xl border border-slate-800 overflow-hidden text-white relative group">
           <div className="absolute top-0 right-0 p-8 opacity-5 text-8xl group-hover:scale-110 transition-transform">📬</div>
           <div className="p-10">
@@ -278,7 +252,7 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* 2. デジタル掲示板 (Clean & Minimal) */}
+        {/* 2. デジタル掲示板 */}
         <section className="bg-white rounded-[3.5rem] shadow-xl shadow-slate-200 border border-white overflow-hidden">
           <div className="p-10">
             <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-8 text-center italic">— {t.boardTitle} —</h2>
@@ -301,14 +275,13 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* 3. デジタルチラシ (Shopping Grid) */}
+        {/* 3. 近隣のお得な情報 */}
         <section className="space-y-6">
           <div className="flex items-center justify-between px-4">
             <div className="flex items-center gap-2">
               <span className="text-xl">✨</span>
               <h2 className="text-[11px] font-black text-slate-800 uppercase tracking-widest italic">{t.adsTitle}</h2>
             </div>
-            <div className="h-0.5 flex-1 bg-slate-200 mx-4 opacity-50"></div>
           </div>
 
           <div className="grid grid-cols-1 gap-5 px-1">
@@ -324,13 +297,9 @@ export default function ResidentDashboard() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{ad.target_metadata?.discount || 'Special'}</span>
-                    <span className="text-[9px] font-bold text-slate-300 uppercase tracking-tighter">Nearby Store</span>
                   </div>
                   <h4 className="text-md font-black text-slate-900 truncate tracking-tight">{ad.title}</h4>
                   <p className="text-[11px] text-slate-400 truncate font-medium">{ad.content || 'Tap for more info'}</p>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 text-sm group-hover:bg-slate-900 group-hover:text-white transition-all">
-                  →
                 </div>
               </div>
             )) : (
@@ -342,19 +311,23 @@ export default function ResidentDashboard() {
           </div>
         </section>
 
-        {/* 4. ゴミ出しカレンダー (Visual) */}
+        {/* 4. ゴミ出しカレンダー (刷新版：ユーザーアップロード活用) */}
         <section className="bg-white rounded-[3.5rem] overflow-hidden shadow-xl shadow-slate-200/50 border border-white">
-          <div className="bg-emerald-600 p-8 text-white relative">
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-500 p-8 text-white relative">
             <div className="absolute top-0 right-0 p-6 opacity-20 text-5xl">♻️</div>
             <div className="relative z-10">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-70 block mb-2 italic">{t.trashTitle}</span>
-              <span className="text-3xl font-black tracking-tighter italic">
-                {getTodayTrash().length > 0 ? getTodayTrash().map(t => t.trash_type).join('・') : t.noTrash}
-              </span>
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-80 block mb-2 italic">Official Schedule</span>
+              <span className="text-2xl font-black tracking-tighter italic">{t.trashTitle}</span>
             </div>
           </div>
           
-          <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center px-8">
+          <div className="p-8 bg-slate-50/50 text-center border-b border-slate-100">
+            <p className="text-[11px] font-black text-slate-500 leading-relaxed px-2">
+               {t.trashHint}
+            </p>
+          </div>
+
+          <div className="p-6 bg-slate-50 flex justify-between items-center px-8">
             <input 
               type="month" 
               value={selectedYearMonth}
@@ -369,16 +342,18 @@ export default function ResidentDashboard() {
             </button>
           </div>
 
-          <div className="p-6 min-h-[220px] flex items-center justify-center bg-white relative px-8">
+          <div className="p-6 min-h-[260px] flex items-center justify-center bg-white relative px-8">
             {garbageCalendars[selectedYearMonth] ? (
               <div className="relative group w-full">
                 <img src={garbageCalendars[selectedYearMonth]} alt="Calendar" className="w-full h-auto rounded-[2.5rem] shadow-md border border-slate-50 transition-transform active:scale-95" onClick={() => window.open(garbageCalendars[selectedYearMonth], '_blank')} />
-                <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 rounded-[2.5rem] pointer-events-none transition-opacity"></div>
+                <p className="mt-4 text-center text-[9px] font-black text-slate-300 uppercase tracking-widest">タップして拡大表示</p>
               </div>
             ) : (
-              <div className="text-center py-10 opacity-30">
-                <span className="text-5xl block mb-4">📅</span>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.calendarNotSet}</p>
+              <div className="text-center py-10">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100 shadow-inner">
+                  <span className="text-4xl opacity-20">📸</span>
+                </div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.calendarNotSet}</p>
               </div>
             )}
           </div>
@@ -386,10 +361,10 @@ export default function ResidentDashboard() {
           {isEditingCalendar && (
             <div className="p-10 bg-[#F9FBFF] border-t border-slate-100 space-y-8 animate-in slide-in-from-top-4 duration-300">
               <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">🗓 {selectedYearMonth} {t.uploadText}</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">🗓 {selectedYearMonth} のカレンダー写真を選択</label>
                 <div className="relative">
                   <input type="file" className="w-full text-[11px] text-slate-400 file:mr-4 file:py-4 file:px-8 file:rounded-2xl file:border-0 file:text-[10px] file:font-black file:bg-slate-900 file:text-white cursor-pointer shadow-lg" onChange={handleCalendarUpload} accept="image/*" disabled={uploading} />
-                  {uploading && <div className="absolute right-4 top-4 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+                  {uploading && <div className="absolute right-4 top-4 w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>}
                 </div>
               </div>
               <div className="space-y-4">
@@ -399,7 +374,7 @@ export default function ResidentDashboard() {
                   value={garbageContact}
                   onChange={(e) => setGarbageContact(e.target.value)}
                   onBlur={saveContactInfo}
-                  placeholder="Contact Number"
+                  placeholder="000-0000-0000"
                   className="w-full bg-white border-2 border-slate-100 p-5 rounded-3xl text-sm font-black outline-none focus:border-emerald-500 transition-all shadow-inner"
                 />
               </div>
@@ -421,12 +396,9 @@ export default function ResidentDashboard() {
 
       </div>
 
-      {/* 🚀 Next Gen Navigation */}
+      {/* 🚀 Navigation */}
       <div className="fixed bottom-10 left-0 right-0 px-10 z-50">
         <nav className="max-w-sm mx-auto h-24 bg-slate-900/90 backdrop-blur-3xl rounded-[3.5rem] shadow-2xl flex items-center justify-around px-8 border border-white/10 relative">
-          {/* アクティブインジケーター（ダミー） */}
-          <div className="absolute top-0 left-[18%] -translate-x-1/2 w-12 h-1 bg-blue-500 rounded-full"></div>
-          
           <Link href="/resident/dashboard" className="flex flex-col items-center gap-2 group">
             <span className="text-3xl drop-shadow-lg transition-transform group-active:scale-90">🏠</span>
             <span className="text-[9px] font-black uppercase text-blue-500 tracking-[0.2em]">{t.home}</span>

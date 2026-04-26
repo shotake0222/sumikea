@@ -62,7 +62,6 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
-  // 物件リストを再取得する関数（新規登録後にも呼び出す）
   const refreshPropertyList = async (userId: string, role: string, targetNewId?: string) => {
     let propertyList: any[] = [];
     if (role === 'ADMIN') {
@@ -84,7 +83,6 @@ export default function ManagementNoticePage() {
     setManagedProperties(propertyList);
 
     if (propertyList.length > 0) {
-      // targetNewIdがあればそれを選択、なければ最初を選択
       const target = targetNewId 
         ? propertyList.find(p => p.property_id === targetNewId) 
         : propertyList[0];
@@ -125,7 +123,6 @@ export default function ManagementNoticePage() {
     }
   };
 
-  // 物件新規登録ロジック
   const handleRegisterProperty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPropName) return;
@@ -134,7 +131,6 @@ export default function ManagementNoticePage() {
     try {
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
-      // 1. propertiesテーブルに挿入
       const { data: newProp, error: propError } = await supabase
         .from('properties')
         .insert([{ name: newPropName, address: newPropAddress, invite_code: inviteCode }])
@@ -143,7 +139,6 @@ export default function ManagementNoticePage() {
 
       if (propError) throw propError;
 
-      // 2. property_managersテーブルに紐付け
       const { error: managerError } = await supabase
         .from('property_managers')
         .insert([{ property_id: newProp.id, user_id: currentUserId }]);
@@ -155,7 +150,6 @@ export default function ManagementNoticePage() {
       setNewPropAddress('');
       setIsRegisterModalOpen(false);
       
-      // リストを更新して、新しく作った物件を自動選択
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', currentUserId).single();
       await refreshPropertyList(currentUserId, profile?.role || 'MANAGER', newProp.id);
 
@@ -475,8 +469,13 @@ export default function ManagementNoticePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center mb-20">
                   <div className="space-y-8">
                     <h4 className="text-3xl font-black border-l-[12px] border-blue-600 pl-6 mb-10 italic">ご利用の手順</h4>
-                    <div className="space-y-6">
-                      {[{ step: '1', title: 'スキャン', desc: '右記のQRコードをスマートフォンで読み取ります。' }, { step: '2', title: 'ログイン', desc: '登録またはログインを行います。' }, { step: '3', title: '完了', desc: 'お住まいの物件のお知らせが届くようになります。' }].map((item) => (
+                    <div className="space-y-10">
+                      {[
+                        { step: '1', title: 'スキャン', desc: '右記のQRコードをスマートフォンで読み取ります。' },
+                        { step: '2', title: 'アカウント作成', desc: 'メールアドレスを入力し、ご自身で決めたパスワードを入力して登録します。（※1回目に入力したものがご自身の初期パスワードになります）' },
+                        { step: '3', title: '招待コードの入力', desc: `ログイン後、画面の指示に従って上記の招待コード [ ${displayInviteCode} ] を入力してください。` },
+                        { step: '4', title: '完了', desc: 'お住まいの物件のお知らせやゴミの日がスマホで確認できるようになります。' }
+                      ].map((item) => (
                         <div key={item.step} className="flex gap-6 items-start">
                           <span className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shrink-0 text-xl shadow-lg">{item.step}</span>
                           <div>
