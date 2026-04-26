@@ -79,6 +79,7 @@ export default function ShopPostPage() {
           setMyStore(currentStore);
           setStoreName(currentStore.name);
           fetchHistory(currentStore.id);
+          // 初期検索
           await handleRadiusSearch(currentStore, 1, 'all');
         } else {
           alert('店舗データが登録されていません。管理者に連絡してください。');
@@ -104,8 +105,11 @@ export default function ShopPostPage() {
     if (data) setRecentAds(data);
   };
 
+  // 🎯 検索ボタン機能の心臓部
   const handleRadiusSearch = async (store: any, radius: number, type: string) => {
     if (!store?.lat || !store?.lng) return;
+    
+    // UIを即時更新
     setRadiusKm(radius);
     setTargetType(type);
     
@@ -254,27 +258,25 @@ export default function ShopPostPage() {
                   />
                 </div>
 
-                {/* 🎯 配信設定：可愛いテイスト & 機能修正 */}
+                {/* 🎯 配信設定：可愛いテイストに刷新 */}
                 <div className="bg-gradient-to-br from-orange-400 to-pink-500 p-8 md:p-12 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
-                    <span className="text-[10rem]">💌</span>
+                    <span className="text-[10rem]">🎈</span>
                   </div>
 
                   <div className="relative z-10 text-center md:text-left">
-                    <h3 className="text-2xl font-black italic tracking-tighter mb-2">
-                      「{storeName}」から半径 <span className="text-4xl underline decoration-white/50">{radiusKm}km</span> のお客様へ！
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em] mb-2 opacity-80">Distribution Area Settings</p>
+                    <h3 className="text-2xl md:text-3xl font-black italic tracking-tighter mb-2">
+                      「{storeName}」から半径 <span className="text-4xl md:text-5xl underline decoration-white/50">{radiusKm}km</span> のお客様へ通知！
                     </h3>
-                    <p className="text-xs font-bold text-white/80 uppercase tracking-widest">
-                      通知を届ける範囲とターゲットをセットしてね 🎈
-                    </p>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-8 relative z-10">
                     <div className="bg-white/10 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20">
-                      <label className="text-[10px] font-black text-white/70 uppercase tracking-widest block mb-4 ml-2">① 誰に届ける？</label>
+                      <label className="text-[10px] font-black text-white/70 uppercase tracking-widest block mb-4 ml-2 italic">① 誰に届ける？</label>
                       <div className="flex flex-wrap gap-2">
                         {[
-                          { id: 'all', label: 'みんな', icon: '🌈' },
+                          { id: 'all', label: 'みんなへ', icon: '🌈' },
                           { id: 'single', label: '一人暮らし', icon: '🏠' },
                           { id: 'family', label: 'ファミリー', icon: '👨‍👩‍👧' }
                         ].map(t => (
@@ -282,9 +284,9 @@ export default function ShopPostPage() {
                             key={t.id} 
                             type="button" 
                             onClick={() => handleRadiusSearch(myStore, radiusKm, t.id)} 
-                            className={`flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-2xl text-[10px] font-black transition-all border-2 ${targetType === t.id ? 'bg-white text-orange-600 border-white shadow-lg' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
+                            className={`flex-1 flex flex-col items-center gap-1 py-4 px-2 rounded-2xl text-[10px] font-black transition-all border-2 ${targetType === t.id ? 'bg-white text-orange-600 border-white shadow-lg scale-105' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
                           >
-                            <span className="text-lg">{t.icon}</span>
+                            <span className="text-xl">{t.icon}</span>
                             {t.label}
                           </button>
                         ))}
@@ -292,14 +294,14 @@ export default function ShopPostPage() {
                     </div>
 
                     <div className="bg-white/10 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20">
-                      <label className="text-[10px] font-black text-white/70 uppercase tracking-widest block mb-4 ml-2">② どこまで届ける？</label>
+                      <label className="text-[10px] font-black text-white/70 uppercase tracking-widest block mb-4 ml-2 italic">② どこまで届ける？</label>
                       <div className="flex gap-2">
                         {[0.5, 1, 2, 5].map(r => (
                           <button 
                             key={r} 
                             type="button" 
                             onClick={() => handleRadiusSearch(myStore, r, targetType)} 
-                            className={`flex-1 py-4 rounded-2xl border-2 text-[11px] font-black transition-all ${radiusKm === r ? 'bg-white text-orange-600 border-white shadow-lg' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
+                            className={`flex-1 py-5 rounded-2xl border-2 text-[11px] font-black transition-all ${radiusKm === r ? 'bg-white text-orange-600 border-white shadow-lg scale-105' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
                           >
                             {r >= 1 ? `${r}km` : `500m`}
                           </button>
@@ -310,9 +312,9 @@ export default function ShopPostPage() {
 
                   <div className="relative z-10 pt-6 border-t border-white/20 flex justify-between items-end">
                     <div>
-                      <p className="text-[10px] font-black text-white uppercase mb-1 italic tracking-widest">Target Properties</p>
+                      <p className="text-[10px] font-black text-white uppercase mb-1 italic tracking-widest">Selected Target</p>
                       <p className="text-sm font-bold text-white/90">
-                        対象：<span className="bg-white/20 px-3 py-1 rounded-full">{targetType === 'all' ? 'すべての物件' : targetType === 'single' ? '単身者向け' : 'ファミリー向け'}</span>
+                        ターゲット：<span className="bg-white/20 px-3 py-1 rounded-full">{targetType === 'all' ? '全物件' : targetType === 'single' ? '単身向け' : 'ファミリー向け'}</span>
                       </p>
                     </div>
                     <div className="text-right">
@@ -324,6 +326,7 @@ export default function ShopPostPage() {
                   </div>
                 </div>
 
+                {/* 広告内容入力 */}
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">広告の見出し（タイトル）</label>
@@ -368,6 +371,7 @@ export default function ShopPostPage() {
             </div>
           </div>
 
+          {/* 右サイドバー：履歴 */}
           <div className="w-full lg:w-96">
             <div className="bg-white rounded-[3.5rem] p-10 shadow-sm border border-slate-100 sticky top-10">
               <div className="flex items-center gap-2 mb-10">
