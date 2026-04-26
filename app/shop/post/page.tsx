@@ -47,21 +47,17 @@ export default function ShopPostPage() {
         const role = profile?.role?.toUpperCase() || 'USER';
         setUserRole(role);
         
-        // --- 一般ユーザー（住民）は自分のダッシュボードへ強制送還 ---
         if (role === 'USER') {
           router.push('/resident/dashboard');
           return;
         }
 
-        // --- SHOPまたはADMIN以外はログインへ ---
         if (role !== 'ADMIN' && role !== 'SHOP') { 
           await supabase.auth.signOut();
           router.push('/login?type=shop'); 
           return; 
         }
 
-        // --- 店舗情報の取得 ---
-        // 管理者登録時に id: createdAuthUser.id でインサートしているため、id で検索します
         let storeQuery = supabase.from('stores').select('*');
         if (role === 'SHOP') {
           storeQuery = storeQuery.eq('id', user.id);
@@ -70,7 +66,6 @@ export default function ShopPostPage() {
         const { data: storeData } = await storeQuery.limit(1).maybeSingle();
         let currentStore = storeData;
 
-        // 管理者プレビュー用のダミー
         if (!currentStore && role === 'ADMIN') {
           currentStore = { 
             id: '00000000-0000-0000-0000-000000000000', 
@@ -86,7 +81,6 @@ export default function ShopPostPage() {
           fetchHistory(currentStore.id);
           await handleRadiusSearch(currentStore, 1, 'all');
         } else {
-          // 店舗が見つからない＝権限があるのにデータがない異常事態
           alert('店舗データが登録されていません。管理者に連絡してください。');
           router.push('/login?type=shop');
         }
@@ -260,47 +254,71 @@ export default function ShopPostPage() {
                   />
                 </div>
 
-                <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
+                {/* 🎯 配信設定：可愛いテイスト & 機能修正 */}
+                <div className="bg-gradient-to-br from-orange-400 to-pink-500 p-8 md:p-12 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
+                    <span className="text-[10rem]">💌</span>
+                  </div>
+
+                  <div className="relative z-10 text-center md:text-left">
+                    <h3 className="text-2xl font-black italic tracking-tighter mb-2">
+                      「{storeName}」から半径 <span className="text-4xl underline decoration-white/50">{radiusKm}km</span> のお客様へ！
+                    </h3>
+                    <p className="text-xs font-bold text-white/80 uppercase tracking-widest">
+                      通知を届ける範囲とターゲットをセットしてね 🎈
+                    </p>
+                  </div>
+
                   <div className="grid md:grid-cols-2 gap-8 relative z-10">
-                    <div>
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-4">① 配信ターゲット</label>
+                    <div className="bg-white/10 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20">
+                      <label className="text-[10px] font-black text-white/70 uppercase tracking-widest block mb-4 ml-2">① 誰に届ける？</label>
                       <div className="flex flex-wrap gap-2">
                         {[
-                          { id: 'all', label: '全対象' },
-                          { id: 'single', label: '単身者向け' },
-                          { id: 'family', label: 'ファミリー向け' }
+                          { id: 'all', label: 'みんな', icon: '🌈' },
+                          { id: 'single', label: '一人暮らし', icon: '🏠' },
+                          { id: 'family', label: 'ファミリー', icon: '👨‍👩‍👧' }
                         ].map(t => (
-                          <button key={t.id} type="button" onClick={() => handleRadiusSearch(myStore, radiusKm, t.id)} 
-                            className={`px-6 py-3 rounded-xl text-[10px] font-black transition-all border-2 ${targetType === t.id ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'}`}>
+                          <button 
+                            key={t.id} 
+                            type="button" 
+                            onClick={() => handleRadiusSearch(myStore, radiusKm, t.id)} 
+                            className={`flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-2xl text-[10px] font-black transition-all border-2 ${targetType === t.id ? 'bg-white text-orange-600 border-white shadow-lg' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
+                          >
+                            <span className="text-lg">{t.icon}</span>
                             {t.label}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <div>
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-4">② 配信範囲（半径）</label>
+
+                    <div className="bg-white/10 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20">
+                      <label className="text-[10px] font-black text-white/70 uppercase tracking-widest block mb-4 ml-2">② どこまで届ける？</label>
                       <div className="flex gap-2">
                         {[0.5, 1, 2, 5].map(r => (
-                          <button key={r} type="button" onClick={() => handleRadiusSearch(myStore, r, targetType)} 
-                            className={`w-12 h-12 rounded-xl border-2 text-[10px] font-black transition-all ${radiusKm === r ? 'bg-white text-slate-900 border-white' : 'bg-white/5 border-white/10 text-white/40'}`}>
-                            {r >= 1 ? `${r}k` : `500`}
+                          <button 
+                            key={r} 
+                            type="button" 
+                            onClick={() => handleRadiusSearch(myStore, r, targetType)} 
+                            className={`flex-1 py-4 rounded-2xl border-2 text-[11px] font-black transition-all ${radiusKm === r ? 'bg-white text-orange-600 border-white shadow-lg' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
+                          >
+                            {r >= 1 ? `${r}km` : `500m`}
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
 
-                  <div className="relative z-10 pt-6 border-t border-white/10 flex justify-between items-end">
+                  <div className="relative z-10 pt-6 border-t border-white/20 flex justify-between items-end">
                     <div>
-                      <p className="text-[10px] font-black text-orange-500 uppercase mb-1 italic">Estimation</p>
-                      <p className="text-sm font-bold text-slate-300">
-                        {radiusKm}km圏内の <span className="text-white">{targetType === 'all' ? 'すべて' : targetType === 'single' ? '単身' : 'ファミリー'}物件</span>
+                      <p className="text-[10px] font-black text-white uppercase mb-1 italic tracking-widest">Target Properties</p>
+                      <p className="text-sm font-bold text-white/90">
+                        対象：<span className="bg-white/20 px-3 py-1 rounded-full">{targetType === 'all' ? 'すべての物件' : targetType === 'single' ? '単身者向け' : 'ファミリー向け'}</span>
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-6xl font-black text-white tracking-tighter">
+                      <p className="text-7xl font-black text-white tracking-tighter drop-shadow-lg">
                         {nearbyProperties.length}
-                        <span className="text-sm ml-2 text-orange-500 italic uppercase">棟</span>
+                        <span className="text-xl ml-2 opacity-70 italic uppercase">棟</span>
                       </p>
                     </div>
                   </div>
