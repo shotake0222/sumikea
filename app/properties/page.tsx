@@ -26,8 +26,8 @@ export default function AdminPropertiesPage() {
   const [stats, setStats] = useState({
     totalResidents: 0,
     activeNotices: 0,
-    totalAds: 0,
-    totalShops: 0
+    totalShops: 0,
+    totalAds: 0
   });
 
   const loadInitialData = async () => {
@@ -117,7 +117,7 @@ export default function AdminPropertiesPage() {
   };
 
   // ==========================================
-  // 【完全修正版】新規登録ロジック
+  // 【完全版】新規登録ロジック
   // ==========================================
   const handleRegister = async () => {
     if (!newItem.name || !newItem.email || !newItem.address) return alert('必須項目を入力してください');
@@ -126,20 +126,14 @@ export default function AdminPropertiesPage() {
     try {
       const coords = await getCoordinates(newItem.address);
       const initialPassword = Math.random().toString(36).slice(-8);
-      
-      // タブに応じた正確なロール設定（ログイン後のガードを通すため）
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
       // 1. Supabase Authentication に登録
-      // 注意: 管理画面の設定で "Confirm Email" が ON だとログインできません（後述）
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
         options: {
-          data: {
-            full_name: newItem.name,
-            role: assignRole, // メタデータとしてロールを持たせる
-          },
+          data: { full_name: newItem.name, role: assignRole },
         },
       });
 
@@ -148,8 +142,7 @@ export default function AdminPropertiesPage() {
 
       const userId = authData.user.id;
 
-      // 2. profiles テーブルへ手動挿入（ログイン後の権限チェック用）
-      // 通常、DBトリガーで自動作成している場合は不要ですが、確実を期すため追加します。
+      // 2. profiles テーブルへ挿入（ログイン後の権限ガード用）
       await supabase.from('profiles').upsert({
         id: userId,
         email: newItem.email,
@@ -159,9 +152,8 @@ export default function AdminPropertiesPage() {
 
       // 3. 各業種テーブルへの挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
-      
       const { data: created, error: insertError } = await supabase.from(table).insert([{
-        id: userId, // AuthenticationのUUIDと一致させる
+        id: userId,
         name: newItem.name,
         email: newItem.email,
         address: newItem.address,
@@ -184,7 +176,6 @@ export default function AdminPropertiesPage() {
         }
       }
 
-      // 5. 登録完了情報の表示
       setRegisteredInfo({ 
         url: `${window.location.origin}/login?type=${activeTab}`, 
         email: newItem.email, 
@@ -241,19 +232,31 @@ export default function AdminPropertiesPage() {
     }
   };
 
+  // ==========================================
+  // 【完全同期版】削除ロジック
+  // ==========================================
   const handleDeleteItem = async () => {
-    if (!confirm('本当に削除しますか？\n※Authentication側のアカウントは削除されません。')) return;
+    // SQLトリガーにより、ここでの削除が自動的にAuthアカウントの削除に繋がります
+    if (!confirm('本当に削除しますか？\nこの操作により、ログインアカウント（Authentication）も自動的に完全に削除されます。')) return;
+    
     setLoading(true);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
+      
+      // 先にprofilesを消しておく（任意ですが綺麗にするため）
+      await supabase.from('profiles').delete().eq('id', selectedItem.id);
+      
+      // メインテーブルから削除。これによりSQLトリガーが走り、auth.usersからも消えます。
       const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
+      
       if (error) throw error;
-      alert('削除しました');
+      
+      alert('正常に削除されました。');
       setIsManageModalOpen(false);
       fetchTabData(activeTab);
       loadInitialData();
     } catch (err: any) {
-      alert('削除エラー: ' + err.message);
+      alert('削除失敗: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -278,6 +281,7 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
+        {/* 統計セクション */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -294,6 +298,7 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
+        {/* 切り替えタブと追加ボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -307,6 +312,7 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
+        {/* メインリスト */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -326,6 +332,7 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
+      {/* 登録モーダル / 完了画面 */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
@@ -333,18 +340,9 @@ export default function AdminPropertiesPage() {
               <>
                 <h2 className="text-2xl font-black italic mb-6 uppercase">新規パートナーを <span className="text-blue-600">登録</span></h2>
                 <div className="space-y-5">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Company Name</label>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Email Address (Login ID)</label>
-                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-blue-600" placeholder="example@mail.com" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Office/Store Address</label>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="東京都立川市..." value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
-                  </div>
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
+                  <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-blue-600" placeholder="ログインメールアドレス" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   {activeTab === 'manager' && (
                     <div className="pt-4 border-t border-slate-100">
                       <button onClick={addPropField} className="text-[10px] font-black text-blue-600">+ 管理物件を割り当て</button>
@@ -352,7 +350,7 @@ export default function AdminPropertiesPage() {
                         {selectedProps.map((item, index) => (
                           <div key={index} className="flex gap-2 bg-slate-50 p-2 rounded-xl">
                             <select className="flex-1 bg-transparent p-2 font-bold text-xs" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
-                              <option value="">物件を選択してください</option>
+                              <option value="">物件を選択</option>
                               {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
                             <div className="w-24 flex items-center justify-center font-black text-blue-600 text-[10px] bg-white rounded-lg">Code: {item.code}</div>
@@ -368,22 +366,22 @@ export default function AdminPropertiesPage() {
                 </div>
               </>
             ) : (
-              <div className="text-center animate-in fade-in zoom-in duration-300">
+              <div className="text-center">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-                <h2 className="text-2xl font-black mb-2 italic uppercase">Credentials <span className="text-emerald-600">Issued</span></h2>
-                <p className="text-slate-400 text-[10px] font-bold mb-6">この情報をコピーしてパートナーへ共有してください。</p>
+                <h2 className="text-2xl font-black mb-6 italic uppercase">Registration <span className="text-emerald-600">Complete</span></h2>
                 <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8">
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">Login URL</label><p className="text-xs font-bold text-blue-600 break-all">{registeredInfo.url}</p></div>
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Login ID (Email)</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">ID</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">Temporary Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
                 </div>
-                <button onClick={() => { navigator.clipboard.writeText(`ログインURL: ${registeredInfo.url}\nID: ${registeredInfo.email}\nPW: ${registeredInfo.pw}`); setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">情報をコピーして閉じる</button>
+                <button onClick={() => { navigator.clipboard.writeText(`ID: ${registeredInfo.email}\nPW: ${registeredInfo.pw}`); setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">情報をコピーして閉じる</button>
               </div>
             )}
           </div>
         </div>
       )}
 
+      {/* 管理・編集モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
@@ -393,13 +391,9 @@ export default function AdminPropertiesPage() {
                 <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Company Name</label>
                 <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Address</label>
-                <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" value={selectedItem.address || ''} onChange={(e) => setSelectedItem({...selectedItem, address: e.target.value})} />
-              </div>
               <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">🔑 PW再発行メモ</button>
-                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">🗑️ 削除</button>
+                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">🔑 PW再発行</button>
+                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">🗑️ 完全に削除</button>
               </div>
             </div>
             <div className="flex gap-3 mt-10">
