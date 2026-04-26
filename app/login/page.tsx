@@ -44,9 +44,7 @@ function LoginContent() {
         
         if (profileError) {
           console.error('Initial Profile DB Error:', profileError);
-          // 🚨 プロフィール作成に失敗した場合は、エラーを投げて登録を中断させる
-          // (中途半端なAuthユーザーが残るのを防ぐため)
-          throw new Error('プロフィールの作成に失敗しました。管理者にお問い合わせください。');
+          throw new Error('プロフィールの作成に失敗しました。');
         }
 
         // 新規登録完了後はセットアップへ強制遷移
@@ -62,7 +60,7 @@ function LoginContent() {
         if (authError) throw authError;
         if (!data.user) throw new Error('ユーザーが見つかりません');
 
-        // profilesテーブルからロール情報を取得
+        // profilesテーブルから情報を取得
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role, property_id')
@@ -70,50 +68,47 @@ function LoginContent() {
           .single();
 
         if (profileError) {
-          await supabase.auth.signOut(); // プロフィールがない不正なユーザーは即座に追い出す
-          throw new Error('プロフィールデータが見つかりません。アカウントが正しく設定されていない可能性があります。');
+          await supabase.auth.signOut();
+          throw new Error('プロフィールが見つかりません。アカウントが未完了の可能性があります。');
         }
 
         // ロールを正規化
         const dbRole = (profile?.role || 'USER').toUpperCase().trim();
         
         // ==========================================
-        // 🚨 【最重要】セキュリティ検問ロジック
+        // 🚨 【追加】セキュリティ検問ロジック
         // ==========================================
         let isAuthorized = false;
 
-        // URLパラメータ(?type=xxx)とアカウントの権限(dbRole)を照合
+        // 現在の入り口(typeParam)に対して、アカウントの権限(dbRole)が妥当かチェック
         if (typeParam === 'admin') {
-          // 管理者専用入り口：ADMIN以外は拒否
           if (dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'manager') {
-          // 管理会社入り口：MANAGERまたはADMINのみ許可
           if (dbRole === 'MANAGER' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'posting') {
-          // 業者入り口：POSTINGまたはADMINのみ許可
           if (dbRole === 'POSTING' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'shop') {
-          // 店舗入り口：SHOPまたはADMINのみ許可
           if (dbRole === 'SHOP' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (isUserMode) {
-          // 住民入り口：USERまたはADMINのみ許可
           if (dbRole === 'USER' || dbRole === 'ADMIN') isAuthorized = true;
         } else {
-          // パラメータがない場合などはログイン自体は許可
+          // パラメータがない場合は一旦許可
           isAuthorized = true;
         }
 
-        // 権限がない場合は、ログイン成功していても即座にサインアウトさせて追い出す
+        // 権限がない場合は即座にサインアウトさせてエラーを表示
         if (!isAuthorized) {
           await supabase.auth.signOut();
-          throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(Role: ${dbRole})`);
+          throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(権限: ${dbRole})`);
         }
 
-        // --- 権限が確認できた場合のみ、適切なリダイレクト先を判定 ---
+        // ==========================================
+        // 🚀 ロールに基づいたリダイレクト判定
+        // ==========================================
         let targetPath = '';
 
         if (dbRole === 'ADMIN') {
-          // ADMINは万能。パラメータがあればそこへ、なければ管理パネルへ。
+          // ADMINは指定されたパラメータに従う。指定がなければ管理パネルへ。
           if (typeParam === 'user') targetPath = '/resident/dashboard';
           else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
@@ -130,13 +125,13 @@ function LoginContent() {
           targetPath = '/shop/post';
         } 
         else {
-          // 一般住民
+          // 一般ユーザー（USER）
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
         console.log('Authorized Login:', dbRole, 'Redirecting to:', targetPath);
         
-        // 確実な遷移のために window.location.href を使用
+        // 状態を完全にリセットするため window.location.href を使用
         window.location.href = targetPath;
       }
 
@@ -160,9 +155,9 @@ function LoginContent() {
               'bg-orange-100 text-orange-600'
             }`}>
               {isUserMode ? (isSignUp ? 'Resident Sign Up' : 'Resident Login') : 
-               typeParam === 'manager' ? 'Property Management Login' : 
+               typeParam === 'manager' ? 'Property Management' : 
                typeParam === 'admin' ? 'System Administrator' :
-               `Auth Mode: ${typeParam || 'Staff'}`}
+               `Portal: ${typeParam || 'Auth'}`}
             </span>
           </div>
         </div>
@@ -192,7 +187,7 @@ function LoginContent() {
           }`}
           disabled={loading}
         >
-          {loading ? '処理中...' : (isSignUp ? '新規登録して次へ' : 'ログイン')}
+          {loading ? '認証中...' : (isSignUp ? '新規登録して次へ' : 'ログイン')}
         </button>
 
         {isUserMode && (

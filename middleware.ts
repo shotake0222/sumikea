@@ -1,4 +1,12 @@
-// middleware.ts (一旦リセット)
 import { NextResponse } from 'next/server';
-export function middleware() { return NextResponse.next(); }
-export const config = { matcher: [] };
+import type { NextRequest } from 'next/server';
+
+export function middleware(req: NextRequest) {
+  // すべてのチェックをスルーして、ページ側の遷移ロジックに任せる
+  return NextResponse.next();
+}
+
+// 404や無限ループを避けるため、一旦matcherを空にします
+export const config = {
+  matcher: [],
+};
