@@ -42,7 +42,12 @@ function LoginContent() {
             property_id: null 
           }]);
         
-        if (profileError) console.error('Initial Profile DB Error:', profileError);
+        if (profileError) {
+          console.error('Initial Profile DB Error:', profileError);
+          // 🚨 プロフィール作成に失敗した場合は、エラーを投げて登録を中断させる
+          // (中途半端なAuthユーザーが残るのを防ぐため)
+          throw new Error('プロフィールの作成に失敗しました。管理者にお問い合わせください。');
+        }
 
         // 新規登録完了後はセットアップへ強制遷移
         window.location.href = '/resident/setup';
@@ -57,7 +62,7 @@ function LoginContent() {
         if (authError) throw authError;
         if (!data.user) throw new Error('ユーザーが見つかりません');
 
-        // profilesテーブルから情報を取得
+        // profilesテーブルからロール情報を取得
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role, property_id')
@@ -65,8 +70,8 @@ function LoginContent() {
           .single();
 
         if (profileError) {
-          await supabase.auth.signOut(); // プロフィールがない場合も即座に追い出す
-          throw new Error('プロフィールデータが見つかりません');
+          await supabase.auth.signOut(); // プロフィールがない不正なユーザーは即座に追い出す
+          throw new Error('プロフィールデータが見つかりません。アカウントが正しく設定されていない可能性があります。');
         }
 
         // ロールを正規化
@@ -77,27 +82,28 @@ function LoginContent() {
         // ==========================================
         let isAuthorized = false;
 
+        // URLパラメータ(?type=xxx)とアカウントの権限(dbRole)を照合
         if (typeParam === 'admin') {
-          // ?type=admin のドアを叩いたなら ADMIN 以外は拒否
+          // 管理者専用入り口：ADMIN以外は拒否
           if (dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'manager') {
-          // ?type=manager のドアなら MANAGER（または特権のADMIN）のみ
+          // 管理会社入り口：MANAGERまたはADMINのみ許可
           if (dbRole === 'MANAGER' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'posting') {
-          // ?type=posting のドアなら POSTING のみ
-          if (dbRole === 'POSTING') isAuthorized = true;
+          // 業者入り口：POSTINGまたはADMINのみ許可
+          if (dbRole === 'POSTING' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (typeParam === 'shop') {
-          // ?type=shop のドアなら SHOP のみ
-          if (dbRole === 'SHOP') isAuthorized = true;
+          // 店舗入り口：SHOPまたはADMINのみ許可
+          if (dbRole === 'SHOP' || dbRole === 'ADMIN') isAuthorized = true;
         } else if (isUserMode) {
-          // ?type=user（住民）のドアなら USER のみ
-          if (dbRole === 'USER') isAuthorized = true;
+          // 住民入り口：USERまたはADMINのみ許可
+          if (dbRole === 'USER' || dbRole === 'ADMIN') isAuthorized = true;
         } else {
-          // パラメータがない場合などはデフォルトで許可するが、ADMINやSTAFFはそれぞれのURLへ誘導
+          // パラメータがない場合などはログイン自体は許可
           isAuthorized = true;
         }
 
-        // 権限がない場合は即座にサインアウトしてエラーを出す
+        // 権限がない場合は、ログイン成功していても即座にサインアウトさせて追い出す
         if (!isAuthorized) {
           await supabase.auth.signOut();
           throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(Role: ${dbRole})`);
@@ -107,7 +113,7 @@ function LoginContent() {
         let targetPath = '';
 
         if (dbRole === 'ADMIN') {
-          // ADMINは指定されたパラメータに従うが、基本は管理パネル
+          // ADMINは万能。パラメータがあればそこへ、なければ管理パネルへ。
           if (typeParam === 'user') targetPath = '/resident/dashboard';
           else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
@@ -124,10 +130,13 @@ function LoginContent() {
           targetPath = '/shop/post';
         } 
         else {
+          // 一般住民
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
         console.log('Authorized Login:', dbRole, 'Redirecting to:', targetPath);
+        
+        // 確実な遷移のために window.location.href を使用
         window.location.href = targetPath;
       }
 
