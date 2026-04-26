@@ -52,18 +52,23 @@ export default function ShopPostPage() {
         const { data: storeData } = await storeQuery.limit(1).maybeSingle();
         let currentStore = storeData;
 
+        // 管理者プレビュー用のダミーUUID
         if (!currentStore && role === 'ADMIN') {
-          currentStore = { id: 'admin-preview-id', name: 'サンプルショップ立川', lat: 35.6997, lng: 139.4137 };
+          currentStore = { 
+            id: '00000000-0000-0000-0000-000000000000', 
+            name: 'サンプルショップ立川', 
+            lat: 35.6997, 
+            lng: 139.4137 
+          };
         }
 
         if (currentStore) {
           setMyStore(currentStore);
           setStoreName(currentStore.name);
           fetchHistory(currentStore.id);
-          // 初回検索
           await handleRadiusSearch(currentStore, 1, 'all');
         } else {
-          alert('店舗情報が見つかりません。');
+          alert('店舗情報が見つかりません。設定を確認してください。');
           router.push('/shop/settings');
         }
       } catch (err) {
@@ -76,7 +81,7 @@ export default function ShopPostPage() {
   }, [router]);
 
   const fetchHistory = async (storeId: string) => {
-    if (storeId === 'admin-preview-id') return;
+    if (storeId.startsWith('00000000')) return;
     const { data } = await supabase
       .from('local_ads')
       .select('*')
@@ -111,15 +116,13 @@ export default function ShopPostPage() {
     if (!file) return;
     setUploading(true);
     try {
-      // ✅ 修正: 日本語ファイル名対応 & バケット名指定 (sumikea-images 内の shop-ads フォルダへ)
       const url = await uploadImage(file, 'sumikea-images', 'shop-ads');
       setPdfUrl(url);
     } catch (err: any) {
-      console.error("アップロード詳細エラー:", err);
-      alert(`アップロードに失敗しました。詳細: ${err.message || 'Invalid key errorが出る場合はファイル名を半角英数字にしてみてください。'}`);
+      alert(`アップロード失敗: ${err.message}`);
     } finally {
       setUploading(false);
-      e.target.value = ''; // 入力をリセット
+      e.target.value = '';
     }
   };
 
@@ -139,35 +142,50 @@ export default function ShopPostPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myStore) return;
-    if (nearbyProperties.length === 0) return alert('配信先の物件が見つかりません。');
+    if (nearbyProperties.length === 0) return alert('配信先の物件が見つかりません。範囲を広げてください。');
+    if (!title || !content) return alert('タイトルと本文を入力してください。');
     
     setIsSubmitLoading(true);
     
-    const insertData = nearbyProperties.map(p => ({
-      store_id: myStore.id === 'admin-preview-id' ? null : myStore.id,
-      store_name: storeName,
-      title, 
-      content, 
-      property_id: p.id,
-      coupon_code: couponCode,
-      link_url: linkUrl,
-      pdf_url: pdfUrl,
-      radius_km: radiusKm,
-      target_segment: targetType,
-      expires_at: new Date(`${expiresAt}T23:59:59`).toISOString(),
-      view_count: 0
-    }));
+    try {
+      // 1. 保存用データの作成（物件ごとに1行作成）
+      const insertData = nearbyProperties.map(p => ({
+        store_id: myStore.id,
+        store_name: storeName,
+        title, 
+        content, 
+        property_id: p.id,
+        coupon_code: couponCode || null,
+        link_url: linkUrl || null,
+        pdf_url: pdfUrl || null,
+        radius_km: radiusKm,
+        target_segment: targetType,
+        expires_at: new Date(`${expiresAt}T23:59:59`).toISOString(),
+        view_count: 0
+      }));
 
-    const { error } = await supabase.from('local_ads').insert(insertData);
-    
-    if (!error) {
-      alert(`${nearbyProperties.length}件のマンション・アパートへセグメント配信が完了しました！`);
-      setTitle(''); setContent(''); setShopMessage(''); setPdfUrl('');
-      if (myStore.id !== 'admin-preview-id') fetchHistory(myStore.id);
-    } else {
-      alert('エラー: ' + error.message);
+      // 2. まとめてDBへ挿入
+      const { error } = await supabase.from('local_ads').insert(insertData);
+      
+      if (error) throw error;
+
+      alert(`${nearbyProperties.length}件のマンションへ配信予約が完了しました！`);
+      
+      // フォームリセット
+      setTitle(''); 
+      setContent(''); 
+      setShopMessage(''); 
+      setPdfUrl('');
+      
+      // 履歴更新
+      fetchHistory(myStore.id);
+
+    } catch (err: any) {
+      console.error("Submit Error:", err);
+      alert('配信に失敗しました: ' + err.message);
+    } finally {
+      setIsSubmitLoading(false);
     }
-    setIsSubmitLoading(false);
   };
 
   if (loading) return (
@@ -273,22 +291,7 @@ export default function ShopPostPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="absolute -right-10 -bottom-10 text-[8rem] font-black italic opacity-5 select-none uppercase tracking-tighter pointer-events-none">Target</div>
                 </div>
-
-                {nearbyProperties.length > 0 && (
-                  <div className="px-6 py-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">🎯 配信予定の物件（一部）:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {nearbyProperties.slice(0, 8).map((p, i) => (
-                        <span key={i} className="text-[10px] font-bold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
-                          {p.name} <span className="text-[8px] text-blue-400 ml-1">#{p.property_type || 'all'}</span>
-                        </span>
-                      ))}
-                      {nearbyProperties.length > 8 && <span className="text-[10px] text-slate-300 self-center ml-2">他 {nearbyProperties.length - 8} 棟...</span>}
-                    </div>
-                  </div>
-                )}
 
                 <div className="bg-slate-50 border-2 border-slate-100 rounded-[3.5rem] p-10 space-y-10">
                   <div className="space-y-4">
@@ -325,7 +328,8 @@ export default function ShopPostPage() {
 
                 <button 
                   disabled={isSubmitLoading} 
-                  className="w-full bg-slate-900 text-white py-9 rounded-[3rem] font-black shadow-2xl hover:bg-orange-600 transition-all active:scale-[0.98] text-2xl italic tracking-tighter uppercase"
+                  type="submit"
+                  className="w-full bg-slate-900 text-white py-9 rounded-[3rem] font-black shadow-2xl hover:bg-orange-600 transition-all active:scale-[0.98] text-2xl italic tracking-tighter uppercase disabled:opacity-50"
                 >
                   {isSubmitLoading ? '配信処理中...' : 'ターゲットへポスティング！'}
                 </button>
@@ -341,7 +345,7 @@ export default function ShopPostPage() {
               </div>
               
               <div className="space-y-10">
-                {recentAds.map(ad => (
+                {recentAds.length > 0 ? recentAds.map(ad => (
                   <div key={ad.id} className="group cursor-pointer" onClick={() => router.push(`/shop/analytics?id=${ad.id}`)}>
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-md font-black truncate w-44 italic group-hover:text-orange-500 transition">{ad.title}</p>
@@ -352,10 +356,12 @@ export default function ShopPostPage() {
                     </div>
                     <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
                       <span>{new Date(ad.created_at).toLocaleDateString()}</span>
-                      <span className="bg-slate-50 px-2 py-1 rounded-md">{ad.target_segment === 'single' ? '単身' : ad.target_segment === 'family' ? '家計' : '全域'}</span>
+                      <span className="bg-slate-50 px-2 py-1 rounded-md">{ad.target_segment === 'single' ? '単身' : ad.target_segment === 'family' ? 'ファミリー' : '全域'}</span>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <p className="text-xs font-bold text-slate-300 text-center py-10 tracking-widest uppercase italic">No History Yet</p>
+                )}
               </div>
 
               <button 
