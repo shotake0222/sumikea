@@ -117,36 +117,43 @@ export default function AdminPropertiesPage() {
   };
 
   // ==========================================
-  // 新規登録ロジック (修正版)
+  // 【修正版】新規登録ロジック
   // ==========================================
   const handleRegister = async () => {
     if (!newItem.name || !newItem.email || !newItem.address) return alert('名称、メール、住所を入力してください');
     setLoading(true);
     try {
       const coords = await getCoordinates(newItem.address);
-      const initialPassword = Math.random().toString(36).slice(-8);
+      const initialPassword = Math.random().toString(36).slice(-8); // 8文字のPW生成
       const assignRole = activeTab === 'manager' ? 'MANAGER' : 'USER';
       
       // 1. Supabase Auth にアカウント作成
+      // ここで options.data を渡すことで、トリガーが profiles を作成するのを助ける
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
         options: {
           data: {
             full_name: newItem.name,
-            role: assignRole
-          }
-        }
+            role: assignRole,
+          },
+        },
       });
 
-      if (authError) throw new Error('認証作成失敗: ' + authError.message);
-      if (!authData.user) throw new Error('ユーザーデータが生成されませんでした。');
+      if (authError) {
+        if (authError.message.includes("already registered")) {
+           throw new Error('このメールアドレスは既に登録されています。Authenticationから削除するか別のメールを使用してください。');
+        }
+        throw authError;
+      }
+      if (!authData.user) throw new Error('ユーザーデータの作成に失敗しました。');
 
-      // 2. 独自テーブルへの挿入 (AuthのIDを主キーとして使用)
+      // 2. 独自テーブルへの挿入
+      // 【最重要】id に authData.user.id を必ず入れる
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       
       const { data: created, error: insertError } = await supabase.from(table).insert([{
-        id: authData.user.id, // AuthのIDを強制指定
+        id: authData.user.id, 
         name: newItem.name,
         email: newItem.email,
         address: newItem.address,
@@ -157,8 +164,8 @@ export default function AdminPropertiesPage() {
       }]).select().single();
 
       if (insertError) {
-        console.error("DB Insert Error:", insertError);
-        throw new Error('テーブル登録に失敗しました。Authのみ作成されました。');
+        console.error("Insert Error:", insertError);
+        throw new Error('テーブル登録に失敗しました。Authアカウントのみ作成された可能性があります。');
       }
 
       // 3. 管理物件の紐付け (管理会社の場合)
@@ -169,12 +176,20 @@ export default function AdminPropertiesPage() {
         }
       }
 
-      setRegisteredInfo({ url: `${window.location.origin}/login`, email: newItem.email, pw: initialPassword });
+      // 4. 完了画面へのデータセット
+      setRegisteredInfo({ 
+        url: `${window.location.origin}/login`, 
+        email: newItem.email, 
+        pw: initialPassword 
+      });
+
+      // 最後にリストを更新
       setNewItem({ name: '', email: '', address: '' });
       setSelectedProps([]);
       fetchTabData(activeTab);
+
     } catch (err: any) {
-      alert('エラー: ' + err.message);
+      alert('登録失敗: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -202,7 +217,7 @@ export default function AdminPropertiesPage() {
   };
 
   const handleResetPassword = async () => {
-    if (!confirm('パスワードを再発行しますか？\n※注意: 管理パネル上の表示のみ更新されます。ログインできない場合はSQLでの修復が必要です。')) return;
+    if (!confirm('パスワードの「記録用メモ」を更新しますか？\nログイン可能なパスワード自体をリセットするには、SQLでの修復が必要です。')) return;
     const newPassword = Math.random().toString(36).slice(-8);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
@@ -215,12 +230,12 @@ export default function AdminPropertiesPage() {
       setIsManageModalOpen(false);
       setRegisteredInfo({ url: `${window.location.origin}/login`, email: selectedItem.email, pw: newPassword });
     } catch (err: any) {
-      alert('再発行エラー: ' + err.message);
+      alert('エラー: ' + err.message);
     }
   };
 
   const handleDeleteItem = async () => {
-    if (!confirm('本当に削除しますか？ (※Authアカウントは手動削除が必要です)')) return;
+    if (!confirm('本当に削除しますか？\n※Auth側のアカウントは自動では消えません。')) return;
     setLoading(true);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
@@ -256,7 +271,6 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計カード */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -273,7 +287,6 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* タブ切り替えと新規ボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -287,7 +300,6 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
-        {/* リスト表示 */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -307,7 +319,6 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* 新規登録・完了モーダル */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
@@ -365,7 +376,6 @@ export default function AdminPropertiesPage() {
         </div>
       )}
 
-      {/* 管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
