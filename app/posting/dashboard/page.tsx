@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase'; // 階層に注意
+import { supabase } from '../../../lib/supabase';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { adSchema } from '../../../lib/validations';
 import { uploadImage } from '../../../lib/upload';
 
-// 🌎 本番用：2地点間の距離（キロメートル）を計算する関数（ハバサイン公式）
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // 地球の半径 (km)
+  const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = 
@@ -23,28 +22,25 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
 export default function PostingDigitalDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [allProperties, setAllProperties] = useState<any[]>([]); // 全物件リスト
-  const [filteredProperties, setFilteredProperties] = useState<any[]>([]); // 配信対象の物件リスト
+  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [filteredProperties, setFilteredProperties] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
 
-  // 配信エリア管理
   const [deliveryMode, setDeliveryMode] = useState<'all' | 'area' | 'specific'>('area');
   const [address, setAddress] = useState('');
-  const [radius, setRadius] = useState<number>(3); // デフォルト3km
+  const [radius, setRadius] = useState<number>(3); 
   const [isSearchingArea, setIsSearchingArea] = useState(false);
 
-  // 動的統計データ用のステート
   const [totalStats, setTotalStats] = useState({
     impressions: 0,
     ctr: '0.00'
   });
 
-  // 状態管理
-  const [pdfUrls, setPdfUrls] = useState<string[]>([]);
+  // 📝 修正: URLだけでなく、元のファイル名も保持するように変更
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, url: string}[]>([]);
   const [uploading, setUploading] = useState(false);
   
-  // ターゲット属性 (富裕層を削除)
   const [demographics, setDemographics] = useState({
     family: false, single: false, senior: false
   });
@@ -72,12 +68,10 @@ export default function PostingDigitalDashboard() {
           return; 
         }
 
-        // 1. 全物件リスト取得 (lat, lngがある想定)
         const { data: props } = await supabase.from('properties').select('id, name, address, lat, lng');
         setAllProperties(props || []);
         setFilteredProperties(props || []);
 
-        // 2. 最近のキャンペーン取得
         const { data: campaigns } = await supabase
           .from('digital_flyers')
           .select('*')
@@ -85,7 +79,6 @@ export default function PostingDigitalDashboard() {
           .limit(3);
         setRecentCampaigns(campaigns || []);
 
-        // 3. インプレッション数とCTRのリアルタイム集計
         const { data: adStats } = await supabase.from('local_ad_stats').select('views_count, clicks_count');
         
         if (adStats) {
@@ -113,9 +106,16 @@ export default function PostingDigitalDashboard() {
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      const uploadPromises = Array.from(files).map(file => uploadImage(file, 'digital-leaflets'));
-      const newUrls = await Promise.all(uploadPromises);
-      setPdfUrls(prev => [...prev, ...newUrls]);
+      // 📝 修正: 複数のファイルを順番にアップロードし、名前とURLのセットを作成
+      const newFilesData: {name: string, url: string}[] = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = await uploadImage(file, 'digital-leaflets');
+        newFilesData.push({ name: file.name, url: url });
+      }
+
+      setUploadedFiles(prev => [...prev, ...newFilesData]);
     } catch (err) {
       alert('アップロードに失敗しました');
     } finally {
@@ -124,10 +124,9 @@ export default function PostingDigitalDashboard() {
   };
 
   const removeFile = (index: number) => {
-    setPdfUrls(prev => prev.filter((_, i) => i !== index));
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // 🎯 全選択トグル処理
   const toggleSelectAllDemographics = () => {
     const allSelected = Object.values(demographics).every(val => val);
     setDemographics({
@@ -137,37 +136,23 @@ export default function PostingDigitalDashboard() {
     });
   };
 
-  // 📍 圏内検索ロジック (本番データ対応)
   const handleSearchArea = async () => {
     if (!address) return;
     setIsSearchingArea(true);
     
     try {
-      // ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-      // TODO: 他ページで使っているジオコーディング（住所→緯度経度変換）をここに繋ぎます
-      // 例: const coords = await fetchGeocodeFromAddress(address);
-      //     const targetLat = coords.lat;
-      //     const targetLng = coords.lng;
-      // ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-      
       let targetLat: number | null = null;
       let targetLng: number | null = null;
-
-      // 開発用モック：本来は上記のTODOで取得した値が入ります
-      // targetLat = 35.6895; 
-      // targetLng = 139.6917;
 
       let result = [];
 
       if (targetLat && targetLng) {
-        // 緯度経度が取得できた場合、半径計算で絞り込み
         result = allProperties.filter(p => {
-          if (!p.lat || !p.lng) return false; // 座標がない物件は除外
+          if (!p.lat || !p.lng) return false;
           const distance = getDistanceFromLatLonInKm(targetLat, targetLng, p.lat, p.lng);
           return distance <= radius;
         });
       } else {
-        // ジオコーディングAPIが未接続の場合のフォールバック（住所文字列での部分一致）
         result = allProperties.filter(p => p.name?.includes(address) || p.address?.includes(address));
       }
       
@@ -185,12 +170,11 @@ export default function PostingDigitalDashboard() {
   };
 
   const onSendAd = async (data: any) => {
-    if (pdfUrls.length === 0) {
+    if (uploadedFiles.length === 0) {
       alert('チラシPDFをアップロードしてください');
       return;
     }
 
-    // 配信先ターゲットの決定
     let targetPropertyIds: string[] = [];
     if (deliveryMode === 'specific' && data.property_id) {
       targetPropertyIds = [data.property_id];
@@ -201,16 +185,19 @@ export default function PostingDigitalDashboard() {
       }
       targetPropertyIds = filteredProperties.map(p => p.id);
     } else {
-      targetPropertyIds = allProperties.map(p => p.id); // 全物件
+      targetPropertyIds = allProperties.map(p => p.id); 
     }
 
     setIsSubmitting(true);
+    
+    // 📝 修正: オブジェクトの配列からURLだけのカンマ区切り文字列を作成
+    const pdfUrlsString = uploadedFiles.map(f => f.url).join(',');
 
     const inserts = targetPropertyIds.map(pid => ({
       property_id: pid,
       title: data.title,
       content: data.content,
-      pdf_url: pdfUrls.join(','), 
+      pdf_url: pdfUrlsString, 
       is_segmented: isSegmentMode,
       target_metadata: demographics,
       starts_at: new Date(startDate).toISOString(),
@@ -223,7 +210,7 @@ export default function PostingDigitalDashboard() {
     if (!error) {
       alert(`計 ${inserts.length} 件の物件にデジタル投函を開始しました！`);
       reset();
-      setPdfUrls([]);
+      setUploadedFiles([]);
       setAddress('');
     } else {
       alert('エラー: ' + error.message);
@@ -315,7 +302,6 @@ export default function PostingDigitalDashboard() {
                         {isSearchingArea ? '検索中...' : 'この圏内にある物件を検索'}
                       </button>
                       
-                      {/* ダミーではなく、実際に検索にヒットした本番データ件数を表示 */}
                       <p className="text-[10px] font-bold text-indigo-600 text-right mt-2">
                         現在、対象エリア内に <span className="text-lg font-black">{filteredProperties.length}</span> 件の物件が設定されています。
                       </p>
@@ -358,27 +344,35 @@ export default function PostingDigitalDashboard() {
                     <label className={`w-full h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center cursor-pointer transition-all ${uploading ? 'opacity-50 pointer-events-none' : 'bg-slate-50 border-slate-200 hover:border-indigo-400 hover:bg-white'}`}>
                       <span className="text-3xl mb-2">{uploading ? '⏳' : '📄'}</span>
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{uploading ? 'アップロード中...' : 'PDFをここにドロップ'}</span>
-                      <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf" multiple />
+                      <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
                     </label>
 
-                    {pdfUrls.length > 0 && (
+                    {/* 📝 修正: 実際のファイル名を表示し、クリックで確認できるように変更 */}
+                    {uploadedFiles.length > 0 && (
                       <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                        {pdfUrls.map((url, idx) => (
+                        {uploadedFiles.map((file, idx) => (
                           <div key={idx} className="flex items-center justify-between bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                            <span className="text-[10px] font-black text-indigo-700 truncate max-w-[180px]">チラシデータ_{idx + 1}.pdf</span>
-                            <button type="button" onClick={() => removeFile(idx)} className="text-indigo-300 hover:text-red-500">✕</button>
+                            <a 
+                              href={file.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-xs font-black text-indigo-700 truncate max-w-[180px] hover:underline"
+                              title={file.name}
+                            >
+                              {file.name}
+                            </a>
+                            <button type="button" onClick={() => removeFile(idx)} className="text-indigo-300 hover:text-red-500 p-1">✕</button>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  {/* セグメントターゲット (ボタン化) */}
+                  {/* セグメントターゲット */}
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">ターゲット属性の絞り込み</label>
                     
                     <div className="grid grid-cols-2 gap-3">
-                      {/* 全選択ボタン */}
                       <button 
                         type="button" 
                         onClick={toggleSelectAllDemographics}
@@ -431,13 +425,11 @@ export default function PostingDigitalDashboard() {
                         <h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4>
                       </div>
                       <div className="text-right">
-                        {/* ダミーの計算(1200-i*100)を撤去し、DBの実データ(views_count)を表示 */}
                         <p className="text-xl font-black text-slate-900 leading-none">{(camp.views_count || 0).toLocaleString()}</p>
                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p>
                       </div>
                     </div>
                     <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                      {/* バーの長さも実データに基づき表示（表示が0の場合は0%） */}
                       <div className="h-full bg-indigo-600 shadow-[0_0_10px_rgba(79,70,229,0.4)]" style={{ width: camp.views_count ? '100%' : '0%' }}></div>
                     </div>
                   </div>
