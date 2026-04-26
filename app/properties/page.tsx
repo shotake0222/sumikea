@@ -118,7 +118,9 @@ export default function AdminPropertiesPage() {
   };
 
   const handleRegister = async () => {
+    // 🚨 フロントエンドでの入力バリデーション強化
     if (!newItem.name || !newItem.email || !newItem.address) return alert('必須項目を入力してください');
+    if (!newItem.email.includes('@')) return alert('有効なメールアドレスを入力してください（@が必要です）');
     
     setLoading(true);
     let createdAuthUser = null;
@@ -161,7 +163,7 @@ export default function AdminPropertiesPage() {
       }]);
       if (insError) throw new Error(`テーブル保存失敗: ${insError.message}`);
 
-      // 4. 管理物件の紐付け (ギミック維持)
+      // 4. 管理物件紐付け (ギミック維持)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
@@ -262,7 +264,7 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
-        {/* 統計セクション */}
+        {/* 統計 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
@@ -279,7 +281,7 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* 操作セクション */}
+        {/* 操作 */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -293,7 +295,7 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
-        {/* リスト表示 */}
+        {/* リスト */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -316,33 +318,32 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
-      {/* 登録モーダル（崩れ修正版） */}
+      {/* 登録モーダル（レイアウト修正版） */}
       {(isModalOpen || registeredInfo) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative my-auto">
             {!registeredInfo ? (
               <>
                 <h2 className="text-2xl font-black italic mb-6 uppercase">新規パートナーを <span className="text-blue-600">登録</span></h2>
-                <div className="space-y-5">
+                <div className="space-y-5 max-h-[60vh] overflow-y-auto px-1 pr-2 custom-scrollbar">
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Name</label>
                     <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Email</label>
-                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none text-blue-600" placeholder="ログインメールアドレス" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Email address</label>
+                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none text-blue-600" placeholder="example@test.com" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Address</label>
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Location</label>
                     <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="所在地" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   </div>
                   
-                  {/* 管理物件紐付けギミック */}
                   {activeTab === 'manager' && (
                     <div className="pt-6 border-t border-slate-100">
                       <div className="flex justify-between items-center mb-4">
-                        <label className="text-[10px] font-black text-slate-900 uppercase italic">Assign Properties</label>
-                        <button onClick={addPropField} className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-full">+ 物件を追加</button>
+                        <label className="text-[10px] font-black text-slate-900 uppercase italic tracking-tighter">Assign Properties</label>
+                        <button onClick={addPropField} className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-full transition-colors">+ 物件追加</button>
                       </div>
                       <div className="space-y-3">
                         {selectedProps.map((item, index) => (
@@ -360,7 +361,7 @@ export default function AdminPropertiesPage() {
                             </div>
                           </div>
                         ))}
-                        {selectedProps.length === 0 && <p className="text-[10px] text-slate-400 italic text-center py-4">紐付ける物件を選択してください（任意）</p>}
+                        {selectedProps.length === 0 && <p className="text-[10px] text-slate-400 italic text-center py-4">物件は後からでも紐付け可能です</p>}
                       </div>
                     </div>
                   )}
@@ -371,29 +372,28 @@ export default function AdminPropertiesPage() {
                 </div>
               </>
             ) : (
-              <div className="text-center py-4 animate-in fade-in zoom-in duration-300">
+              <div className="text-center py-4">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
                 <h2 className="text-2xl font-black mb-6 italic uppercase">Registration <span className="text-emerald-600">Complete</span></h2>
                 <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-slate-100">
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Login ID</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Temp Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
-                  <div className="pt-2"><p className="text-[9px] text-slate-400 font-bold leading-relaxed">※このパスワードは一度しか表示されません。必ずメモを取るよう伝えてください。</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Login Email</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Temp Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
                 </div>
-                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all">Close</button>
+                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all">Close Window</button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* 管理モーダル（崩れ修正版） */}
+      {/* 管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
-            <h2 className="text-2xl font-black italic mb-8 uppercase">パートナー <span className="text-blue-600">管理</span></h2>
+            <h2 className="text-2xl font-black italic mb-8 uppercase">パートナー <span className="text-blue-600">設定</span></h2>
             <div className="space-y-6">
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Partner Name</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Name</label>
                 <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-6 border-t border-slate-100">
@@ -401,10 +401,10 @@ export default function AdminPropertiesPage() {
                 <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-100 transition-all">🗑️ 完全に削除</button>
               </div>
             </div>
-            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-8 py-4 font-black text-slate-400 text-[10px] uppercase">キャンセル</button>
+            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-8 py-4 font-black text-slate-400 text-[10px] uppercase">閉じる</button>
           </div>
         </div>
       )}
-    </AdminLayout>
+    </div>
   );
 }
