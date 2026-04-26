@@ -37,7 +37,6 @@ export default function PostingDigitalDashboard() {
     ctr: '0.00'
   });
 
-  // 📝 修正: URLだけでなく、元のファイル名も保持するように変更
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, url: string}[]>([]);
   const [uploading, setUploading] = useState(false);
   
@@ -91,12 +90,11 @@ export default function PostingDigitalDashboard() {
             ctr: ctr
           });
         }
-
-// 77行目付近にある handleFileUpload の下の方を以下のように書き換えます
-    } catch (err: any) {
-      console.error("アップロード詳細エラー:", err);
-      alert(`エラー詳細: ${err.message || JSON.stringify(err)}`); // 👈 ここを変更
-    } finally {
+      // ✅ 修正: ここのカッコの対応を正しく直しました
+      } catch (err: any) {
+        console.error("初期データ取得エラー:", err);
+      } finally {
+        setLoading(false);
       }
     };
     initialize();
@@ -107,7 +105,6 @@ export default function PostingDigitalDashboard() {
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      // 📝 修正: 複数のファイルを順番にアップロードし、名前とURLのセットを作成
       const newFilesData: {name: string, url: string}[] = [];
       
       for (let i = 0; i < files.length; i++) {
@@ -117,8 +114,10 @@ export default function PostingDigitalDashboard() {
       }
 
       setUploadedFiles(prev => [...prev, ...newFilesData]);
-    } catch (err) {
-      alert('アップロードに失敗しました');
+    } catch (err: any) {
+      // ✅ 修正: ここが本来のエラーメッセージを表示する場所です
+      console.error("アップロード詳細エラー:", err);
+      alert(`アップロードに失敗しました。詳細: ${err.message || JSON.stringify(err)}`);
     } finally {
       setUploading(false);
     }
@@ -191,7 +190,6 @@ export default function PostingDigitalDashboard() {
 
     setIsSubmitting(true);
     
-    // 📝 修正: オブジェクトの配列からURLだけのカンマ区切り文字列を作成
     const pdfUrlsString = uploadedFiles.map(f => f.url).join(',');
 
     const inserts = targetPropertyIds.map(pid => ({
@@ -348,7 +346,6 @@ export default function PostingDigitalDashboard() {
                       <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
                     </label>
 
-                    {/* 📝 修正: 実際のファイル名を表示し、クリックで確認できるように変更 */}
                     {uploadedFiles.length > 0 && (
                       <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
                         {uploadedFiles.map((file, idx) => (
