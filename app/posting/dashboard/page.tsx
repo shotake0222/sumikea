@@ -92,10 +92,11 @@ export default function PostingDigitalDashboard() {
           });
         }
 
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+// 77行目付近にある handleFileUpload の下の方を以下のように書き換えます
+    } catch (err: any) {
+      console.error("アップロード詳細エラー:", err);
+      alert(`エラー詳細: ${err.message || JSON.stringify(err)}`); // 👈 ここを変更
+    } finally {
       }
     };
     initialize();
