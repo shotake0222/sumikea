@@ -1,7 +1,4 @@
 'use client';
-// ✅ キャッシュを無効化し、常に最新のDB状態を取得する設定を追加
-export const revalidate = 0;
-export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -48,7 +45,7 @@ export default function AdminPropertiesPage() {
           router.push('/login?type=admin');
           return;
         }
-        // 初回タブデータ取得
+        // キャッシュに頼らず最新データを取得
         fetchTabData('posting');
         loadInitialData();
       } catch (err) {
@@ -57,11 +54,11 @@ export default function AdminPropertiesPage() {
         setLoading(false);
       }
     };
-    // ✅ ここを修正しました (checkAuthAndFetch)
     checkAuthAndFetch();
   }, [router]);
 
   const loadInitialData = async () => {
+    // 統計データも最新を反映させる
     const [resRes, noticeRes, storeRes, adRes, propRes] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
       supabase.from('property_notifications').select('*', { count: 'exact', head: true }),
@@ -80,7 +77,14 @@ export default function AdminPropertiesPage() {
 
   const fetchTabData = async (tab: ViewTab) => {
     let table = tab === 'posting' ? 'posting_companies' : tab === 'manager' ? 'management_companies' : 'stores';
-    const { data, error } = await supabase.from(table).select(tab === 'manager' ? '*, properties(id)' : '*').order('created_at', { ascending: false });
+    
+    // ✅ SupabaseのJSクライアントはデフォルトで常に最新を追うため、
+    // ここでデータを取得すればブラウザのキャッシュ問題は解決します。
+    const { data, error } = await supabase
+      .from(table)
+      .select(tab === 'manager' ? '*, properties(id)' : '*')
+      .order('created_at', { ascending: false });
+
     if (error) return console.error(error);
     setDataList((data || []).map((d: any) => ({
       ...d,
@@ -202,8 +206,9 @@ export default function AdminPropertiesPage() {
       if (error) throw error;
       alert('削除しました');
       setIsManageModalOpen(false);
-      fetchTabData(activeTab);
-      loadInitialData();
+      // ✅ 削除後のリスト更新を確実に行う
+      await fetchTabData(activeTab);
+      await loadInitialData();
     } catch (err: any) {
       alert('削除エラー: ' + err.message);
     } finally {
