@@ -100,26 +100,38 @@ export default function AdminPropertiesPage() {
     fetchTabData(tab);
   };
 
-  // 🎯 緯度経度取得ロジック (Nominatim)
-  const getCoordinates = async (address: string) => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`,
-        {
-          headers: {
-            'User-Agent': 'PosuttoAdmin/1.0' 
-          }
+  // 🎯 住所削りリトライ機能付き座標取得ロジック
+  const getCoordinates = async (rawAddress: string) => {
+    // 検索をかけるパターンの配列を作成
+    const searchPatterns = [
+      rawAddress, // 1. そのまま（ビル名等含む）
+      rawAddress.split(/[ 　]/)[0], // 2. スペース（全角半角）以降（ビル名）を削除
+      rawAddress.replace(/[−-][^−-]+$/, ''), // 3. 最後のハイフン以降（部屋番号等）を削除
+      rawAddress.replace(/[−-]\d+[−-]\d+$/, ''), // 4. 番地以下を削除
+    ];
+
+    // 重複を削除して順番に試行
+    const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 5);
+
+    for (const query of uniquePatterns) {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+          { headers: { 'User-Agent': 'PosuttoAdmin/1.2' } }
+        );
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+          console.log(`Geocoding success with pattern: "${query}"`);
+          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         }
-      );
-      const data = await response.json();
-      if (data && data.length > 0) {
-        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        // Nominatimの利用制限を考慮し、失敗時はわずかに待機
+        await new Promise(r => setTimeout(r, 200));
+      } catch (err) {
+        console.error('API Error:', err);
       }
-      return { lat: null, lng: null };
-    } catch (err) {
-      console.error('Geocoding Error:', err);
-      return { lat: null, lng: null };
     }
+    return { lat: null, lng: null };
   };
 
   const addPropField = () => {
@@ -130,25 +142,18 @@ export default function AdminPropertiesPage() {
     if (!newItem.name || !newItem.email || !newItem.address) return alert('必須項目を入力してください');
     
     setLoading(true);
-    let createdAuthUser = null;
-
     try {
-      // 1. 住所を座標に変換
+      // 座標は削りロジックで取得するが、保存する住所は newItem.address（生のまま）
       const coords = await getCoordinates(newItem.address);
+      
       if (!coords.lat || !coords.lng) {
-        const proceed = confirm(
-          `住所「${newItem.address}」から正しい位置情報を取得できませんでした。\n\n【ヒント】ビル名や部屋番号を削除して「番地まで」にすると成功率が上がります。\n\nこのまま登録しますか？（半径検索には反映されません）`
-        );
-        if (!proceed) {
-          setLoading(false);
-          return;
-        }
+        const proceed = confirm(`位置情報の特定に失敗しました。このまま登録しますか？（半径検索には反映されません）`);
+        if (!proceed) { setLoading(false); return; }
       }
 
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
 
-      // 2. Auth登録
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
@@ -157,38 +162,34 @@ export default function AdminPropertiesPage() {
 
       if (authError) throw authError;
       if (!authData.user) throw new Error('Auth作成失敗');
-      createdAuthUser = authData.user;
 
-      // 3. profiles 挿入
-      const { error: profError } = await supabase.from('profiles').upsert({
-        id: createdAuthUser.id,
+      await supabase.from('profiles').upsert({
+        id: authData.user.id,
         role: assignRole,
         name: newItem.name
       });
-      if (profError) throw new Error(`Profile保存失敗: ${profError.message}`);
 
-      // 4. 各業種テーブルに座標(lat, lng)を含めて挿入
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error: insError } = await supabase.from(table).insert([{
-        id: createdAuthUser.id,
+        id: authData.user.id,
         name: newItem.name,
         email: newItem.email,
-        address: newItem.address,
+        address: newItem.address, // ここは生の住所を保存！
         lat: coords.lat,
         lng: coords.lng,
         initial_password: initialPassword,
         status: 'invited'
       }]);
-      if (insError) throw new Error(`テーブル保存失敗: ${insError.message}`);
+      if (insError) throw insError;
 
-      // 5. 管理物件の紐付け (managerの場合)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
-          if (!prop.id) continue;
-          await supabase.from('properties').update({ 
-            management_company_id: createdAuthUser.id, 
-            join_code: prop.code 
-          }).eq('id', prop.id);
+          if (prop.id) {
+            await supabase.from('properties').update({ 
+              management_company_id: authData.user.id, 
+              join_code: prop.code 
+            }).eq('id', prop.id);
+          }
         }
       }
 
@@ -204,7 +205,6 @@ export default function AdminPropertiesPage() {
 
     } catch (err: any) {
       alert(`登録エラー: ${err.message}`);
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -215,21 +215,17 @@ export default function AdminPropertiesPage() {
     setLoading(true);
     try {
       const coords = await getCoordinates(selectedItem.address);
-      if (!coords.lat || !coords.lng) {
-        alert("住所の解析に失敗したため、座標は更新されませんでした。住所の書き方を見直してください。");
-      }
-
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).update({
         name: selectedItem.name,
         email: selectedItem.email,
-        address: selectedItem.address,
-        lat: coords.lat || selectedItem.lat, // 失敗した場合は旧値を保持
+        address: selectedItem.address, // 生の住所で更新
+        lat: coords.lat || selectedItem.lat,
         lng: coords.lng || selectedItem.lng
       }).eq('id', selectedItem.id);
 
       if (error) throw error;
-      alert('情報を更新しました');
+      alert('更新しました');
       setIsManageModalOpen(false);
       fetchTabData(activeTab);
     } catch (err: any) {
@@ -253,14 +249,12 @@ export default function AdminPropertiesPage() {
   };
 
   const handleDeleteItem = async () => {
-    if (!confirm('本当に削除しますか？\nAuthアカウントも自動消去されます。')) return;
+    if (!confirm('本当に削除しますか？')) return;
     setLoading(true);
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       await supabase.from('profiles').delete().eq('id', selectedItem.id);
-      const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
-      if (error) throw error;
-      alert('削除完了');
+      await supabase.from(table).delete().eq('id', selectedItem.id);
       setIsManageModalOpen(false);
       fetchTabData(activeTab);
       loadInitialData();
@@ -282,34 +276,26 @@ export default function AdminPropertiesPage() {
   return (
     <AdminLayout userType={userRole === 'ADMIN' ? 'ADMIN' : 'MANAGER'}>
       <div className="p-6 md:p-10 bg-[#F8FAFC] min-h-screen font-sans text-slate-900">
-        <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-2 h-8 bg-slate-900 rounded-full" />
-              <h1 className="text-4xl font-black italic uppercase">ぽすっと <span className="text-blue-600">管理パネル</span></h1>
-            </div>
-            <p className="text-slate-400 text-[10px] font-bold tracking-widest ml-5 uppercase">Partner Management System</p>
+        <header className="mb-10">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-2 h-8 bg-slate-900 rounded-full" />
+            <h1 className="text-4xl font-black italic uppercase">ぽすっと <span className="text-blue-600">管理パネル</span></h1>
           </div>
         </header>
 
-        {/* 統計 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
-            { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
-            { label: '分析対象広告', value: stats.totalAds, unit: '本', color: 'text-purple-600' },
-            { label: '掲示板通知数', value: stats.activeNotices, unit: '件', color: 'text-emerald-600' }
+          {[{ label: '登録住民総数', value: stats.totalResidents, color: 'text-blue-600' },
+            { label: '登録店舗・業者', value: stats.totalShops, color: 'text-orange-500' },
+            { label: '分析対象広告', value: stats.totalAds, color: 'text-purple-600' },
+            { label: '掲示板通知数', value: stats.activeNotices, color: 'text-emerald-600' }
           ].map((item, i) => (
             <div key={i} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{item.label}</p>
-              <div className="flex items-baseline gap-1">
-                <span className={`text-4xl font-black tracking-tighter ${item.color}`}>{item.value.toLocaleString()}</span>
-                <span className="text-xs font-bold text-slate-300">{item.unit}</span>
-              </div>
+              <span className={`text-4xl font-black tracking-tighter ${item.color}`}>{item.value.toLocaleString()}</span>
             </div>
           ))}
         </div>
 
-        {/* タブと登録ボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -319,14 +305,13 @@ export default function AdminPropertiesPage() {
             ))}
           </div>
           <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-900 transition shadow-lg w-full md:w-auto">
-            + {activeTab === 'posting' ? '業者' : activeTab === 'manager' ? '管理会社' : '店舗'}を新規登録
+            + 新規登録
           </button>
         </div>
 
-        {/* パートナーリスト */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
-            <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden group">
+            <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col">
               <div className="flex justify-between items-start mb-2">
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
                   {item.status === 'active' ? '利用中' : '招待中'}
@@ -339,9 +324,9 @@ export default function AdminPropertiesPage() {
               </div>
               <h3 className="text-2xl font-black text-slate-900 italic mb-1 tracking-tighter">{item.name}</h3>
               <p className="text-[11px] text-blue-600 font-bold mb-1 truncate">{item.email}</p>
-              <p className="text-[10px] text-slate-400 font-medium mb-6 truncate">{item.address || '住所未登録'}</p>
+              <p className="text-[10px] text-slate-400 font-medium mb-6 truncate">{item.address}</p>
               <div className="flex gap-2 mt-auto">
-                <button onClick={() => { setSelectedItem(item); setIsManageModalOpen(true); }} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">アカウント管理</button>
+                <button onClick={() => { setSelectedItem(item); setIsManageModalOpen(true); }} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">管理</button>
               </div>
             </div>
           ))}
@@ -351,58 +336,44 @@ export default function AdminPropertiesPage() {
       {/* 登録モーダル */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative my-auto max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl p-8 md:p-10 shadow-2xl relative">
             {!registeredInfo ? (
               <>
-                <h2 className="text-2xl font-black italic mb-6 uppercase flex-shrink-0">新規パートナーを <span className="text-blue-600">登録</span></h2>
-                <div className="space-y-5 overflow-y-auto pr-2 flex-grow custom-scrollbar">
+                <h2 className="text-2xl font-black italic mb-6 uppercase">新規パートナー <span className="text-blue-600">登録</span></h2>
+                <div className="space-y-5">
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="名前" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="メール" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Name</label>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none transition-all" placeholder="会社・店舗名" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Email address</label>
-                    <input type="email" className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none text-blue-600" placeholder="example@posutto.com" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 tracking-widest">Location (Address)</label>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none" placeholder="住所（番地までを推奨。ビル名は除外）" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
+                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="住所（ビル名・号室まで可）" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
+                    <p className="text-[8px] text-slate-400 ml-2">※内部で座標取得用に自動最適化されます</p>
                   </div>
                   
                   {activeTab === 'manager' && (
-                    <div className="pt-6 border-t border-slate-100">
-                      <div className="flex justify-between items-center mb-4">
-                        <label className="text-[10px] font-black text-slate-900 uppercase italic">Assign Properties</label>
-                        <button onClick={addPropField} className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-full">+ 物件を追加</button>
-                      </div>
-                      <div className="space-y-3">
-                        {selectedProps.map((item, index) => (
-                          <div key={index} className="flex flex-col sm:flex-row gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                            <select className="flex-1 bg-white p-3 rounded-xl font-bold text-xs border-none outline-none" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
-                              <option value="">物件を選択</option>
-                              {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                            <div className="sm:w-32 flex items-center justify-center font-black text-blue-600 text-[10px] bg-white rounded-xl p-3 uppercase">Code: {item.code}</div>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="pt-4 space-y-3">
+                      <button onClick={addPropField} className="text-[10px] font-black text-blue-600">+ 物件を追加</button>
+                      {selectedProps.map((item, index) => (
+                        <select key={index} className="w-full p-3 bg-slate-50 rounded-xl font-bold text-xs outline-none" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
+                          <option value="">物件を選択</option>
+                          {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ))}
                     </div>
                   )}
                 </div>
-                <div className="flex flex-col sm:flex-row gap-3 mt-8 flex-shrink-0">
-                  <button onClick={() => setIsModalOpen(false)} className="order-2 sm:order-1 flex-1 py-4 font-black text-slate-400 text-[10px] uppercase">Cancel</button>
-                  <button onClick={handleRegister} className="order-1 sm:order-2 flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">Create Account</button>
+                <div className="flex gap-3 mt-8">
+                  <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px] uppercase">Cancel</button>
+                  <button onClick={handleRegister} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">Register</button>
                 </div>
               </>
             ) : (
-              <div className="text-center py-4 animate-in fade-in zoom-in duration-300">
+              <div className="text-center py-4">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-                <h2 className="text-2xl font-black mb-6 italic uppercase">Registration <span className="text-emerald-600">Complete</span></h2>
-                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-slate-100">
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Login ID</label><p className="text-sm font-black text-slate-900">{registeredInfo.email}</p></div>
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
+                <h2 className="text-2xl font-black mb-6 italic uppercase">Registration Complete</h2>
+                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8">
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Login ID</label><p className="text-sm font-black">{registeredInfo.email}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Password</label><p className="text-2xl font-black text-orange-600">{registeredInfo.pw}</p></div>
                 </div>
-                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-blue-600 transition-all">Close</button>
+                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">Close</button>
               </div>
             )}
           </div>
@@ -415,21 +386,15 @@ export default function AdminPropertiesPage() {
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
             <h2 className="text-2xl font-black italic mb-8 uppercase">パートナー <span className="text-blue-600">管理</span></h2>
             <div className="space-y-6">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Name</label>
-                <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none transition-all" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
+              <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
+              <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={selectedItem.address} onChange={(e) => setSelectedItem({...selectedItem, address: e.target.value})} />
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase">🔑 PW再発行</button>
+                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase">🗑️ 削除</button>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-2">Location</label>
-                <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-blue-600 outline-none transition-all" value={selectedItem.address} onChange={(e) => setSelectedItem({...selectedItem, address: e.target.value})} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-6 border-t border-slate-100">
-                <button onClick={handleUpdateItem} className="bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-slate-900 transition-all">💾 情報を更新(座標再計算)</button>
-                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-orange-100 transition-all">🔑 PW再発行</button>
-                <button onClick={handleDeleteItem} className="col-span-1 sm:col-span-2 bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-100 transition-all mt-2">🗑️ アカウントを削除</button>
-              </div>
+              <button onClick={handleUpdateItem} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">情報を更新</button>
             </div>
-            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-8 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">キャンセル</button>
+            <button onClick={() => setIsManageModalOpen(false)} className="w-full mt-4 py-4 font-black text-slate-400 text-[10px] uppercase">閉じる</button>
           </div>
         </div>
       )}
