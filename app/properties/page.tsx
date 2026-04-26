@@ -116,44 +116,37 @@ export default function AdminPropertiesPage() {
     setSelectedProps([...selectedProps, { id: '', code: Math.random().toString(36).substring(2, 7).toUpperCase() }]);
   };
 
+  // ==========================================
+  // 新規登録ロジック (修正版)
+  // ==========================================
   const handleRegister = async () => {
     if (!newItem.name || !newItem.email || !newItem.address) return alert('名称、メール、住所を入力してください');
     setLoading(true);
     try {
       const coords = await getCoordinates(newItem.address);
-      if (!coords.lat || !coords.lng) {
-        if (!confirm('住所から正確な位置を特定できませんでした。このまま登録しますか？')) {
-          setLoading(false);
-          return;
-        }
-      }
       const initialPassword = Math.random().toString(36).slice(-8);
+      const assignRole = activeTab === 'manager' ? 'MANAGER' : 'USER';
       
-      // =================================================================
-      // ✅ 追加: Supabaseのログインシステム(Auth)にユーザーを登録する
-      // =================================================================
+      // 1. Supabase Auth にアカウント作成
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
         password: initialPassword,
+        options: {
+          data: {
+            full_name: newItem.name,
+            role: assignRole
+          }
+        }
       });
 
-      if (authError) {
-        throw new Error('認証アカウントの作成に失敗しました: ' + authError.message);
-      }
+      if (authError) throw new Error('認証作成失敗: ' + authError.message);
+      if (!authData.user) throw new Error('ユーザーデータが生成されませんでした。');
 
-      // ✅ 追加: profiles テーブルにもユーザー情報を登録 (ログイン後のアクセスエラーを防ぐため)
-      if (authData.user) {
-        const assignRole = activeTab === 'manager' ? 'MANAGER' : 'USER';
-        const { error: profileError } = await supabase.from('profiles').upsert([
-          { id: authData.user.id, role: assignRole }
-        ]);
-        if (profileError) console.error('プロフィール作成エラー:', profileError);
-      }
-      // =================================================================
-
+      // 2. 独自テーブルへの挿入 (AuthのIDを主キーとして使用)
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       
-      const { data: created, error } = await supabase.from(table).insert([{
+      const { data: created, error: insertError } = await supabase.from(table).insert([{
+        id: authData.user.id, // AuthのIDを強制指定
         name: newItem.name,
         email: newItem.email,
         address: newItem.address,
@@ -163,8 +156,12 @@ export default function AdminPropertiesPage() {
         status: 'invited'
       }]).select().single();
 
-      if (error) throw error;
+      if (insertError) {
+        console.error("DB Insert Error:", insertError);
+        throw new Error('テーブル登録に失敗しました。Authのみ作成されました。');
+      }
 
+      // 3. 管理物件の紐付け (管理会社の場合)
       if (activeTab === 'manager' && selectedProps.length > 0) {
         for (const prop of selectedProps) {
           if (!prop.id) continue;
@@ -205,18 +202,16 @@ export default function AdminPropertiesPage() {
   };
 
   const handleResetPassword = async () => {
-    if (!confirm('パスワードを再発行しますか？')) return;
+    if (!confirm('パスワードを再発行しますか？\n※注意: 管理パネル上の表示のみ更新されます。ログインできない場合はSQLでの修復が必要です。')) return;
     const newPassword = Math.random().toString(36).slice(-8);
     try {
-      // ※注意: クライアント側からはSupabase Authの他人のパスワードを直接上書きできません。
-      // 現状はアプリ側のテーブル(stores等)の記録用パスワード文字列を更新するだけの処理です。
-      // 完全にパスワードをリセットするには、バックエンド(API Routes等)経由で Admin API を叩く必要があります。
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).update({
         initial_password: newPassword,
         status: 'invited' 
       }).eq('id', selectedItem.id);
       if (error) throw error;
+      
       setIsManageModalOpen(false);
       setRegisteredInfo({ url: `${window.location.origin}/login`, email: selectedItem.email, pw: newPassword });
     } catch (err: any) {
@@ -225,11 +220,9 @@ export default function AdminPropertiesPage() {
   };
 
   const handleDeleteItem = async () => {
-    if (!confirm('本当に削除しますか？')) return;
+    if (!confirm('本当に削除しますか？ (※Authアカウントは手動削除が必要です)')) return;
     setLoading(true);
     try {
-      // ※注意: こちらも独自のテーブルから削除するだけです。
-      // Supabase Authのアカウント自体を削除するには、同様にサーバー側からの処理が必要です。
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
       if (error) throw error;
@@ -263,11 +256,12 @@ export default function AdminPropertiesPage() {
           </div>
         </header>
 
+        {/* 統計カード */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600', path: '/management/reporting?target=resident' },
-            { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500', path: '/properties' },
-            { label: '分析対象広告', value: stats.totalAds, unit: '本', color: 'text-purple-600', path: '/management/reporting?target=posting' },
-            { label: '掲示板通知数', value: stats.activeNotices, unit: '件', color: 'text-emerald-600', path: '/management/notices' }
+          {[{ label: '登録住民総数', value: stats.totalResidents, unit: '名', color: 'text-blue-600' },
+            { label: '登録店舗・業者', value: stats.totalShops, unit: '件', color: 'text-orange-500' },
+            { label: '分析対象広告', value: stats.totalAds, unit: '本', color: 'text-purple-600' },
+            { label: '掲示板通知数', value: stats.activeNotices, unit: '件', color: 'text-emerald-600' }
           ].map((item, i) => (
             <div key={i} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{item.label}</p>
@@ -279,6 +273,7 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
+        {/* タブ切り替えと新規ボタン */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -292,6 +287,7 @@ export default function AdminPropertiesPage() {
           </button>
         </div>
 
+        {/* リスト表示 */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col relative overflow-hidden">
@@ -311,6 +307,7 @@ export default function AdminPropertiesPage() {
         </div>
       </div>
 
+      {/* 新規登録・完了モーダル */}
       {(isModalOpen || registeredInfo) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
@@ -368,6 +365,7 @@ export default function AdminPropertiesPage() {
         </div>
       )}
 
+      {/* 管理モーダル */}
       {isManageModalOpen && selectedItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
