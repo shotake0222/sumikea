@@ -30,7 +30,6 @@ export default function AdminPropertiesPage() {
     totalShops: 0
   });
 
-  // ✅ データ取得関数をuseEffectの外に定義（再利用しやすくするため）
   const loadInitialData = async () => {
     const [resRes, noticeRes, storeRes, adRes, propRes] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
@@ -129,6 +128,29 @@ export default function AdminPropertiesPage() {
         }
       }
       const initialPassword = Math.random().toString(36).slice(-8);
+      
+      // =================================================================
+      // ✅ 追加: Supabaseのログインシステム(Auth)にユーザーを登録する
+      // =================================================================
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: newItem.email,
+        password: initialPassword,
+      });
+
+      if (authError) {
+        throw new Error('認証アカウントの作成に失敗しました: ' + authError.message);
+      }
+
+      // ✅ 追加: profiles テーブルにもユーザー情報を登録 (ログイン後のアクセスエラーを防ぐため)
+      if (authData.user) {
+        const assignRole = activeTab === 'manager' ? 'MANAGER' : 'USER';
+        const { error: profileError } = await supabase.from('profiles').upsert([
+          { id: authData.user.id, role: assignRole }
+        ]);
+        if (profileError) console.error('プロフィール作成エラー:', profileError);
+      }
+      // =================================================================
+
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       
       const { data: created, error } = await supabase.from(table).insert([{
@@ -186,6 +208,9 @@ export default function AdminPropertiesPage() {
     if (!confirm('パスワードを再発行しますか？')) return;
     const newPassword = Math.random().toString(36).slice(-8);
     try {
+      // ※注意: クライアント側からはSupabase Authの他人のパスワードを直接上書きできません。
+      // 現状はアプリ側のテーブル(stores等)の記録用パスワード文字列を更新するだけの処理です。
+      // 完全にパスワードをリセットするには、バックエンド(API Routes等)経由で Admin API を叩く必要があります。
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).update({
         initial_password: newPassword,
@@ -203,6 +228,8 @@ export default function AdminPropertiesPage() {
     if (!confirm('本当に削除しますか？')) return;
     setLoading(true);
     try {
+      // ※注意: こちらも独自のテーブルから削除するだけです。
+      // Supabase Authのアカウント自体を削除するには、同様にサーバー側からの処理が必要です。
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
       const { error } = await supabase.from(table).delete().eq('id', selectedItem.id);
       if (error) throw error;
@@ -303,6 +330,22 @@ export default function AdminPropertiesPage() {
                     <label className="text-[10px] font-black text-slate-400 ml-2 uppercase">Office/Store Address</label>
                     <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold" placeholder="東京都立川市..." value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   </div>
+                  {activeTab === 'manager' && (
+                    <div className="pt-4 border-t border-slate-100">
+                      <button onClick={addPropField} className="text-[10px] font-black text-blue-600">+ 管理物件を割り当て</button>
+                      <div className="mt-4 space-y-2">
+                        {selectedProps.map((item, index) => (
+                          <div key={index} className="flex gap-2 bg-slate-50 p-2 rounded-xl">
+                            <select className="flex-1 bg-transparent p-2 font-bold text-xs" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
+                              <option value="">物件選択</option>
+                              {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            <div className="w-20 flex items-center justify-center font-black text-blue-600 text-xs bg-white rounded-lg">{item.code}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-3 mt-10">
                   <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px]">キャンセル</button>
