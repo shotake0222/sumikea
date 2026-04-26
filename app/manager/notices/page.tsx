@@ -25,6 +25,7 @@ export default function ManagementNoticePage() {
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
   );
   const [pdfUrl, setPdfUrl] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState(''); // ✅ 追加：表示用ファイル名
   const [uploading, setUploading] = useState(false);
   
   const [loading, setLoading] = useState(true);
@@ -49,7 +50,7 @@ export default function ManagementNoticePage() {
           if (allProps) {
             propertyList = allProps.map(p => ({
               property_id: p.id,
-              properties: { id: p.id, name: p.name } // IDを保持しておく
+              properties: { id: p.id, name: p.name } 
             }));
           }
         } else {
@@ -116,14 +117,25 @@ export default function ManagementNoticePage() {
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // ✅ 重複チェック
+    if (uploadedFileName === file.name) {
+      alert(`「${file.name}」は既に選択されています。`);
+      return;
+    }
+
     setUploading(true);
     try {
-      const url = await uploadImage(file, 'management-docs');
+      // ✅ 修正：バケット名とフォルダ名を指定して日本語エラーを回避
+      const url = await uploadImage(file, 'sumikea-images', 'management-docs');
       setPdfUrl(url);
-    } catch (err) {
-      alert('アップロードに失敗しました');
+      setUploadedFileName(file.name);
+    } catch (err: any) {
+      console.error("アップロード詳細エラー:", err);
+      alert(`アップロードに失敗しました。詳細: ${err.message || 'ファイル名を確認してください。'}`);
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -148,22 +160,19 @@ export default function ManagementNoticePage() {
 
     if (!error) {
       alert('配信が完了しました');
-      setTitle(''); setContent(''); setPdfUrl(''); fetchNoticeHistory(selectedProperty);
+      setTitle(''); setContent(''); setPdfUrl(''); setUploadedFileName(''); fetchNoticeHistory(selectedProperty);
     } else {
       alert('エラー: ' + error.message);
     }
     setIsSubmitting(false);
   };
 
-  // QRコード生成ロジックの修正
   const getQrCodeUrl = () => {
-    // 物件IDをパラメータに含めることで、スキャン時に物件を特定しやすくする
     const baseUrl = "https://posutto.vercel.app/login?type=user";
     const targetUrl = selectedProperty ? `${baseUrl}&prop=${selectedProperty}` : baseUrl;
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(targetUrl)}`;
   };
 
-  // 招待コードの代用ロジック (invite_codeカラムがない場合、IDの先頭6文字を使用)
   const displayInviteCode = selectedPropertyData?.invite_code || (selectedProperty ? selectedProperty.substring(0, 6).toUpperCase() : '------');
 
   if (loading) return (
@@ -288,8 +297,9 @@ export default function ManagementNoticePage() {
                   <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[3rem] h-80 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
                     {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
                       <div className="text-center p-6">
-                        <span className="text-6xl mb-4 block">{pdfUrl ? '📄' : '📤'}</span>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? '添付済み' : '資料を添付'}</p>
+                        <span className="text-6xl mb-4 block">{pdfUrl ? '✅' : '📤'}</span>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? 'READY TO POST' : '資料を添付'}</p>
+                        {uploadedFileName && <p className="mt-2 text-[10px] font-bold text-blue-600 truncate max-w-[150px]">{uploadedFileName}</p>}
                       </div>
                     }
                     <input type="file" className="hidden" onChange={handlePdfUpload} accept="application/pdf,image/*" />
@@ -337,7 +347,6 @@ export default function ManagementNoticePage() {
           </div>
         </div>
 
-        {/* 印刷用モーダル修正 */}
         {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
             <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
@@ -357,7 +366,6 @@ export default function ManagementNoticePage() {
                   <p className="text-sm font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">対象物件名</p>
                   <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name || '---'}</h3>
                   
-                  {/* 招待コード代用表示 */}
                   <div className="bg-slate-50 inline-block p-10 rounded-[4rem] border-2 border-slate-100">
                     <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Your Invitation Code</p>
                     <div className="text-7xl font-black tracking-[0.25em] italic text-slate-900">
@@ -382,7 +390,6 @@ export default function ManagementNoticePage() {
                   </div>
                   <div className="flex flex-col items-center justify-center text-center space-y-6">
                     <div className="p-8 bg-white border-[6px] border-slate-900 rounded-[3rem] shadow-2xl scale-110">
-                      {/* QRコード表示（APIを介して生成） */}
                       {selectedProperty && (
                         <img src={getQrCodeUrl()} alt="Property QR Code" className="w-56 h-56 object-contain" />
                       )}

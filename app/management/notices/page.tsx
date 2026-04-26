@@ -19,7 +19,7 @@ export default function ManagementNoticePage() {
   const [isPermanent, setIsPermanent] = useState(false);
   const [expiresAt, setExpiresAt] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16));
   const [pdfUrl, setPdfUrl] = useState('');
-  const [uploadedFileName, setUploadedFileName] = useState(''); // 表示用ファイル名
+  const [uploadedFileName, setUploadedFileName] = useState(''); // 画面表示用のファイル名
   const [uploading, setUploading] = useState(false);
   
   const [loading, setLoading] = useState(true);
@@ -67,6 +67,13 @@ export default function ManagementNoticePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 🚨 修正: 重複チェック (既に同じ名前のファイルがセットされていないか)
+    if (uploadedFileName === file.name) {
+      alert(`【エラー】「${file.name}」は既に選択されています。`);
+      e.target.value = '';
+      return;
+    }
+
     setUploading(true);
     try {
       // ✅ 修正: 日本語ファイル名エラー回避済みの新uploadImageを呼び出し
@@ -74,13 +81,17 @@ export default function ManagementNoticePage() {
       const url = await uploadImage(file, 'sumikea-images', 'management-docs');
       
       setPdfUrl(url);
-      setUploadedFileName(file.name); // 画面表示用に元の名前を保持
+      setUploadedFileName(file.name); // 画面表示用に「元の名前」を保持
     } catch (err: any) {
       console.error("アップロード詳細エラー:", err);
-      alert(`アップロードに失敗しました。詳細: ${err.message || 'ファイル名に特殊な文字が含まれている可能性があります。'}`);
+      // Row-Level Security (RLS) エラーが出た場合の親切なメッセージ
+      const errorMsg = err.message === 'new row violates row-level security policy' 
+        ? 'サーバー側の保存権限エラーです。SQLでのポリシー設定を再確認してください。'
+        : err.message;
+      alert(`アップロードに失敗しました。詳細: ${errorMsg}`);
     } finally {
       setUploading(false);
-      e.target.value = ''; // インプットをクリア
+      e.target.value = ''; // 連続選択を可能にするためリセット
     }
   };
 
@@ -103,7 +114,11 @@ export default function ManagementNoticePage() {
 
     if (!error) {
       alert('配信・更新が完了しました');
-      setTitle(''); setContent(''); setPdfUrl(''); setUploadedFileName('');
+      // フォームリセット
+      setTitle(''); 
+      setContent(''); 
+      setPdfUrl(''); 
+      setUploadedFileName('');
     } else {
       alert('エラー: ' + error.message);
     }
@@ -227,7 +242,7 @@ export default function ManagementNoticePage() {
                 <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[2.5rem] h-64 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
                   {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
                     <div className="text-center p-6">
-                      <span className="text-5xl mb-4 block">{pdfUrl ? '🖼️' : '📁'}</span>
+                      <span className="text-5xl mb-4 block">{pdfUrl ? '✅' : '📁'}</span>
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                         {pdfUrl ? 'READY TO POST' : 'Upload Image/PDF'}
                       </p>
