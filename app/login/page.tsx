@@ -64,49 +64,76 @@ function LoginContent() {
           .eq('id', data.user.id)
           .single();
 
-        if (profileError) console.error('Profile DB Error:', profileError);
+        if (profileError) {
+          await supabase.auth.signOut(); // プロフィールがない場合も即座に追い出す
+          throw new Error('プロフィールデータが見つかりません');
+        }
 
-        // ロールを正規化（大文字・空白除去）
+        // ロールを正規化
         const dbRole = (profile?.role || 'USER').toUpperCase().trim();
         
+        // ==========================================
+        // 🚨 【最重要】セキュリティ検問ロジック
+        // ==========================================
+        let isAuthorized = false;
+
+        if (typeParam === 'admin') {
+          // ?type=admin のドアを叩いたなら ADMIN 以外は拒否
+          if (dbRole === 'ADMIN') isAuthorized = true;
+        } else if (typeParam === 'manager') {
+          // ?type=manager のドアなら MANAGER（または特権のADMIN）のみ
+          if (dbRole === 'MANAGER' || dbRole === 'ADMIN') isAuthorized = true;
+        } else if (typeParam === 'posting') {
+          // ?type=posting のドアなら POSTING のみ
+          if (dbRole === 'POSTING') isAuthorized = true;
+        } else if (typeParam === 'shop') {
+          // ?type=shop のドアなら SHOP のみ
+          if (dbRole === 'SHOP') isAuthorized = true;
+        } else if (isUserMode) {
+          // ?type=user（住民）のドアなら USER のみ
+          if (dbRole === 'USER') isAuthorized = true;
+        } else {
+          // パラメータがない場合などはデフォルトで許可するが、ADMINやSTAFFはそれぞれのURLへ誘導
+          isAuthorized = true;
+        }
+
+        // 権限がない場合は即座にサインアウトしてエラーを出す
+        if (!isAuthorized) {
+          await supabase.auth.signOut();
+          throw new Error(`このアカウントには、指定された管理画面へのアクセス権限がありません。(Role: ${dbRole})`);
+        }
+
+        // --- 権限が確認できた場合のみ、適切なリダイレクト先を判定 ---
         let targetPath = '';
 
-        // --- ロールに基づいたリダイレクト判定 ---
         if (dbRole === 'ADMIN') {
-          // ADMIN（全体管理者）の場合
+          // ADMINは指定されたパラメータに従うが、基本は管理パネル
           if (typeParam === 'user') targetPath = '/resident/dashboard';
           else if (typeParam === 'manager') targetPath = '/manager/notices'; 
           else if (typeParam === 'posting') targetPath = '/posting/dashboard';
           else if (typeParam === 'shop') targetPath = '/shop/post';
-          // 管理者ログイン（?type=admin）または指定なしの場合は管理パネルへ
           else targetPath = '/admin/properties'; 
         } 
         else if (dbRole === 'MANAGER') {
-          // 管理会社ロールは一律で掲示板管理へ
           targetPath = '/manager/notices'; 
         } 
         else if (dbRole === 'POSTING') {
-          // ポスティング業者
           targetPath = '/posting/dashboard';
         } 
         else if (dbRole === 'SHOP') {
-          // 提携店舗
           targetPath = '/shop/post';
         } 
         else {
-          // 一般住民（USER）
           targetPath = profile?.property_id ? '/resident/dashboard' : '/resident/setup';
         }
 
-        console.log('User Role:', dbRole, 'Redirecting to:', targetPath);
-        
-        // 遷移実行
+        console.log('Authorized Login:', dbRole, 'Redirecting to:', targetPath);
         window.location.href = targetPath;
       }
 
     } catch (err: any) {
       console.error('Auth Error:', err);
-      alert('エラー: ' + err.message);
+      alert('ログイン拒否: ' + err.message);
       setLoading(false);
     }
   };
