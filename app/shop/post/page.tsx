@@ -190,7 +190,8 @@ export default function ShopPostPage() {
       const { error } = await supabase.from('local_ads').insert(insertData);
       if (error) throw error;
 
-      alert(`${nearbyProperties.length}件のマンションへ配信予約が完了しました！`);
+      // 修正ポイント：「配信予約」から「配信」へ変更
+      alert(`${nearbyProperties.length}件のマンションへ配信が完了しました！`);
       
       setTitle(''); 
       setContent(''); 
@@ -265,7 +266,6 @@ export default function ShopPostPage() {
                   />
                 </div>
 
-                {/* 🎯 配信設定：可愛いテイストに刷新 & 修正済みボタン */}
                 <div className="bg-gradient-to-br from-orange-400 to-pink-500 p-8 md:p-12 rounded-[3.5rem] text-white space-y-8 shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
                     <span className="text-[10rem]">🎈</span>
