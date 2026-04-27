@@ -30,7 +30,7 @@ export default function PostingDigitalDashboard() {
   const [radius, setRadius] = useState<number>(3); 
   const [isSearchingArea, setIsSearchingArea] = useState(false);
 
-  // フォーム用ステート（React Hook Formを使わず直接管理することで確実に値をキャッチする）
+  // フォーム用ステート
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [targetPropertyId, setTargetPropertyId] = useState('');
@@ -129,7 +129,8 @@ export default function PostingDigitalDashboard() {
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      const newFilesData = [];
+      // 🎯 修正: 型定義を明示的に指定
+      const newFilesData: { name: string; url: string }[] = [];
       for (let i = 0; i < files.length; i++) {
         const url = await uploadImage(files[i], 'sumikea-images', 'digital-leaflets');
         newFilesData.push({ name: files[i].name, url: url });
@@ -179,11 +180,9 @@ export default function PostingDigitalDashboard() {
     }
   };
 
-  // 🎯 送信ギミック：handleSubmitを使わずステートを直接見てバリデーションする
   const onSendAdManual = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 1. バリデーションチェック
     if (!title) return alert('タイトルを入力してください');
     if (!content) return alert('配信内容を入力してください');
     if (uploadedFiles.length === 0) return alert('チラシPDFをアップロードしてください');
@@ -199,7 +198,7 @@ export default function PostingDigitalDashboard() {
         targetPropertyIds = allProperties.map(p => p.id); 
     }
 
-    if (!confirm(`計 ${targetPropertyIds.length} 件の物件にデジタル投函を開始します。よろしいですか？`)) return;
+    if (!confirm(`計 ${targetPropertyIds.length} 件に投函を開始します。`)) return;
 
     setIsSubmitting(true);
     try {
@@ -219,7 +218,7 @@ export default function PostingDigitalDashboard() {
       const { error } = await supabase.from('digital_flyers').insert(inserts);
       if (error) throw error;
 
-      alert(`計 ${inserts.length} 件に投函を完了しました！`);
+      alert(`投函完了しました！`);
       setTitle(''); setContent(''); setUploadedFiles([]); setAddress('');
       
       const { data: campaigns } = await supabase.from('digital_flyers').select('*').order('created_at', { ascending: false }).limit(3);
@@ -241,10 +240,9 @@ export default function PostingDigitalDashboard() {
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
       <div className="max-w-[1400px] mx-auto">
         
-        {/* ヘッダー統計 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+        <header className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
           <div className="md:col-span-2">
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">Posutto <span className="text-indigo-600">Posting</span></h1>
+            <h1 className="text-4xl font-black italic uppercase">Posutto <span className="text-indigo-600">Posting</span></h1>
             <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2">デジタルチラシ投函コンソール</p>
           </div>
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
@@ -256,15 +254,14 @@ export default function PostingDigitalDashboard() {
           </div>
           <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center">
             <div>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">平均クリック率</p>
+              <p className="text-[10px] font-black text-slate-500 uppercase">平均クリック率</p>
               <p className="text-3xl font-black tracking-tighter">{totalStats.ctr}%</p>
             </div>
           </div>
-        </div>
+        </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-7 space-y-8">
-            {/* 🎯 送信イベントを onSendAdManual に切り替え */}
             <form onSubmit={onSendAdManual} className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
               <h2 className="text-xl font-black text-slate-900 mb-10 flex items-center gap-3 italic uppercase tracking-tighter">
                 <span className="w-2 h-8 bg-indigo-600 rounded-full"></span>
@@ -289,7 +286,7 @@ export default function PostingDigitalDashboard() {
                   {deliveryMode === 'area' && (
                     <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100 space-y-4">
                       <div className="flex gap-4">
-                        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="基準となる住所..." className="flex-1 bg-white p-4 rounded-2xl font-bold text-sm outline-none" />
+                        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="基準住所を入力..." className="flex-1 bg-white p-4 rounded-2xl font-bold text-sm outline-none" />
                         <select value={radius} onChange={(e) => setRadius(Number(e.target.value))} className="bg-white p-4 rounded-2xl font-bold text-sm outline-none w-32">
                           <option value={1}>半径 1km</option>
                           <option value={3}>半径 3km</option>
@@ -297,7 +294,6 @@ export default function PostingDigitalDashboard() {
                         </select>
                       </div>
                       <button type="button" onClick={handleSearchArea} disabled={isSearchingArea} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl text-sm shadow-lg">圏内物件を検索</button>
-                      <p className="text-[10px] font-bold text-indigo-600 text-right">現在: <span className="text-lg font-black">{filteredProperties.length}</span> 件ヒット中</p>
                     </div>
                   )}
 
@@ -309,23 +305,11 @@ export default function PostingDigitalDashboard() {
                   )}
                 </div>
 
-                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black text-slate-400 ml-1">配信開始日時</p>
-                      <input type="datetime-local" value={startDate} onChange={(e)=>setStartDate(e.target.value)} className="w-full bg-white p-5 rounded-2xl font-bold text-sm outline-none shadow-inner" />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black text-slate-400 ml-1">配信終了日時</p>
-                      <input type="datetime-local" value={endDate} onChange={(e)=>setEndDate(e.target.value)} className="w-full bg-white p-5 rounded-2xl font-bold text-sm outline-none shadow-inner" />
-                    </div>
-                </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">チラシPDFデータ</label>
                     <label className="w-full h-40 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all">
                       <span className="text-3xl mb-2">{uploading ? '⏳' : '📄'}</span>
-                      <span className="text-[10px] font-black text-slate-400">{uploading ? 'UP中...' : '資料をドロップ'}</span>
                       <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
                     </label>
                     <div className="space-y-2">
@@ -353,12 +337,11 @@ export default function PostingDigitalDashboard() {
                 </div>
 
                 <div className="space-y-4">
-                  {/* 🎯 value と onChange を明示的にバインド */}
-                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="プッシュ通知のタイトル" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm outline-none" />
-                  <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="通知内容の詳細..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm outline-none resize-none" />
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="通知タイトル" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm outline-none" />
+                  <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="通知内容..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm outline-none resize-none" />
                 </div>
 
-                <button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 text-white py-8 rounded-[2.5rem] font-black text-xl italic hover:bg-indigo-600 transition-all shadow-2xl active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter">
+                <button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 text-white py-8 rounded-[2.5rem] font-black text-xl italic hover:bg-indigo-600 transition-all shadow-2xl active:scale-[0.98]">
                   {isSubmitting ? '処理中...' : 'デジタル投函を実行する'}
                 </button>
               </div>
@@ -367,13 +350,13 @@ export default function PostingDigitalDashboard() {
 
           <div className="lg:col-span-5 space-y-8">
             <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-10 flex items-center justify-between">配信中キャンペーン</h3>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase mb-10">最近のキャンペーン</h3>
               <div className="space-y-8">
                 {recentCampaigns.map((camp, i) => (
                   <div key={i}>
                     <div className="flex justify-between items-start mb-4">
                       <div><span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">LIVE</span><h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4></div>
-                      <div className="text-right"><p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p></div>
+                      <div className="text-right"><p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p></div>
                     </div>
                   </div>
                 ))}
