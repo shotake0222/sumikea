@@ -20,6 +20,11 @@ export default function ManagementNoticePage() {
   const [category, setCategory] = useState('campaign');
   const [status, setStatus] = useState<'published' | 'draft' | 'scheduled'>('published');
   
+  // 🎯 予約配信用の日時ステート（初期値は現在時刻の1時間後）
+  const [scheduledAt, setScheduledAt] = useState(
+    new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)
+  );
+  
   const [isPermanent, setIsPermanent] = useState(false);
   const [expiresAt, setExpiresAt] = useState(
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
@@ -85,7 +90,6 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
-  // 🎯 幽霊データを弾くための Inner Join を適用
   const refreshPropertyList = async (userId: string, role: string, targetNewId?: string) => {
     let propertyList: any[] = [];
     if (role === 'ADMIN') {
@@ -94,7 +98,6 @@ export default function ManagementNoticePage() {
         propertyList = allProps.map(p => ({ property_id: p.id, properties: p }));
       }
     } else {
-      // 幽霊データを無視するために properties!inner(...) を使用
       const { data: managerProps } = await supabase
         .from('property_managers')
         .select('property_id, properties!inner(id, name, invite_code)')
@@ -120,7 +123,6 @@ export default function ManagementNoticePage() {
         fetchNoticeHistory(target.property_id);
       }
     } else {
-      // 物件が全く無い状態
       setSelectedProperty('');
       setSelectedPropertyData(null);
     }
@@ -219,7 +221,6 @@ export default function ManagementNoticePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 🎯 存在確認とIDの厳格化
     const targetPropId = selectedPropertyData?.id || selectedProperty;
     if (!targetPropId || targetPropId.length < 10 || targetPropId === 'undefined') {
         return alert('エラー: 有効な物件が選択されていません。画面をリロードするか、物件を追加してください。');
@@ -231,21 +232,30 @@ export default function ManagementNoticePage() {
         const finalTitle = category === 'urgent' && !title.includes('【重要】') ? `【重要】${title}` : title;
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
-        const { error } = await supabase.from('property_notifications').insert({
-          property_id: targetPropId, // 確実に存在するIDを指定
+        const payload: any = {
+          property_id: targetPropId, 
           title: finalTitle,
           content,
           category,
-          target_audience: ['resident'], // JSONB互換の配列で送信
+          target_audience: ['resident'], 
           pdf_url: combinedPdfUrls,
           is_permanent: isPermanent,
           expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
-          status: status
-        });
+          status: status,
+        };
+
+        // 🎯 予約配信の場合は日時をペイロードに追加
+        if (status === 'scheduled') {
+          payload.published_at = new Date(scheduledAt).toISOString();
+        } else if (status === 'published') {
+          payload.published_at = new Date().toISOString();
+        }
+
+        const { error } = await supabase.from('property_notifications').insert(payload);
 
         if (error) throw error;
 
-        alert('住民へ配信しました！');
+        alert('住民へ配信（または予約）しました！');
         setTitle(''); setContent(''); setUploadedFiles([]); 
         fetchNoticeHistory(targetPropId);
     } catch (err: any) {
@@ -327,15 +337,34 @@ export default function ManagementNoticePage() {
         <div className="flex flex-col xl:flex-row gap-8">
           <div className="flex-1">
             <form onSubmit={handleSubmit} className="bg-white rounded-[4rem] p-8 md:p-14 shadow-2xl border border-slate-50 space-y-12">
-              <div className="flex justify-between items-center border-b border-slate-50 pb-8">
+              
+              {/* 🎯 ステータス選択 ＆ 予約日時指定 */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-50 pb-8 gap-6">
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl">
                   {['published', 'scheduled', 'draft'].map((s) => (
                     <button key={s} type="button" onClick={() => setStatus(s as any)}
                       className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all ${status === s ? 'bg-white shadow-md text-blue-600' : 'text-slate-400'}`}>
-                      {s === 'published' ? '即時配信' : s === 'scheduled' ? '予約' : '下書き'}
+                      {s === 'published' ? '即時配信' : s === 'scheduled' ? '予約配信' : '下書き'}
                     </button>
                   ))}
                 </div>
+
+                {/* 予約配信が選ばれた時のみ出現するピッカー */}
+                {status === 'scheduled' && (
+                  <div className="flex items-center gap-3 bg-slate-50 p-3 px-5 rounded-2xl border border-slate-200 animate-in fade-in slide-in-from-right-4">
+                    <span className="text-xl">⏳</span>
+                    <div className="flex flex-col">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">配信予定日時</label>
+                      <input 
+                        type="datetime-local" 
+                        className="bg-transparent border-none font-bold text-sm outline-none text-slate-700 p-0 focus:ring-0 cursor-pointer"
+                        value={scheduledAt} 
+                        onChange={(e) => setScheduledAt(e.target.value)} 
+                        required={status === 'scheduled'}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
@@ -397,7 +426,7 @@ export default function ManagementNoticePage() {
               </div>
 
               <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3.5rem] font-black text-3xl hover:bg-slate-900 transition-all shadow-2xl disabled:opacity-50 italic uppercase tracking-tighter">
-                {isSubmitting ? 'SENDING...' : '住民へ一斉配信を実行'}
+                {isSubmitting ? 'SENDING...' : status === 'scheduled' ? '配信を予約する' : '住民へ一斉配信を実行'}
               </button>
             </form>
           </div>
@@ -416,7 +445,10 @@ export default function ManagementNoticePage() {
                         </span>
                         <div className="flex-1">
                           <p className="text-sm font-black text-slate-800 line-clamp-2">{notice.title}</p>
-                          <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic tracking-widest">Sent: {new Date(notice.created_at).toLocaleString()}</p>
+                          <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic tracking-widest">
+                            {notice.status === 'scheduled' ? 'Scheduled: ' : 'Sent: '} 
+                            {new Date(notice.published_at || notice.created_at).toLocaleString()}
+                          </p>
                         </div>
                       </div>
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
