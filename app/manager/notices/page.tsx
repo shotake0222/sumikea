@@ -44,7 +44,7 @@ export default function ManagementNoticePage() {
   const [newPropAddress, setNewPropAddress] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // --- 🌐 最強座標取得ロジック ---
+  // --- 🌐 座標取得ロジック ---
   const getCoordinates = async (rawAddress: string) => {
     const normalized = rawAddress
       .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
@@ -53,10 +53,7 @@ export default function ManagementNoticePage() {
       .trim();
 
     const base = normalized.split(' ')[0];
-    const searchPatterns = [
-      normalized, base, base.replace(/-\d+$/, ''), base.replace(/-\d+$/, '').replace(/-\d+$/, ''), base.replace(/\d+.*$/, '')
-    ];
-
+    const searchPatterns = [normalized, base, base.replace(/-\d+$/, ''), base.replace(/\d+.*$/, '')];
     const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 3);
 
     for (const query of uniquePatterns) {
@@ -124,9 +121,6 @@ export default function ManagementNoticePage() {
         setSelectedPropertyData(target.properties);
         fetchNoticeHistory(target.property_id);
       }
-    } else {
-      setSelectedProperty('');
-      setSelectedPropertyData(null);
     }
   };
 
@@ -164,12 +158,6 @@ export default function ManagementNoticePage() {
 
     try {
       const coords = await getCoordinates(newPropAddress);
-      if (!coords.lat || !coords.lng) {
-        if (!confirm(`住所の位置を特定できませんでした。このまま登録しますか？`)) {
-            setIsRegistering(false); return;
-        }
-      }
-
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
       const { data: newProp, error: propError } = await supabase
@@ -179,11 +167,7 @@ export default function ManagementNoticePage() {
 
       if (propError) throw propError;
 
-      const { error: managerError } = await supabase
-        .from('property_managers')
-        .insert([{ property_id: newProp.id, user_id: currentUserId }]);
-
-      if (managerError) throw managerError;
+      await supabase.from('property_managers').insert([{ property_id: newProp.id, user_id: currentUserId }]);
 
       alert(`「${newPropName}」を登録しました。`);
       setNewPropName(''); setNewPropAddress(''); setIsRegisterModalOpen(false);
@@ -223,10 +207,9 @@ export default function ManagementNoticePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 物件配信の場合のみ物件IDをチェック
     const targetPropId = selectedPropertyData?.id || selectedProperty;
-    if (deliveryTarget === 'property' && (!targetPropId || targetPropId.length < 10 || targetPropId === 'undefined')) {
-        return alert('エラー: 有効な物件が選択されていません。');
+    if (deliveryTarget === 'property' && (!targetPropId || targetPropId.length < 10)) {
+        return alert('エラー: 物件が選択されていません。');
     }
 
     setIsSubmitting(true);
@@ -235,7 +218,7 @@ export default function ManagementNoticePage() {
         const finalTitle = category === 'urgent' && !title.includes('【重要】') ? `【重要】${title}` : title;
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
-        // 🎯 ターゲットによって送信先のテーブルを分岐
+        // 🎯 保存先テーブルの分岐
         const tableName = deliveryTarget === 'system' ? 'system_notices' : 'property_notifications';
 
         const payload: any = {
@@ -244,11 +227,15 @@ export default function ManagementNoticePage() {
           category,
           pdf_url: combinedPdfUrls,
           status: status,
-          // 運営連絡には property_id は不要（全ユーザー対象のため）
-          ...(deliveryTarget === 'property' && { property_id: targetPropId, target_audience: ['resident'] }),
           is_permanent: isPermanent,
           expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
         };
+
+        // 物件配信の場合のみプロパティ追加
+        if (deliveryTarget === 'property') {
+          payload.property_id = targetPropId;
+          payload.target_audience = ['resident'];
+        }
 
         if (status === 'scheduled') {
           payload.published_at = new Date(scheduledAt).toISOString();
@@ -257,14 +244,12 @@ export default function ManagementNoticePage() {
         }
 
         const { error } = await supabase.from(tableName).insert(payload);
-
         if (error) throw error;
 
-        alert(deliveryTarget === 'system' ? '全ユーザーへ「運営連絡」を配信しました！' : '住民へ配信（または予約）しました！');
+        alert(deliveryTarget === 'system' ? '全ユーザーへ「運営連絡」を配信しました！' : '住民へ一斉配信しました！');
         setTitle(''); setContent(''); setUploadedFiles([]); 
         if (deliveryTarget === 'property') fetchNoticeHistory(targetPropId);
     } catch (err: any) {
-        console.error("Insert Error Details:", err);
         alert('配信エラー: ' + err.message);
     } finally { setIsSubmitting(false); }
   };
@@ -277,17 +262,12 @@ export default function ManagementNoticePage() {
 
   const displayInviteCode = selectedPropertyData?.invite_code || '------';
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400 italic tracking-[0.2em]">LOADING...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400 italic">LOADING...</div>;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans text-slate-900">
       <style jsx global>{`
-        @media print {
-          body * { visibility: hidden; }
-          #print-area, #print-area * { visibility: visible; }
-          #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none !important; }
-          .no-print { display: none !important; }
-        }
+        @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none !important; } .no-print { display: none !important; } }
         .no-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
 
@@ -296,7 +276,7 @@ export default function ManagementNoticePage() {
           <div className="flex flex-col lg:flex-row justify-between items-start gap-8 mb-12">
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-3">
-                <span className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest italic">Now Editing</span>
+                <span className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Now Editing</span>
                 <h1 className="text-4xl md:text-7xl font-black text-slate-900 tracking-tighter italic uppercase truncate">
                   {deliveryTarget === 'system' ? 'Posutto System Official' : (selectedPropertyData?.name || '---')}
                 </h1>
@@ -305,17 +285,16 @@ export default function ManagementNoticePage() {
                 <p className="text-slate-400 font-bold text-xl flex items-center gap-2">
                   <span className="text-2xl">🏢</span> {deliveryTarget === 'system' ? '運営会社インフォメーション' : '住民お知らせコンソール'}
                 </p>
-                <button onClick={() => setIsRegisterModalOpen(true)} className="bg-slate-900 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg active:scale-95">
+                <button onClick={() => setIsRegisterModalOpen(true)} className="bg-slate-900 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-lg">
                   + 物件を追加登録
                 </button>
               </div>
             </div>
             
-            {/* 🎯 物件切り替えエリア：運営連絡モードの時は非活性に */}
-            <div className={`bg-white p-6 rounded-[2.5rem] shadow-xl border-2 flex items-center gap-6 min-w-[360px] transition-all ${deliveryTarget === 'system' ? 'opacity-30 pointer-events-none border-slate-100' : 'border-blue-50'}`}>
+            <div className={`bg-white p-6 rounded-[2.5rem] shadow-xl border-2 flex items-center gap-6 min-w-[360px] transition-all ${deliveryTarget === 'system' ? 'opacity-30 pointer-events-none' : 'border-blue-50'}`}>
               <div className="flex-1">
-                <label className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] block mb-2 ml-1">操作物件切替</label>
-                <select className="w-full bg-slate-50 p-4 rounded-2xl font-black text-slate-700 outline-none cursor-pointer text-lg focus:ring-2 focus:ring-blue-500 appearance-none"
+                <label className="text-[10px] font-black text-blue-600 uppercase block mb-2">操作物件切替</label>
+                <select className="w-full bg-slate-50 p-4 rounded-2xl font-black text-slate-700 outline-none cursor-pointer text-lg appearance-none"
                     value={selectedProperty} onChange={(e) => handlePropertyChange(e.target.value)}>
                   {managedProperties.map((p, i) => (
                     <option key={p.property_id || i} value={p.property_id}>{p.properties?.name}</option>
@@ -325,44 +304,28 @@ export default function ManagementNoticePage() {
               <div className="w-14 h-14 bg-blue-600 text-white rounded-3xl flex items-center justify-center text-2xl shadow-lg">🔄</div>
             </div>
           </div>
-
-          <div className="bg-slate-900 text-white p-8 md:p-10 rounded-[4rem] shadow-2xl flex flex-col md:flex-row items-center gap-10">
-            <button onClick={() => setShowPrintModal(true)} className="bg-blue-600 text-white w-24 h-24 md:w-32 md:h-32 rounded-[3rem] shadow-lg hover:bg-white hover:text-blue-600 transition-all flex flex-col items-center justify-center gap-1 group">
-              <span className="text-4xl md:text-5xl group-hover:scale-110 transition-transform">🖨️</span>
-              <span className="text-[10px] font-black uppercase">案内印刷</span>
-            </button>
-            <div className="flex-1 text-center md:text-left">
-              <h2 className="text-2xl md:text-3xl font-black mb-3 tracking-tight italic">
-                「{selectedPropertyData?.name || '---'}」の住民登録用チラシを出力
-              </h2>
-              <p className="text-slate-400 text-base font-bold">招待コード「{displayInviteCode}」が記載された専用チラシを出力します。</p>
-            </div>
-          </div>
         </header>
 
         <div className="flex flex-col xl:flex-row gap-8">
           <div className="flex-1">
-            {/* 🎯 運営ターゲット時はカードをインディゴの光で強調 */}
             <form onSubmit={handleSubmit} className={`bg-white rounded-[4rem] p-8 md:p-14 shadow-2xl border-2 space-y-12 transition-all ${deliveryTarget === 'system' ? 'border-indigo-600 ring-4 ring-indigo-50' : 'border-slate-50'}`}>
               
-              {/* 🎯 配信ターゲット切り替えタブ */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-8 gap-8">
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">配信ターゲット</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase italic">配信ターゲット</label>
                   <div className="flex bg-slate-100 p-1.5 rounded-2xl">
                     <button type="button" onClick={() => setDeliveryTarget('property')}
-                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all flex items-center gap-2 ${deliveryTarget === 'property' ? 'bg-white shadow-md text-blue-600' : 'text-slate-400'}`}>
-                      🏢 物件の住民のみ
+                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all ${deliveryTarget === 'property' ? 'bg-white shadow-md text-blue-600' : 'text-slate-400'}`}>
+                      🏢 住民のみ
                     </button>
                     <button type="button" onClick={() => setDeliveryTarget('system')}
-                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all flex items-center gap-2 ${deliveryTarget === 'system' ? 'bg-indigo-600 shadow-md text-white' : 'text-slate-400'}`}>
-                      🌐 運営からの連絡（全ユーザー）
+                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all ${deliveryTarget === 'system' ? 'bg-indigo-600 shadow-md text-white' : 'text-slate-400'}`}>
+                      🌐 運営連絡(全体)
                     </button>
                   </div>
                 </div>
-
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">配信モード</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase italic">配信モード</label>
                   <div className="flex bg-slate-100 p-1.5 rounded-2xl">
                     {['published', 'scheduled', 'draft'].map((s) => (
                       <button key={s} type="button" onClick={() => setStatus(s as any)}
@@ -374,12 +337,11 @@ export default function ManagementNoticePage() {
                 </div>
               </div>
 
-              {/* 予約配信日時 */}
               {status === 'scheduled' && (
-                <div className="bg-blue-50 p-6 rounded-[2.5rem] border-2 border-blue-100 flex items-center gap-6 animate-in slide-in-from-top-4">
+                <div className="bg-blue-50 p-6 rounded-[2.5rem] border-2 border-blue-100 flex items-center gap-6">
                   <span className="text-4xl">⏳</span>
                   <div className="flex-1">
-                    <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2 block">配信予定日時を指定</label>
+                    <label className="text-[10px] font-black text-blue-600 uppercase mb-2 block">配信予定日時</label>
                     <input type="datetime-local" className="w-full bg-white p-4 rounded-xl font-bold text-lg outline-none"
                         value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} required />
                   </div>
@@ -388,7 +350,7 @@ export default function ManagementNoticePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">カテゴリー</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase italic ml-1">カテゴリー</label>
                   <div className="grid grid-cols-2 gap-4">
                     {[{ id: 'urgent', label: '緊急連絡', icon: '🚨' }, { id: 'maintenance', label: '工事・点検', icon: '🔧' }, { id: 'campaign', label: 'お知らせ', icon: '📢' }, { id: 'local', label: '地域情報', icon: '📍' }].map((cat) => (
                       <button key={cat.id} type="button" onClick={() => setCategory(cat.id)}
@@ -398,45 +360,37 @@ export default function ManagementNoticePage() {
                     ))}
                   </div>
                 </div>
-
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">掲載期間設定</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase italic ml-1">掲載期間設定</label>
                   <div className="bg-slate-50 p-8 rounded-[2.5rem] space-y-4 border border-slate-100">
                     <button type="button" onClick={() => setIsPermanent(!isPermanent)}
-                      className={`w-full py-4 rounded-2xl text-[10px] font-black transition-all ${isPermanent ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}>
+                      className={`w-full py-4 rounded-2xl text-[10px] font-black transition-all ${isPermanent ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>
                       {isPermanent ? '✅ 常にトップに固定' : '掲載終了日時を指定する'}
                     </button>
                     {!isPermanent && (
-                      <input type="datetime-local" className="w-full p-4 rounded-xl border-none font-bold text-sm outline-none shadow-inner" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+                      <input type="datetime-local" className="w-full p-4 rounded-xl font-bold text-sm outline-none" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
                     )}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-10">
-                <input className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] text-2xl font-black text-slate-900 outline-none placeholder:text-slate-200 focus:ring-4 focus:ring-blue-100"
-                    value={title} onChange={(e) => setTitle(e.target.value)} placeholder="配信タイトルを入力してください" required />
-                
+                <input className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] text-2xl font-black outline-none focus:ring-4 focus:ring-blue-100"
+                    value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトルを入力" required />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                  <textarea className="md:col-span-2 w-full bg-slate-50 border-none p-10 rounded-[3rem] h-80 text-slate-700 outline-none resize-none leading-relaxed text-lg font-medium focus:ring-4 focus:ring-blue-100"
+                  <textarea className="md:col-span-2 w-full bg-slate-50 border-none p-10 rounded-[3rem] h-80 outline-none leading-relaxed text-lg font-medium focus:ring-4 focus:ring-blue-100"
                       value={content} onChange={(e) => setContent(e.target.value)} placeholder="本文を入力..." required />
-                  
                   <div className="space-y-4">
                     <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[3rem] h-60 cursor-pointer transition-all ${uploadedFiles.length > 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
                         {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
-                        <div className="text-center p-6">
-                            <span className="text-5xl mb-4 block">📤</span>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">資料を追加添付</p>
-                        </div>
-                        }
+                        <div className="text-center p-6"><span className="text-5xl mb-4 block">📤</span><p className="text-[10px] font-black uppercase text-slate-500">資料添付</p></div>}
                         <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
                     </label>
-
                     <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
                         {uploadedFiles.map((file, idx) => (
                             <div key={idx} className="bg-white border border-slate-100 p-3 rounded-2xl flex items-center justify-between shadow-sm">
                                 <span className="text-[10px] font-bold text-slate-600 truncate max-w-[120px]">{file.name}</span>
-                                <button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-600 px-2 font-black text-xs transition-colors">✕</button>
+                                <button type="button" onClick={() => removeFile(idx)} className="text-red-400 px-2 font-black text-xs">✕</button>
                             </div>
                         ))}
                     </div>
@@ -445,128 +399,33 @@ export default function ManagementNoticePage() {
               </div>
 
               <button type="submit" disabled={isSubmitting} 
-                  className={`w-full py-10 rounded-[3.5rem] font-black text-3xl transition-all shadow-2xl disabled:opacity-50 italic uppercase tracking-tighter ${deliveryTarget === 'system' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-blue-600 hover:bg-slate-900 text-white'}`}>
-                {isSubmitting ? 'SENDING...' : deliveryTarget === 'system' ? '📢 運営連絡として全ユーザーに配信' : '住民へ一斉配信を実行'}
+                  className={`w-full py-10 rounded-[3.5rem] font-black text-3xl transition-all shadow-2xl italic uppercase ${deliveryTarget === 'system' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-blue-600 hover:bg-slate-900 text-white'}`}>
+                {isSubmitting ? 'SENDING...' : deliveryTarget === 'system' ? '📢 運営連絡として全体配信' : '住民へ一斉配信を実行'}
               </button>
             </form>
           </div>
 
-          <div className="w-full xl:w-96 space-y-6">
+          <div className="w-full xl:w-96">
             <div className={`bg-white rounded-[4rem] p-10 shadow-sm border border-slate-100 sticky top-10 transition-all ${deliveryTarget === 'system' ? 'opacity-30 blur-[2px]' : ''}`}>
-              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-10">物件の最近の配信履歴</h3>
+              <h3 className="text-[11px] font-black uppercase text-slate-400 italic mb-10">配信履歴</h3>
               <div className="space-y-12">
-                {recentNotices.length > 0 ? recentNotices.map((notice) => {
-                  const readRate = notice.total_residents > 0 ? Math.round((notice.actual_read_count / notice.total_residents) * 100) : 0;
-                  return (
-                    <div key={notice.id} className="group border-b border-slate-50 pb-8 last:border-0">
-                      <div className="flex gap-4 items-start mb-6">
-                        <span className="text-lg bg-slate-50 w-12 h-12 rounded-2xl flex items-center justify-center group-hover:bg-blue-50">
-                          {notice.category === 'urgent' ? '🚨' : '📢'}
-                        </span>
-                        <div className="flex-1">
-                          <p className="text-sm font-black text-slate-800 line-clamp-2">{notice.title}</p>
-                          <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic tracking-widest">
-                            {notice.status === 'scheduled' ? 'Scheduled: ' : 'Sent: '} 
-                            {new Date(notice.published_at || notice.created_at).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                        <div className="flex justify-between items-end mb-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase italic tracking-wider">Read Status</span>
-                          <span className="text-xs font-black text-blue-600">{notice.actual_read_count} / {notice.total_residents}</span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                          <div className="bg-blue-600 h-full transition-all duration-700" style={{ width: `${readRate}%` }}></div>
-                        </div>
+                {recentNotices.length > 0 ? recentNotices.map((notice) => (
+                  <div key={notice.id} className="group border-b border-slate-50 pb-8 last:border-0">
+                    <div className="flex gap-4 items-start mb-6">
+                      <span className="text-lg bg-slate-50 w-12 h-12 rounded-2xl flex items-center justify-center group-hover:bg-blue-50">
+                        {notice.category === 'urgent' ? '🚨' : '📢'}
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm font-black text-slate-800 line-clamp-2">{notice.title}</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic">{new Date(notice.published_at || notice.created_at).toLocaleString()}</p>
                       </div>
                     </div>
-                  );
-                }) : <p className="text-center text-slate-300 font-bold py-10">履歴なし</p>}
+                  </div>
+                )) : <p className="text-center text-slate-300 font-bold py-10">履歴なし</p>}
               </div>
             </div>
           </div>
         </div>
-
-        {/* --- 物件登録モーダル --- */}
-        {isRegisterModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[150] flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-xl rounded-[4rem] p-10 shadow-2xl animate-in zoom-in duration-300">
-              <h3 className="text-3xl font-black italic uppercase mb-8 tracking-tighter">新規物件を <span className="text-blue-600">登録</span></h3>
-              <form onSubmit={handleRegisterProperty} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">物件名称</label>
-                  <input className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" placeholder="例：スカイハイツ立川" value={newPropName} onChange={(e) => setNewPropName(e.target.value)} required />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">所在地（住所）</label>
-                  <input className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" placeholder="東京都立川市羽衣町1-1" value={newPropAddress} onChange={(e) => setNewPropAddress(e.target.value)} required />
-                </div>
-                <div className="flex gap-4 pt-6">
-                  <button type="button" onClick={() => setIsRegisterModalOpen(false)} className="flex-1 py-5 rounded-[2rem] font-black text-slate-400 uppercase tracking-widest">Cancel</button>
-                  <button type="submit" disabled={isRegistering} className="flex-1 bg-blue-600 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all">
-                    {isRegistering ? '座標特定中...' : '登録完了'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* --- 案内印刷モーダル --- */}
-        {showPrintModal && (
-          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4 overflow-y-auto" onClick={() => setShowPrintModal(false)}>
-            <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-end mb-6 gap-4 no-print">
-                <button onClick={() => window.print()} className="bg-blue-600 text-white px-10 py-4 rounded-full font-black shadow-2xl hover:bg-blue-700 transition-all flex items-center gap-3 scale-110">
-                   <span>🖨️</span> 印刷を開始
-                </button>
-                <button onClick={() => setShowPrintModal(false)} className="bg-white/10 text-white px-8 py-4 rounded-full font-black backdrop-blur-md">閉じる</button>
-              </div>
-
-              <div id="print-area" className="bg-white p-12 md:p-20 shadow-2xl rounded-sm text-slate-900 border-[16px] border-blue-600">
-                <div className="text-center mb-16">
-                  <h2 className="text-6xl font-black italic tracking-tighter text-blue-600 mb-2 uppercase">Posutto</h2>
-                  <p className="text-2xl font-bold tracking-[0.3em] text-slate-300 italic uppercase">Resident Portal</p>
-                </div>
-                <div className="border-y-[6px] border-slate-50 py-12 mb-12 text-center">
-                  <p className="text-sm font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">対象物件名</p>
-                  <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name || '---'}</h3>
-                  <div className="bg-slate-50 inline-block p-10 rounded-[4rem] border-2 border-slate-100">
-                    <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Your Invitation Code</p>
-                    <div className="text-7xl font-black tracking-[0.25em] italic text-slate-900">{displayInviteCode}</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center mb-20 text-left">
-                  <div className="space-y-8">
-                    <h4 className="text-3xl font-black border-l-[12px] border-blue-600 pl-6 mb-10 italic">ご利用の手順</h4>
-                    <div className="space-y-10">
-                      {[
-                        { step: '1', title: 'スキャン', desc: '右記のQRコードをスマホで読み取ります。' },
-                        { step: '2', title: '登録', desc: 'メールアドレスと任意のパスワードを入力して登録。' },
-                        { step: '3', title: 'コード入力', desc: `招待コード [ ${displayInviteCode} ] を入力。` },
-                        { step: '4', title: '完了', desc: '物件掲示板やゴミ出しカレンダーがいつでもスマホで確認可能に！' }
-                      ].map((item) => (
-                        <div key={item.step} className="flex gap-6 items-start">
-                          <span className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shrink-0 text-xl shadow-lg">{item.step}</span>
-                          <div><p className="font-black text-2xl">{item.title}</p><p className="text-sm text-slate-500 font-bold leading-relaxed">{item.desc}</p></div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-center justify-center text-center space-y-6">
-                    <div className="p-8 bg-white border-[6px] border-slate-900 rounded-[3rem] shadow-2xl scale-110">
-                      {selectedProperty && <img src={getQrCodeUrl()} alt="Property QR Code" className="w-56 h-56 object-contain" />}
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-blue-600 rounded-[4rem] p-12 text-white text-center shadow-xl">
-                  <h4 className="text-2xl font-black italic tracking-tighter">マンションの暮らしをもっとスマートに。</h4>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
