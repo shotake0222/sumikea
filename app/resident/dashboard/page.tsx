@@ -107,7 +107,7 @@ export default function ResidentDashboard() {
       setGarbageContact(prof?.garbage_contact_info || '');
 
       if (prof?.property_id) {
-        // 🎯 修正: 全ての有効なデジタル投函チラシを取得（limit(1)を削除）
+        // 全ての有効なデジタル投函チラシを取得
         const { data: flyers } = await supabase
           .from('digital_flyers')
           .select('*')
@@ -225,32 +225,34 @@ export default function ResidentDashboard() {
 
       <div className="px-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 🎯 1. 重要ポスト（複数投函に対応したループ表示） */}
-        <section className="space-y-4">
+        {/* 🎯 1. 重要ポスト（複数表示：縦に並べて全件表示） */}
+        <section className="space-y-6">
           <div className="flex items-center gap-3 px-4">
             <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">{t.postTitle}</h2>
           </div>
 
           {translatedPriorities.length > 0 ? (
-            <div className="flex overflow-x-auto gap-4 pb-4 px-1 snap-x no-scrollbar custom-scrollbar">
+            <div className="space-y-6">
               {translatedPriorities.map((post) => (
                 <div 
                   key={post.id}
                   onClick={() => handleAdInteraction(post)}
-                  className="min-w-[85%] bg-slate-900 rounded-[3rem] shadow-2xl border border-slate-800 p-8 snap-center text-white relative group active:scale-[0.98] transition-transform"
+                  className="bg-slate-900 rounded-[3.5rem] shadow-2xl border border-slate-800 p-10 text-white relative group active:scale-[0.98] transition-all cursor-pointer"
                 >
-                  <div className="absolute top-4 right-6 opacity-10 text-5xl">📬</div>
-                  <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block shadow-lg">NEW POST</span>
-                  <h3 className="text-xl font-black leading-tight mb-4 italic tracking-tight line-clamp-2 underline decoration-blue-500/50 underline-offset-4">
-                      {post.title}
-                  </h3>
-                  <p className="text-[12px] text-slate-300 leading-relaxed font-medium bg-white/5 p-4 rounded-2xl border border-white/5 line-clamp-3">
-                      {post.content}
-                  </p>
-                  <div className="mt-6 flex items-center gap-2 text-blue-400 font-black text-[9px] uppercase tracking-widest">
-                      <span>Tap to open PDF flyer</span>
-                      <span className="animate-bounce">→</span>
+                  <div className="absolute top-6 right-8 opacity-10 text-6xl">📬</div>
+                  <div className="relative z-10">
+                    <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block shadow-lg">NEW DIGITAL POST</span>
+                    <h3 className="text-2xl font-black leading-tight mb-4 italic tracking-tight underline decoration-blue-500/50 underline-offset-4">
+                        {post.title}
+                    </h3>
+                    <p className="text-[14px] text-slate-300 leading-relaxed font-medium bg-white/5 p-6 rounded-[2rem] border border-white/5">
+                        {post.content}
+                    </p>
+                    <div className="mt-6 flex items-center gap-2 text-blue-400 font-black text-[10px] uppercase tracking-widest">
+                        <span>Tap to view flyer PDF</span>
+                        <span className="animate-bounce">→</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -269,7 +271,7 @@ export default function ResidentDashboard() {
             <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-8 text-center italic">— {t.boardTitle} —</h2>
             {translatedNotices.length > 0 ? (
               <div className="space-y-8 animate-in fade-in duration-1000">
-                {translatedNotices.slice(0, 3).map((notice, i) => (
+                {translatedNotices.slice(0, 5).map((notice, i) => (
                     <div key={notice.id} className={`${i !== 0 ? 'pt-8 border-t border-slate-50' : ''}`}>
                         <h3 className="text-lg font-black text-slate-900 leading-tight tracking-tight mb-4">{notice.title}</h3>
                         <div className="text-[14px] text-slate-600 leading-relaxed bg-[#F9FBFF] p-6 rounded-[2rem] whitespace-pre-wrap font-medium border border-slate-100">
@@ -363,16 +365,6 @@ export default function ResidentDashboard() {
           </button>
         </nav>
       </div>
-
-      <style jsx>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
     </div>
   );
 }
