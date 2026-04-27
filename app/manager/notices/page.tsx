@@ -26,8 +26,6 @@ export default function ManagementNoticePage() {
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
   );
   
-  // 複数PDF対応のための状態
-  const [pdfUrls, setPdfUrls] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, url: string}[]>([]);
   const [uploading, setUploading] = useState(false);
   
@@ -50,11 +48,7 @@ export default function ManagementNoticePage() {
 
     const base = normalized.split(' ')[0];
     const searchPatterns = [
-      normalized,
-      base,
-      base.replace(/-\d+$/, ''),
-      base.replace(/-\d+$/, '').replace(/-\d+$/, ''),
-      base.replace(/\d+.*$/, '')
+      normalized, base, base.replace(/-\d+$/, ''), base.replace(/-\d+$/, '').replace(/-\d+$/, ''), base.replace(/\d+.*$/, '')
     ];
 
     const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 3);
@@ -66,13 +60,9 @@ export default function ManagementNoticePage() {
           { headers: { 'User-Agent': 'PosuttoManager/1.3' } }
         );
         const data = await response.json();
-        if (data && data.length > 0) {
-          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-        }
+        if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         await new Promise(r => setTimeout(r, 200));
-      } catch (err) {
-        console.error('Geocoder Error:', err);
-      }
+      } catch (err) { console.error('Geocoder Error:', err); }
     }
     return { lat: null, lng: null };
   };
@@ -91,11 +81,7 @@ export default function ManagementNoticePage() {
         if (role !== 'ADMIN' && role !== 'MANAGER') { router.push('/login?type=manager'); return; }
         
         await refreshPropertyList(user.id, role);
-      } catch (err) {
-        console.error('データ取得エラー:', err);
-      } finally {
-        setLoading(false);
-      }
+      } catch (err) { console.error('データ取得エラー:', err); } finally { setLoading(false); }
     };
     fetchAuthAndData();
   }, [router]);
@@ -105,10 +91,7 @@ export default function ManagementNoticePage() {
     if (role === 'ADMIN') {
       const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
       if (allProps) {
-        propertyList = allProps.map(p => ({
-          property_id: p.id,
-          properties: p
-        }));
+        propertyList = allProps.map(p => ({ property_id: p.id, properties: p }));
       }
     } else {
       const { data: managerProps } = await supabase
@@ -134,6 +117,7 @@ export default function ManagementNoticePage() {
   };
 
   const fetchNoticeHistory = async (propId: string) => {
+    if (!propId) return;
     try {
       const { data: notices } = await supabase
         .from('property_notifications')
@@ -156,37 +140,28 @@ export default function ManagementNoticePage() {
         }));
         setRecentNotices(formatted);
       }
-    } catch (err) {
-      console.error('履歴取得エラー:', err);
-    }
+    } catch (err) { console.error('履歴取得エラー:', err); }
   };
 
   const handleRegisterProperty = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPropName || !newPropAddress) return;
+    if (!newPropName || !newPropAddress || isRegistering) return;
     setIsRegistering(true);
 
     try {
       const coords = await getCoordinates(newPropAddress);
-      
       if (!coords.lat || !coords.lng) {
-        const proceed = confirm(`住所の位置を特定できませんでした。このまま登録しますか？`);
-        if (!proceed) { setIsRegistering(false); return; }
+        if (!confirm(`住所の位置を特定できませんでした。このまま登録しますか？`)) {
+            setIsRegistering(false); return;
+        }
       }
 
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
       const { data: newProp, error: propError } = await supabase
         .from('properties')
-        .insert([{ 
-          name: newPropName, 
-          address: newPropAddress,
-          invite_code: inviteCode,
-          lat: coords.lat,
-          lng: coords.lng
-        }])
-        .select()
-        .single();
+        .insert([{ name: newPropName, address: newPropAddress, invite_code: inviteCode, lat: coords.lat, lng: coords.lng }])
+        .select().single();
 
       if (propError) throw propError;
 
@@ -200,16 +175,14 @@ export default function ManagementNoticePage() {
       setNewPropName(''); setNewPropAddress(''); setIsRegisterModalOpen(false);
       
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', currentUserId).single();
+      // 重要：登録直後にステートを更新して selectedProperty に新しい ID をセットする
       await refreshPropertyList(currentUserId, profile?.role || 'MANAGER', newProp.id);
 
-    } catch (err: any) {
-      alert('物件登録エラー: ' + err.message);
-    } finally {
-      setIsRegistering(false);
-    }
+    } catch (err: any) { alert('物件登録エラー: ' + err.message); } finally { setIsRegistering(false); }
   };
 
   const handlePropertyChange = (propId: string) => {
+    if (!propId) return;
     setSelectedProperty(propId);
     const found = managedProperties.find(p => p.property_id === propId);
     if (found) {
@@ -218,7 +191,6 @@ export default function ManagementNoticePage() {
     }
   };
 
-  // 🎯 複数ファイルアップロード対応
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -230,35 +202,32 @@ export default function ManagementNoticePage() {
         newUploadedFiles.push({ name: files[i].name, url: url });
       }
       setUploadedFiles(newUploadedFiles);
-    } catch (err: any) {
-      alert(`アップロード失敗: ${err.message}`);
-    } finally {
-      setUploading(false);
-      e.target.value = '';
-    }
+    } catch (err: any) { alert(`アップロード失敗: ${err.message}`); } finally { setUploading(false); e.target.value = ''; }
   };
 
-  const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-  };
+  const removeFile = (index: number) => setUploadedFiles(prev => prev.filter((_, i) => i !== index));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProperty) return alert('物件を選択してください');
+    
+    // 🎯 外国キーエラーを防ぐための徹底ガード
+    if (!selectedProperty || selectedProperty === 'undefined') {
+        return alert('物件が正しく選択されていません。物件リストから選び直してください。');
+    }
+
     setIsSubmitting(true);
     
     try {
         const finalTitle = category === 'urgent' && !title.includes('【重要】') ? `【重要】${title}` : title;
-        // 複数URLをカンマ区切りで結合
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
         const { error } = await supabase.from('property_notifications').insert({
-          property_id: selectedProperty,
+          property_id: selectedProperty, // propertiesテーブルに実在するID
           title: finalTitle,
           content,
           category,
           target_audience: targetAudience,
-          pdf_url: combinedPdfUrls, // 複数URL対応
+          pdf_url: combinedPdfUrls,
           is_permanent: isPermanent,
           expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
           status: status
@@ -270,10 +239,9 @@ export default function ManagementNoticePage() {
         setTitle(''); setContent(''); setUploadedFiles([]); 
         fetchNoticeHistory(selectedProperty);
     } catch (err: any) {
+        console.error("FKEY Error Info:", selectedProperty);
         alert('配信エラー: ' + err.message);
-    } finally {
-        setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   };
 
   const getQrCodeUrl = () => {
@@ -284,7 +252,7 @@ export default function ManagementNoticePage() {
 
   const displayInviteCode = selectedPropertyData?.invite_code || '------';
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400 italic">LOADING...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-slate-400 italic tracking-[0.2em]">LOADING...</div>;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans text-slate-900">
@@ -380,18 +348,18 @@ export default function ManagementNoticePage() {
                       {isPermanent ? '✅ 常にトップに固定' : '掲載終了日時を指定する'}
                     </button>
                     {!isPermanent && (
-                      <input type="datetime-local" className="w-full p-4 rounded-xl border-none font-bold text-sm outline-none" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+                      <input type="datetime-local" className="w-full p-4 rounded-xl border-none font-bold text-sm outline-none shadow-inner" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
                     )}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-10">
-                <input className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] text-2xl font-black text-slate-900 outline-none placeholder:text-slate-200"
+                <input className="w-full bg-slate-50 border-none p-8 rounded-[2.5rem] text-2xl font-black text-slate-900 outline-none placeholder:text-slate-200 focus:ring-4 focus:ring-blue-100"
                     value={title} onChange={(e) => setTitle(e.target.value)} placeholder="配信タイトルを入力してください" required />
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                  <textarea className="md:col-span-2 w-full bg-slate-50 border-none p-10 rounded-[3rem] h-80 text-slate-700 outline-none resize-none leading-relaxed text-lg font-medium"
+                  <textarea className="md:col-span-2 w-full bg-slate-50 border-none p-10 rounded-[3rem] h-80 text-slate-700 outline-none resize-none leading-relaxed text-lg font-medium focus:ring-4 focus:ring-blue-100"
                       value={content} onChange={(e) => setContent(e.target.value)} placeholder="本文を入力..." required />
                   
                   <div className="space-y-4">
@@ -405,12 +373,11 @@ export default function ManagementNoticePage() {
                         <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
                     </label>
 
-                    {/* 📎 アップロード済みファイルリスト */}
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
                         {uploadedFiles.map((file, idx) => (
                             <div key={idx} className="bg-white border border-slate-100 p-3 rounded-2xl flex items-center justify-between shadow-sm">
                                 <span className="text-[10px] font-bold text-slate-600 truncate max-w-[120px]">{file.name}</span>
-                                <button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-600 px-2 font-black text-xs">✕</button>
+                                <button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-600 px-2 font-black text-xs transition-colors">✕</button>
                             </div>
                         ))}
                     </div>
@@ -418,8 +385,8 @@ export default function ManagementNoticePage() {
                 </div>
               </div>
 
-              <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3.5rem] font-black text-3xl hover:bg-slate-900 transition-all shadow-2xl disabled:opacity-50 italic">
-                {isSubmitting ? '処理中...' : '住民へ一斉配信を実行'}
+              <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3.5rem] font-black text-3xl hover:bg-slate-900 transition-all shadow-2xl disabled:opacity-50 italic uppercase tracking-tighter">
+                {isSubmitting ? 'SENDING...' : '住民へ一斉配信を実行'}
               </button>
             </form>
           </div>
@@ -438,7 +405,6 @@ export default function ManagementNoticePage() {
                         </span>
                         <div className="flex-1">
                           <p className="text-sm font-black text-slate-800 line-clamp-2">{notice.title}</p>
-                          {/* 🕒 履歴にも投函日時を表示 */}
                           <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic tracking-widest">Sent: {new Date(notice.created_at).toLocaleString()}</p>
                         </div>
                       </div>
@@ -448,7 +414,7 @@ export default function ManagementNoticePage() {
                           <span className="text-xs font-black text-blue-600">{notice.actual_read_count} / {notice.total_residents}</span>
                         </div>
                         <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                          <div className="bg-blue-600 h-full transition-all" style={{ width: `${readRate}%` }}></div>
+                          <div className="bg-blue-600 h-full transition-all duration-700" style={{ width: `${readRate}%` }}></div>
                         </div>
                       </div>
                     </div>
@@ -462,7 +428,7 @@ export default function ManagementNoticePage() {
         {/* --- 物件登録モーダル --- */}
         {isRegisterModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[150] flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-xl rounded-[4rem] p-10 shadow-2xl">
+            <div className="bg-white w-full max-w-xl rounded-[4rem] p-10 shadow-2xl animate-in zoom-in duration-300">
               <h3 className="text-3xl font-black italic uppercase mb-8 tracking-tighter">新規物件を <span className="text-blue-600">登録</span></h3>
               <form onSubmit={handleRegisterProperty} className="space-y-6">
                 <div className="space-y-2">
@@ -470,9 +436,7 @@ export default function ManagementNoticePage() {
                   <input className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" placeholder="例：スカイハイツ立川" value={newPropName} onChange={(e) => setNewPropName(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex justify-between">
-                    <span>所在地（住所）</span>
-                  </label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">所在地（住所）</label>
                   <input className="w-full bg-slate-50 p-6 rounded-[2.5rem] font-black text-xl outline-none focus:ring-4 focus:ring-blue-100" placeholder="東京都立川市羽衣町1-1" value={newPropAddress} onChange={(e) => setNewPropAddress(e.target.value)} required />
                 </div>
                 <div className="flex gap-4 pt-6">
@@ -505,12 +469,9 @@ export default function ManagementNoticePage() {
                 <div className="border-y-[6px] border-slate-50 py-12 mb-12 text-center">
                   <p className="text-sm font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">対象物件名</p>
                   <h3 className="text-5xl font-black tracking-tight mb-12">{selectedPropertyData?.name || '---'}</h3>
-                  
                   <div className="bg-slate-50 inline-block p-10 rounded-[4rem] border-2 border-slate-100">
                     <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Your Invitation Code</p>
-                    <div className="text-7xl font-black tracking-[0.25em] italic text-slate-900">
-                      {displayInviteCode}
-                    </div>
+                    <div className="text-7xl font-black tracking-[0.25em] italic text-slate-900">{displayInviteCode}</div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center mb-20 text-left">
@@ -525,21 +486,15 @@ export default function ManagementNoticePage() {
                       ].map((item) => (
                         <div key={item.step} className="flex gap-6 items-start">
                           <span className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shrink-0 text-xl shadow-lg">{item.step}</span>
-                          <div>
-                            <p className="font-black text-2xl">{item.title}</p>
-                            <p className="text-sm text-slate-500 font-bold leading-relaxed">{item.desc}</p>
-                          </div>
+                          <div><p className="font-black text-2xl">{item.title}</p><p className="text-sm text-slate-500 font-bold leading-relaxed">{item.desc}</p></div>
                         </div>
                       ))}
                     </div>
                   </div>
                   <div className="flex flex-col items-center justify-center text-center space-y-6">
                     <div className="p-8 bg-white border-[6px] border-slate-900 rounded-[3rem] shadow-2xl scale-110">
-                      {selectedProperty && (
-                        <img src={getQrCodeUrl()} alt="Property QR Code" className="w-56 h-56 object-contain" />
-                      )}
+                      {selectedProperty && <img src={getQrCodeUrl()} alt="Property QR Code" className="w-56 h-56 object-contain" />}
                     </div>
-                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-4">Scan to start</p>
                   </div>
                 </div>
                 <div className="bg-blue-600 rounded-[4rem] p-12 text-white text-center shadow-xl">
