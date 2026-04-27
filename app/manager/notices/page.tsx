@@ -86,12 +86,16 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
+  // 🎯 物件リスト取得ロジックの修正
   const refreshPropertyList = async (userId: string, role: string, targetNewId?: string) => {
     let propertyList: any[] = [];
     if (role === 'ADMIN') {
       const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
       if (allProps) {
-        propertyList = allProps.map(p => ({ property_id: p.id, properties: p }));
+        propertyList = allProps.map(p => ({
+          property_id: p.id,
+          properties: p
+        }));
       }
     } else {
       const { data: managerProps } = await supabase
@@ -103,21 +107,24 @@ export default function ManagementNoticePage() {
     
     setManagedProperties(propertyList);
 
+    // デフォルト選択物件の決定
     if (propertyList.length > 0) {
       const target = targetNewId 
         ? propertyList.find(p => p.property_id === targetNewId) 
         : propertyList[0];
       
       if (target) {
-        setSelectedProperty(target.property_id);
+        // 重要：IDとデータを確実にセット
+        const cleanId = target.property_id;
+        setSelectedProperty(cleanId);
         setSelectedPropertyData(target.properties);
-        fetchNoticeHistory(target.property_id);
+        fetchNoticeHistory(cleanId);
       }
     }
   };
 
   const fetchNoticeHistory = async (propId: string) => {
-    if (!propId) return;
+    if (!propId || propId === 'undefined') return;
     try {
       const { data: notices } = await supabase
         .from('property_notifications')
@@ -175,14 +182,14 @@ export default function ManagementNoticePage() {
       setNewPropName(''); setNewPropAddress(''); setIsRegisterModalOpen(false);
       
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', currentUserId).single();
-      // 重要：登録直後にステートを更新して selectedProperty に新しい ID をセットする
+      // 新規物件IDを渡してリスト更新
       await refreshPropertyList(currentUserId, profile?.role || 'MANAGER', newProp.id);
 
     } catch (err: any) { alert('物件登録エラー: ' + err.message); } finally { setIsRegistering(false); }
   };
 
   const handlePropertyChange = (propId: string) => {
-    if (!propId) return;
+    if (!propId || propId === 'undefined') return;
     setSelectedProperty(propId);
     const found = managedProperties.find(p => p.property_id === propId);
     if (found) {
@@ -210,9 +217,9 @@ export default function ManagementNoticePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 🎯 外国キーエラーを防ぐための徹底ガード
-    if (!selectedProperty || selectedProperty === 'undefined') {
-        return alert('物件が正しく選択されていません。物件リストから選び直してください。');
+    // 🎯 送信直前の ID バリデーション
+    if (!selectedProperty || selectedProperty.length < 10 || selectedProperty === 'undefined') {
+        return alert('エラー: 物件が正しく選択されていません。リストから選択し直してください。');
     }
 
     setIsSubmitting(true);
@@ -222,7 +229,7 @@ export default function ManagementNoticePage() {
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
         const { error } = await supabase.from('property_notifications').insert({
-          property_id: selectedProperty, // propertiesテーブルに実在するID
+          property_id: selectedProperty, // ここが properties テーブルの ID と完全一致する必要があります
           title: finalTitle,
           content,
           category,
@@ -239,7 +246,7 @@ export default function ManagementNoticePage() {
         setTitle(''); setContent(''); setUploadedFiles([]); 
         fetchNoticeHistory(selectedProperty);
     } catch (err: any) {
-        console.error("FKEY Error Info:", selectedProperty);
+        console.error("FKEY Error with ID:", selectedProperty);
         alert('配信エラー: ' + err.message);
     } finally { setIsSubmitting(false); }
   };
