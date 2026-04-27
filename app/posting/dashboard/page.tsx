@@ -24,6 +24,9 @@ export default function PostingDigitalDashboard() {
   const [filteredProperties, setFilteredProperties] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
+  
+  // 🎯 追加: 運営会社からの連絡用ステート
+  const [systemNotices, setSystemNotices] = useState<any[]>([]);
 
   const [deliveryMode, setDeliveryMode] = useState<'all' | 'area' | 'specific'>('area');
   const [address, setAddress] = useState('');
@@ -88,6 +91,16 @@ export default function PostingDigitalDashboard() {
             ctr: ctr
           });
         }
+
+        // 🎯 追加: 運営会社からのお知らせを取得（テーブル名は環境に合わせて修正してください）
+        const { data: notices } = await supabase
+          .from('system_notices')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(3);
+        
+        if (notices) setSystemNotices(notices);
+
       } catch (err: any) {
         console.error("初期データ取得エラー:", err);
       } finally {
@@ -351,19 +364,47 @@ export default function PostingDigitalDashboard() {
           </div>
 
           <div className="lg:col-span-5 space-y-8">
+            
+            {/* 🎯 追加: 運営会社からの連絡セクション */}
+            <div className="bg-slate-900 rounded-[3rem] p-10 shadow-2xl text-white relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-8 opacity-5 text-6xl">🏢</div>
+              <h3 className="text-[11px] font-black text-indigo-400 uppercase tracking-widest mb-8 flex items-center gap-3 relative z-10">
+                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>
+                運営会社からの連絡
+              </h3>
+              
+              <div className="space-y-6 relative z-10">
+                {systemNotices.length > 0 ? (
+                  systemNotices.map((notice, i) => (
+                    <div key={i} className="border-b border-white/10 pb-5 last:border-0 last:pb-0 group">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md">
+                          {new Date(notice.created_at).toLocaleDateString('ja-JP')}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-black text-white group-hover:text-indigo-300 transition-colors">{notice.title}</h4>
+                      <p className="text-xs text-slate-400 mt-2 leading-relaxed line-clamp-2">{notice.content}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-6 text-center">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">現在、新しいお知らせはありません</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
               <h3 className="text-[10px] font-black text-slate-400 uppercase mb-10">最近のキャンペーン</h3>
               <div className="space-y-8">
                 {recentCampaigns.length > 0 ? (
                   recentCampaigns.map((camp, i) => {
-                    // 🎯 修正: キャンペーンがアクティブかどうかをDBの実データ（statusカラム）で判定
                     const isActive = camp.status === 'active';
                     
                     return (
                       <div key={i} className="group border-b border-slate-50 pb-6 last:border-0 last:pb-0 cursor-pointer" onClick={() => router.push('/posting/report')}>
                         <div className="flex justify-between items-start mb-4">
                           <div className="flex-1">
-                            {/* 🎯 修正: 状態に応じてバッジの色と文字を動的に切り替え */}
                             <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
                               {isActive ? 'LIVE' : 'ENDED'}
                             </span>

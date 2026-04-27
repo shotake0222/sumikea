@@ -15,12 +15,14 @@ export default function ManagementNoticePage() {
   const [recentNotices, setRecentNotices] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
   
+  // 🎯 配信ターゲット切り替え用（'property' = 物件住民, 'system' = 運営からの全体連絡）
+  const [deliveryTarget, setDeliveryTarget] = useState<'property' | 'system'>('property');
+
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
   const [status, setStatus] = useState<'published' | 'draft' | 'scheduled'>('published');
   
-  // 🎯 予約配信用の日時ステート（初期値は現在時刻の1時間後）
   const [scheduledAt, setScheduledAt] = useState(
     new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)
   );
@@ -221,9 +223,10 @@ export default function ManagementNoticePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // 物件配信の場合のみ物件IDをチェック
     const targetPropId = selectedPropertyData?.id || selectedProperty;
-    if (!targetPropId || targetPropId.length < 10 || targetPropId === 'undefined') {
-        return alert('エラー: 有効な物件が選択されていません。画面をリロードするか、物件を追加してください。');
+    if (deliveryTarget === 'property' && (!targetPropId || targetPropId.length < 10 || targetPropId === 'undefined')) {
+        return alert('エラー: 有効な物件が選択されていません。');
     }
 
     setIsSubmitting(true);
@@ -232,32 +235,34 @@ export default function ManagementNoticePage() {
         const finalTitle = category === 'urgent' && !title.includes('【重要】') ? `【重要】${title}` : title;
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
+        // 🎯 ターゲットによって送信先のテーブルを分岐
+        const tableName = deliveryTarget === 'system' ? 'system_notices' : 'property_notifications';
+
         const payload: any = {
-          property_id: targetPropId, 
           title: finalTitle,
           content,
           category,
-          target_audience: ['resident'], 
           pdf_url: combinedPdfUrls,
+          status: status,
+          // 運営連絡には property_id は不要（全ユーザー対象のため）
+          ...(deliveryTarget === 'property' && { property_id: targetPropId, target_audience: ['resident'] }),
           is_permanent: isPermanent,
           expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
-          status: status,
         };
 
-        // 🎯 予約配信の場合は日時をペイロードに追加
         if (status === 'scheduled') {
           payload.published_at = new Date(scheduledAt).toISOString();
         } else if (status === 'published') {
           payload.published_at = new Date().toISOString();
         }
 
-        const { error } = await supabase.from('property_notifications').insert(payload);
+        const { error } = await supabase.from(tableName).insert(payload);
 
         if (error) throw error;
 
-        alert('住民へ配信（または予約）しました！');
+        alert(deliveryTarget === 'system' ? '全ユーザーへ「運営連絡」を配信しました！' : '住民へ配信（または予約）しました！');
         setTitle(''); setContent(''); setUploadedFiles([]); 
-        fetchNoticeHistory(targetPropId);
+        if (deliveryTarget === 'property') fetchNoticeHistory(targetPropId);
     } catch (err: any) {
         console.error("Insert Error Details:", err);
         alert('配信エラー: ' + err.message);
@@ -293,12 +298,12 @@ export default function ManagementNoticePage() {
               <div className="flex items-center gap-3">
                 <span className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest italic">Now Editing</span>
                 <h1 className="text-4xl md:text-7xl font-black text-slate-900 tracking-tighter italic uppercase truncate">
-                  {selectedPropertyData?.name || '---'}
+                  {deliveryTarget === 'system' ? 'Posutto System Official' : (selectedPropertyData?.name || '---')}
                 </h1>
               </div>
               <div className="flex flex-wrap gap-4 items-center">
                 <p className="text-slate-400 font-bold text-xl flex items-center gap-2">
-                  <span className="text-2xl">🏢</span> 住民お知らせコンソール
+                  <span className="text-2xl">🏢</span> {deliveryTarget === 'system' ? '運営会社インフォメーション' : '住民お知らせコンソール'}
                 </p>
                 <button onClick={() => setIsRegisterModalOpen(true)} className="bg-slate-900 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg active:scale-95">
                   + 物件を追加登録
@@ -306,7 +311,8 @@ export default function ManagementNoticePage() {
               </div>
             </div>
             
-            <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-blue-50 flex items-center gap-6 min-w-[360px]">
+            {/* 🎯 物件切り替えエリア：運営連絡モードの時は非活性に */}
+            <div className={`bg-white p-6 rounded-[2.5rem] shadow-xl border-2 flex items-center gap-6 min-w-[360px] transition-all ${deliveryTarget === 'system' ? 'opacity-30 pointer-events-none border-slate-100' : 'border-blue-50'}`}>
               <div className="flex-1">
                 <label className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] block mb-2 ml-1">操作物件切替</label>
                 <select className="w-full bg-slate-50 p-4 rounded-2xl font-black text-slate-700 outline-none cursor-pointer text-lg focus:ring-2 focus:ring-blue-500 appearance-none"
@@ -336,36 +342,49 @@ export default function ManagementNoticePage() {
 
         <div className="flex flex-col xl:flex-row gap-8">
           <div className="flex-1">
-            <form onSubmit={handleSubmit} className="bg-white rounded-[4rem] p-8 md:p-14 shadow-2xl border border-slate-50 space-y-12">
+            {/* 🎯 運営ターゲット時はカードをインディゴの光で強調 */}
+            <form onSubmit={handleSubmit} className={`bg-white rounded-[4rem] p-8 md:p-14 shadow-2xl border-2 space-y-12 transition-all ${deliveryTarget === 'system' ? 'border-indigo-600 ring-4 ring-indigo-50' : 'border-slate-50'}`}>
               
-              {/* 🎯 ステータス選択 ＆ 予約日時指定 */}
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-50 pb-8 gap-6">
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-                  {['published', 'scheduled', 'draft'].map((s) => (
-                    <button key={s} type="button" onClick={() => setStatus(s as any)}
-                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all ${status === s ? 'bg-white shadow-md text-blue-600' : 'text-slate-400'}`}>
-                      {s === 'published' ? '即時配信' : s === 'scheduled' ? '予約配信' : '下書き'}
+              {/* 🎯 配信ターゲット切り替えタブ */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-8 gap-8">
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">配信ターゲット</label>
+                  <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+                    <button type="button" onClick={() => setDeliveryTarget('property')}
+                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all flex items-center gap-2 ${deliveryTarget === 'property' ? 'bg-white shadow-md text-blue-600' : 'text-slate-400'}`}>
+                      🏢 物件の住民のみ
                     </button>
-                  ))}
+                    <button type="button" onClick={() => setDeliveryTarget('system')}
+                      className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all flex items-center gap-2 ${deliveryTarget === 'system' ? 'bg-indigo-600 shadow-md text-white' : 'text-slate-400'}`}>
+                      🌐 運営からの連絡（全ユーザー）
+                    </button>
+                  </div>
                 </div>
 
-                {/* 予約配信が選ばれた時のみ出現するピッカー */}
-                {status === 'scheduled' && (
-                  <div className="flex items-center gap-3 bg-slate-50 p-3 px-5 rounded-2xl border border-slate-200 animate-in fade-in slide-in-from-right-4">
-                    <span className="text-xl">⏳</span>
-                    <div className="flex flex-col">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">配信予定日時</label>
-                      <input 
-                        type="datetime-local" 
-                        className="bg-transparent border-none font-bold text-sm outline-none text-slate-700 p-0 focus:ring-0 cursor-pointer"
-                        value={scheduledAt} 
-                        onChange={(e) => setScheduledAt(e.target.value)} 
-                        required={status === 'scheduled'}
-                      />
-                    </div>
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-1">配信モード</label>
+                  <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+                    {['published', 'scheduled', 'draft'].map((s) => (
+                      <button key={s} type="button" onClick={() => setStatus(s as any)}
+                        className={`px-8 py-3 rounded-xl text-[11px] font-black transition-all ${status === s ? 'bg-white shadow-md text-blue-600' : 'text-slate-400'}`}>
+                        {s === 'published' ? '即時' : s === 'scheduled' ? '予約' : '下書き'}
+                      </button>
+                    ))}
                   </div>
-                )}
+                </div>
               </div>
+
+              {/* 予約配信日時 */}
+              {status === 'scheduled' && (
+                <div className="bg-blue-50 p-6 rounded-[2.5rem] border-2 border-blue-100 flex items-center gap-6 animate-in slide-in-from-top-4">
+                  <span className="text-4xl">⏳</span>
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2 block">配信予定日時を指定</label>
+                    <input type="datetime-local" className="w-full bg-white p-4 rounded-xl font-bold text-lg outline-none"
+                        value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} required />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                 <div className="space-y-4">
@@ -425,15 +444,16 @@ export default function ManagementNoticePage() {
                 </div>
               </div>
 
-              <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-10 rounded-[3.5rem] font-black text-3xl hover:bg-slate-900 transition-all shadow-2xl disabled:opacity-50 italic uppercase tracking-tighter">
-                {isSubmitting ? 'SENDING...' : status === 'scheduled' ? '配信を予約する' : '住民へ一斉配信を実行'}
+              <button type="submit" disabled={isSubmitting} 
+                  className={`w-full py-10 rounded-[3.5rem] font-black text-3xl transition-all shadow-2xl disabled:opacity-50 italic uppercase tracking-tighter ${deliveryTarget === 'system' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-blue-600 hover:bg-slate-900 text-white'}`}>
+                {isSubmitting ? 'SENDING...' : deliveryTarget === 'system' ? '📢 運営連絡として全ユーザーに配信' : '住民へ一斉配信を実行'}
               </button>
             </form>
           </div>
 
           <div className="w-full xl:w-96 space-y-6">
-            <div className="bg-white rounded-[4rem] p-10 shadow-sm border border-slate-100 sticky top-10">
-              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-10">最近の配信履歴</h3>
+            <div className={`bg-white rounded-[4rem] p-10 shadow-sm border border-slate-100 sticky top-10 transition-all ${deliveryTarget === 'system' ? 'opacity-30 blur-[2px]' : ''}`}>
+              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-10">物件の最近の配信履歴</h3>
               <div className="space-y-12">
                 {recentNotices.length > 0 ? recentNotices.map((notice) => {
                   const readRate = notice.total_residents > 0 ? Math.round((notice.actual_read_count / notice.total_residents) * 100) : 0;
