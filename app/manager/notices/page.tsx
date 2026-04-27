@@ -18,7 +18,6 @@ export default function ManagementNoticePage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('campaign');
-  const [targetAudience] = useState('resident');
   const [status, setStatus] = useState<'published' | 'draft' | 'scheduled'>('published');
   
   const [isPermanent, setIsPermanent] = useState(false);
@@ -86,22 +85,26 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
+  // 🎯 幽霊データを弾くための Inner Join を適用
   const refreshPropertyList = async (userId: string, role: string, targetNewId?: string) => {
     let propertyList: any[] = [];
     if (role === 'ADMIN') {
       const { data: allProps } = await supabase.from('properties').select('id, name, invite_code');
       if (allProps) {
-        propertyList = allProps.map(p => ({
-          property_id: p.id,
-          properties: p
-        }));
+        propertyList = allProps.map(p => ({ property_id: p.id, properties: p }));
       }
     } else {
+      // 幽霊データを無視するために properties!inner(...) を使用
       const { data: managerProps } = await supabase
         .from('property_managers')
-        .select('property_id, properties(id, name, invite_code)')
+        .select('property_id, properties!inner(id, name, invite_code)')
         .eq('user_id', userId);
-      if (managerProps) propertyList = managerProps;
+      if (managerProps) {
+        propertyList = managerProps.map((mp: any) => ({
+          property_id: mp.properties.id,
+          properties: mp.properties
+        }));
+      }
     }
     
     setManagedProperties(propertyList);
@@ -116,6 +119,10 @@ export default function ManagementNoticePage() {
         setSelectedPropertyData(target.properties);
         fetchNoticeHistory(target.property_id);
       }
+    } else {
+      // 物件が全く無い状態
+      setSelectedProperty('');
+      setSelectedPropertyData(null);
     }
   };
 
@@ -212,9 +219,10 @@ export default function ManagementNoticePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 🎯 徹底ガード: IDが実在するか、長さを満たしているかチェック
-    if (!selectedProperty || selectedProperty.length < 20 || selectedProperty === 'undefined') {
-        return alert('エラー: 物件が正しく選択されていません。一度物件リストを切り替えてから再度お試しください。');
+    // 🎯 存在確認とIDの厳格化
+    const targetPropId = selectedPropertyData?.id || selectedProperty;
+    if (!targetPropId || targetPropId.length < 10 || targetPropId === 'undefined') {
+        return alert('エラー: 有効な物件が選択されていません。画面をリロードするか、物件を追加してください。');
     }
 
     setIsSubmitting(true);
@@ -224,11 +232,11 @@ export default function ManagementNoticePage() {
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
         const { error } = await supabase.from('property_notifications').insert({
-          property_id: selectedProperty, // ここがpropertiesテーブルに存在するUUIDと完全一致する
+          property_id: targetPropId, // 確実に存在するIDを指定
           title: finalTitle,
           content,
           category,
-          target_audience: targetAudience,
+          target_audience: ['resident'], // JSONB互換の配列で送信
           pdf_url: combinedPdfUrls,
           is_permanent: isPermanent,
           expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
@@ -239,9 +247,9 @@ export default function ManagementNoticePage() {
 
         alert('住民へ配信しました！');
         setTitle(''); setContent(''); setUploadedFiles([]); 
-        fetchNoticeHistory(selectedProperty);
+        fetchNoticeHistory(targetPropId);
     } catch (err: any) {
-        console.error("ForeignKey Error Context ID:", selectedProperty);
+        console.error("Insert Error Details:", err);
         alert('配信エラー: ' + err.message);
     } finally { setIsSubmitting(false); }
   };
