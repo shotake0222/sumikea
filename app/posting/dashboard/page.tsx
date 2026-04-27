@@ -100,21 +100,43 @@ export default function PostingDigitalDashboard() {
     initialize();
   }, [router]);
 
-  // 🌐 住所を座標に変換（リトライ機能付き）
-  const getCoords = async (query: string) => {
-    const normalized = query.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).split(' ')[0];
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(normalized)}&limit=1`, {
-        headers: { 'User-Agent': 'PosuttoPosting/1.0' }
-      });
-      const data = await res.json();
-      if (data && data.length > 0) {
-        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  // 🌐 住所を座標に変換（正規化 + 削りリトライ機能）
+  const getCoords = async (rawAddress: string) => {
+    // 1. 表記ゆれの正規化
+    const normalized = rawAddress
+      .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+      .replace(/[－ー－―ー−-]/g, '-')
+      .replace(/[　]/g, ' ')
+      .trim();
+
+    // 2. 検索パターンの構築
+    const base = normalized.split(' ')[0];
+    const searchPatterns = [
+      normalized,
+      base,
+      base.replace(/-\d+$/, ''),
+      base.replace(/-\d+$/, '').replace(/-\d+$/, ''),
+      base.replace(/\d+.*$/, '')
+    ];
+
+    const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 3);
+
+    for (const query of uniquePatterns) {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+          headers: { 'User-Agent': 'PosuttoPosting/1.3' }
+        });
+        const data = await res.json();
+        if (data && data.length > 0) {
+          console.log(`Geocoding success: "${query}"`);
+          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        }
+        await new Promise(r => setTimeout(r, 200));
+      } catch (e) {
+        console.error('Geocoder Error:', e);
       }
-      return null;
-    } catch (e) {
-      return null;
     }
+    return null;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,7 +188,6 @@ export default function PostingDigitalDashboard() {
     setIsSearchingArea(true);
     
     try {
-      // 🎯 修正: 住所から座標を取得する処理を追加
       const targetCoords = await getCoords(address);
 
       let result = [];
@@ -177,7 +198,6 @@ export default function PostingDigitalDashboard() {
           return distance <= radius;
         });
       } else {
-        // 座標が取れなかった場合は名前の部分一致
         result = allProperties.filter(p => p.name?.includes(address) || p.address?.includes(address));
       }
       
@@ -191,7 +211,6 @@ export default function PostingDigitalDashboard() {
   };
 
   const onSendAd = async (data: any) => {
-    // 🎯 修正: バリデーションチェックを明示的に行う
     if (uploadedFiles.length === 0) return alert('チラシPDFをアップロードしてください');
     
     let targetPropertyIds: string[] = [];
@@ -230,7 +249,6 @@ export default function PostingDigitalDashboard() {
       reset();
       setUploadedFiles([]);
       setAddress('');
-      // 履歴を更新
       const { data: campaigns } = await supabase.from('digital_flyers').select('*').order('created_at', { ascending: false }).limit(3);
       setRecentCampaigns(campaigns || []);
     } catch (err: any) {
@@ -240,15 +258,14 @@ export default function PostingDigitalDashboard() {
     }
   };
 
-  // 🎯 修正: バリデーションエラーがある場合にアラートを出すデバッグ用
   const onFormError = (err: any) => {
     console.error("Validation Error:", err);
     alert("入力内容に不備があります。タイトルや内容が未入力ではないか確認してください。");
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50 font-black text-slate-400 uppercase tracking-widest italic">
-      Loading Posting Console...
+    <div className="flex items-center justify-center min-h-screen bg-slate-50 font-black text-slate-400 uppercase tracking-widest italic text-center">
+      Loading...
     </div>
   );
 
@@ -280,7 +297,6 @@ export default function PostingDigitalDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-7 space-y-8">
-            {/* 🎯 修正: handleSubmit の第二引数にエラーハンドラを追加 */}
             <form onSubmit={handleSubmit(onSendAd, onFormError)} className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
               <h2 className="text-xl font-black text-slate-900 mb-10 flex items-center gap-3 italic uppercase tracking-tighter">
                 <span className="w-2 h-8 bg-indigo-600 rounded-full"></span>
@@ -330,7 +346,7 @@ export default function PostingDigitalDashboard() {
                       </button>
                       
                       <p className="text-[10px] font-bold text-indigo-600 text-right mt-2">
-                        現在、対象エリア内に <span className="text-lg font-black">{filteredProperties.length}</span> 件の物件が設定されています。
+                        対象エリア内に <span className="text-lg font-black">{filteredProperties.length}</span> 件の物件が見つかりました。
                       </p>
                     </div>
                   )}
