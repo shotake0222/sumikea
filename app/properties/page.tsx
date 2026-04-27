@@ -100,24 +100,18 @@ export default function AdminPropertiesPage() {
     fetchTabData(tab);
   };
 
-  // --- 🌐 最強座標取得ロジック（正規化 + 5段階リトライ） ---
   const getCoordinates = async (rawAddress: string) => {
-    // 1. 日本の住所の表記ゆれを修正
     const normalized = rawAddress
-      .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角数字 -> 半角
-      .replace(/[－ー－―ー−-]/g, '-') // あらゆるハイフンを半角マイナスに統一
-      .replace(/[　]/g, ' ') // 全角スペースを半角に
+      .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+      .replace(/[－ー－―ー−-]/g, '-')
+      .replace(/[　]/g, ' ')
       .trim();
 
-    // 2. 検索パターンの構築（精密 -> 広域）
-    const base = normalized.split(' ')[0]; // ビル名（スペース以降）を除去した基本住所
-    
+    const base = normalized.split(' ')[0];
     const searchPatterns = [
-      normalized,             // パターン1: そのまま（ビル名込）
-      base,                   // パターン2: ビル名なし
-      base.replace(/-\d+$/, ''), // パターン3: 枝番を1つ削る (1-1-1 -> 1-1)
-      base.replace(/-\d+$/, '').replace(/-\d+$/, ''), // パターン4: さらに削る (1-1 -> 1)
-      base.replace(/\d+.*$/, '') // パターン5: 町名まで (羽衣町1-1 -> 羽衣町)
+      normalized, base, base.replace(/-\d+$/, ''),
+      base.replace(/-\d+$/, '').replace(/-\d+$/, ''),
+      base.replace(/\d+.*$/, '')
     ];
 
     const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 3);
@@ -129,14 +123,11 @@ export default function AdminPropertiesPage() {
           { headers: { 'User-Agent': 'PosuttoAdmin/1.3' } }
         );
         const data = await response.json();
-        
         if (data && data.length > 0) {
           return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         }
         await new Promise(r => setTimeout(r, 200));
-      } catch (err) {
-        console.error('Geocoder Error:', err);
-      }
+      } catch (err) { console.error('Geocoder Error:', err); }
     }
     return { lat: null, lng: null };
   };
@@ -152,12 +143,13 @@ export default function AdminPropertiesPage() {
     try {
       const coords = await getCoordinates(newItem.address);
       if (!coords.lat || !coords.lng) {
-        const proceed = confirm(`位置情報の特定に失敗しました。このまま登録しますか？（半径検索には反映されません）`);
+        const proceed = confirm(`位置情報の特定に失敗しました。このまま登録しますか？`);
         if (!proceed) { setLoading(false); return; }
       }
 
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
+      const roleName = activeTab === 'manager' ? '管理会社' : activeTab === 'shop' ? '提携店舗' : 'ポスティング業者';
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
@@ -171,7 +163,8 @@ export default function AdminPropertiesPage() {
       await supabase.from('profiles').upsert({
         id: authData.user.id,
         role: assignRole,
-        name: newItem.name
+        name: newItem.name,
+        email: newItem.email
       });
 
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
@@ -198,12 +191,21 @@ export default function AdminPropertiesPage() {
         }
       }
 
-      setRegisteredInfo({ 
-        url: `${window.location.origin}/login?type=${activeTab}`, 
-        email: newItem.email, 
-        pw: initialPassword 
+      // 🎯 Resendによるウェルカムメール送信APIの呼び出し
+      const loginUrl = `${window.location.origin}/login?type=${activeTab}`;
+      await fetch('/api/send-welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newItem.email,
+          name: newItem.name,
+          password: initialPassword,
+          loginUrl: loginUrl,
+          roleName: roleName
+        }),
       });
 
+      setRegisteredInfo({ url: loginUrl, email: newItem.email, pw: initialPassword });
       setNewItem({ name: '', email: '', address: '' });
       setSelectedProps([]);
       fetchTabData(activeTab);
@@ -233,24 +235,39 @@ export default function AdminPropertiesPage() {
       alert('更新しました');
       setIsManageModalOpen(false);
       fetchTabData(activeTab);
-    } catch (err: any) {
-      alert('更新エラー: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) { alert('更新エラー: ' + err.message); } finally { setLoading(false); }
   };
 
   const handleResetPassword = async () => {
-    if (!confirm('パスワードを再発行しますか？')) return;
+    if (!confirm('パスワードを再発行し、メールで通知しますか？')) return;
     const newPassword = Math.random().toString(36).slice(-8);
+    const roleName = activeTab === 'manager' ? '管理会社' : activeTab === 'shop' ? '提携店舗' : 'ポスティング業者';
+    
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
-      await supabase.from(table).update({ initial_password: newPassword, status: 'invited' }).eq('id', selectedItem.id);
+      const { error: upError } = await supabase.from(table).update({ 
+        initial_password: newPassword, 
+        status: 'invited' 
+      }).eq('id', selectedItem.id);
+
+      if (upError) throw upError;
+
+      // 🎯 再発行メール送信APIの呼び出し
+      await fetch('/api/send-welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: selectedItem.email,
+          name: selectedItem.name,
+          password: newPassword,
+          loginUrl: `${window.location.origin}/login?type=${activeTab}`,
+          roleName: `${roleName}（パスワード再発行）`
+        }),
+      });
+
       setIsManageModalOpen(false);
       setRegisteredInfo({ url: `${window.location.origin}/login`, email: selectedItem.email, pw: newPassword });
-    } catch (err: any) {
-      alert('エラー: ' + err.message);
-    }
+    } catch (err: any) { alert('エラー: ' + err.message); }
   };
 
   const handleDeleteItem = async () => {
@@ -263,11 +280,7 @@ export default function AdminPropertiesPage() {
       setIsManageModalOpen(false);
       fetchTabData(activeTab);
       loadInitialData();
-    } catch (err: any) {
-      alert('削除失敗: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) { alert('削除失敗: ' + err.message); } finally { setLoading(false); }
   };
 
   if (loading && dataList.length === 0) {
@@ -284,11 +297,11 @@ export default function AdminPropertiesPage() {
         <header className="mb-10">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-2 h-8 bg-slate-900 rounded-full" />
-            <h1 className="text-4xl font-black italic uppercase">ぽすっと <span className="text-blue-600">管理パネル</span></h1>
+            <h1 className="text-4xl font-black italic uppercase tracking-tighter">ぽすっと <span className="text-blue-600 font-black">管理パネル</span></h1>
           </div>
         </header>
 
-        {/* 統計 */}
+        {/* 統計セクション */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           {[{ label: '登録住民総数', value: stats.totalResidents, color: 'text-blue-600' },
             { label: '登録店舗・業者', value: stats.totalShops, color: 'text-orange-500' },
@@ -302,7 +315,6 @@ export default function AdminPropertiesPage() {
           ))}
         </div>
 
-        {/* タブ */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-1">
             {(['posting', 'manager', 'shop'] as ViewTab[]).map((t) => (
@@ -312,17 +324,16 @@ export default function AdminPropertiesPage() {
             ))}
           </div>
           <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-900 transition shadow-lg w-full md:w-auto">
-            + 新規登録
+            + パートナー新規登録
           </button>
         </div>
 
-        {/* リスト */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {dataList.map(item => (
-            <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col">
+            <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col group hover:border-blue-200 transition-all">
               <div className="flex justify-between items-start mb-2">
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
-                  {item.status === 'active' ? '利用中' : '招待中'}
+                  {item.status === 'active' ? '利用中' : '招待中（メール送信済）'}
                 </span>
                 {item.lat ? (
                   <span className="text-[9px] text-emerald-500 font-mono">📍 {item.lat.toFixed(3)}, {item.lng.toFixed(3)}</span>
@@ -334,7 +345,7 @@ export default function AdminPropertiesPage() {
               <p className="text-[11px] text-blue-600 font-bold mb-1 truncate">{item.email}</p>
               <p className="text-[10px] text-slate-400 font-medium mb-6 truncate">{item.address}</p>
               <div className="flex gap-2 mt-auto">
-                <button onClick={() => { setSelectedItem(item); setIsManageModalOpen(true); }} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">管理</button>
+                <button onClick={() => { setSelectedItem(item); setIsManageModalOpen(true); }} className="flex-1 bg-slate-900 text-white py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-md">管理・編集</button>
               </div>
             </div>
           ))}
@@ -343,24 +354,22 @@ export default function AdminPropertiesPage() {
 
       {/* 登録モーダル */}
       {(isModalOpen || registeredInfo) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-10 shadow-2xl relative">
             {!registeredInfo ? (
               <>
                 <h2 className="text-2xl font-black italic mb-6 uppercase">新規パートナー <span className="text-blue-600">登録</span></h2>
                 <div className="space-y-5">
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="名前" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="メール" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
-                  <div className="space-y-1">
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" placeholder="住所（ビル名・号室まで可）" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
-                  </div>
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500 transition-all" placeholder="名前" value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500 transition-all" placeholder="メールアドレス" value={newItem.email} onChange={(e) => setNewItem({...newItem, email: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500 transition-all" placeholder="住所" value={newItem.address} onChange={(e) => setNewItem({...newItem, address: e.target.value})} />
                   
                   {activeTab === 'manager' && (
                     <div className="pt-4 space-y-3">
-                      <button onClick={addPropField} className="text-[10px] font-black text-blue-600">+ 管理物件を追加</button>
+                      <button onClick={addPropField} className="text-[10px] font-black text-blue-600">+ 管理物件を紐付け</button>
                       {selectedProps.map((item, index) => (
                         <select key={index} className="w-full p-3 bg-slate-50 rounded-xl font-bold text-xs outline-none" value={item.id} onChange={(e) => { const n = [...selectedProps]; n[index].id = e.target.value; setSelectedProps(n); }}>
-                          <option value="">物件を選択</option>
+                          <option value="">対象物件を選択</option>
                           {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       ))}
@@ -369,18 +378,19 @@ export default function AdminPropertiesPage() {
                 </div>
                 <div className="flex gap-3 mt-8">
                   <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-black text-slate-400 text-[10px] uppercase">Cancel</button>
-                  <button onClick={handleRegister} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">Register</button>
+                  <button onClick={handleRegister} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg hover:bg-slate-900 transition-all">登録と招待メール送信</button>
                 </div>
               </>
             ) : (
               <div className="text-center py-4">
-                <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-                <h2 className="text-2xl font-black mb-6 italic uppercase">Registration Complete</h2>
-                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8">
+                <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl animate-bounce">✓</div>
+                <h2 className="text-2xl font-black mb-2 italic uppercase">Registration Success</h2>
+                <p className="text-[10px] font-black text-emerald-600 mb-6 uppercase tracking-widest italic">ログイン情報をメールで送信しました</p>
+                <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-emerald-100">
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">Login ID</label><p className="text-sm font-black">{registeredInfo.email}</p></div>
-                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Password</label><p className="text-2xl font-black text-orange-600">{registeredInfo.pw}</p></div>
+                  <div><label className="text-[9px] font-black text-slate-400 uppercase">Initial Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
                 </div>
-                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">Close</button>
+                <button onClick={() => { setRegisteredInfo(null); setIsModalOpen(false); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[10px] uppercase shadow-xl">Done</button>
               </div>
             )}
           </div>
@@ -396,8 +406,8 @@ export default function AdminPropertiesPage() {
               <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
               <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={selectedItem.address} onChange={(e) => setSelectedItem({...selectedItem, address: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase">🔑 PW再発行</button>
-                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase">🗑️ 削除</button>
+                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-orange-600 hover:text-white transition-all">🔑 パスワード再発行通知</button>
+                <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-600 hover:text-white transition-all">🗑️ アカウント削除</button>
               </div>
               <button onClick={handleUpdateItem} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">情報を更新</button>
             </div>
