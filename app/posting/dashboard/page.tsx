@@ -77,7 +77,7 @@ export default function PostingDigitalDashboard() {
           
         setRecentCampaigns(campaigns?.slice(0, 3) || []);
 
-        // 🎯 修正: 'local_ad_stats' ではなく、実際のデータが入っている 'digital_flyers' から集計する
+        // 実際のデータから集計
         if (campaigns) {
           const totalViews = campaigns.reduce((sum, item) => sum + (item.views_count || 0), 0);
           const totalClicks = campaigns.reduce((sum, item) => sum + (item.clicks_count || 0), 0);
@@ -248,7 +248,10 @@ export default function PostingDigitalDashboard() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">総インプレッション</p>
               <p className="text-3xl font-black text-slate-900 tracking-tighter">{totalStats.impressions.toLocaleString()}</p>
             </div>
-            <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full">LIVE</div>
+            {/* 全体ダッシュボード稼働中を示すインジケーター（UIとして） */}
+            <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> SYSTEM OK
+            </div>
           </div>
           <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center relative overflow-hidden">
             <div className="absolute right-[-10%] top-[-10%] opacity-10 text-7xl">📈</div>
@@ -352,31 +355,40 @@ export default function PostingDigitalDashboard() {
               <h3 className="text-[10px] font-black text-slate-400 uppercase mb-10">最近のキャンペーン</h3>
               <div className="space-y-8">
                 {recentCampaigns.length > 0 ? (
-                  recentCampaigns.map((camp, i) => (
-                    <div key={i} className="group border-b border-slate-50 pb-6 last:border-0 last:pb-0 cursor-pointer" onClick={() => router.push('/posting/report')}>
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex-1">
-                          <span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">LIVE</span>
-                          <h4 className="text-md font-black text-slate-800 mt-2 italic line-clamp-1 group-hover:text-indigo-600 transition-colors">{camp.title}</h4>
-                        </div>
-                        <div className="text-right pl-4">
-                          <p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p>
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Views</p>
+                  recentCampaigns.map((camp, i) => {
+                    // 🎯 修正: キャンペーンがアクティブかどうかをDBの実データ（statusカラム）で判定
+                    const isActive = camp.status === 'active';
+                    
+                    return (
+                      <div key={i} className="group border-b border-slate-50 pb-6 last:border-0 last:pb-0 cursor-pointer" onClick={() => router.push('/posting/report')}>
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex-1">
+                            {/* 🎯 修正: 状態に応じてバッジの色と文字を動的に切り替え */}
+                            <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                              {isActive ? 'LIVE' : 'ENDED'}
+                            </span>
+                            <h4 className="text-md font-black text-slate-800 mt-2 italic line-clamp-1 group-hover:text-indigo-600 transition-colors">{camp.title}</h4>
+                          </div>
+                          <div className="text-right pl-4">
+                            <p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Views</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center py-6">キャンペーンがありません</p>
                 )}
               </div>
 
-              {/* 🎯 復元: レポート出力画面へのボタン */}
+              {/* レポート出力画面へのボタン */}
               <button 
                 onClick={() => router.push('/posting/report')}
-                className="w-full mt-10 py-5 border-2 border-slate-100 rounded-3xl text-[11px] font-black text-slate-400 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all uppercase tracking-widest"
+                className="w-full mt-10 py-6 bg-indigo-600 text-white rounded-[2rem] text-sm font-black shadow-xl shadow-indigo-200 hover:bg-slate-900 hover:shadow-slate-200 transition-all uppercase tracking-widest flex items-center justify-center gap-3 active:scale-[0.98] group"
               >
-                詳細なレポートを出力 →
+                <span className="text-xl opacity-80 group-hover:opacity-100 transition-opacity">📊</span>
+                詳細なレポートを確認・出力 →
               </button>
             </div>
           </div>

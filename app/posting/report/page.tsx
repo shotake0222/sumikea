@@ -20,11 +20,12 @@ export default function PostingReportsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<ReportData[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
   const [summary, setSummary] = useState({
     avgDuration: '0秒',
     totalViews: '0',
     avgCtr: '0%',
-    bounceRate: '0%'
+    bounceRate: '集計中' // 🎯 修正: ダミー値(18.4%)を削除し、実データ算出までのプレースホルダーに
   });
 
   useEffect(() => {
@@ -84,13 +85,53 @@ export default function PostingReportsPage() {
           avgDuration: `${Math.floor(avgDurTotal / 60)}分 ${avgDurTotal % 60}秒`,
           totalViews: totalV.toLocaleString(),
           avgCtr: totalV > 0 ? ((totalC / totalV) * 100).toFixed(1) + '%' : '0%',
-          bounceRate: '18.4%' // 離脱率の固定デモ値（将来的にログから算出）
+          bounceRate: '集計中' // 将来的にログ解析実装後に計算式を入れる
         });
       }
     } catch (err) {
       console.error('レポート取得エラー:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // CSVダウンロード機能
+  const exportToCSV = () => {
+    setIsExporting(true);
+    try {
+      const headers = ["広告ID", "キャンペーン名", "対象マンション", "総閲覧数", "クリック数", "アクション率(%)", "平均滞在(秒)"];
+      
+      const csvRows = reports.map(report => {
+        const title = `"${report.adTitle.replace(/"/g, '""')}"`; 
+        const propertyName = `"${report.propertyName.replace(/"/g, '""')}"`;
+        
+        return [
+          report.adId, 
+          title, 
+          propertyName, 
+          report.views, 
+          report.clicks, 
+          report.actionRate, 
+          report.avgDuration
+        ].join(',');
+      });
+
+      const csvContent = [headers.join(','), ...csvRows].join('\n');
+      
+      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+      const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+      
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `posting_analysis_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      alert("CSVエクスポート中にエラーが発生しました。");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -120,7 +161,13 @@ export default function PostingReportsPage() {
           </div>
           <div className="flex gap-3">
             <button className="bg-white border border-slate-200 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition shadow-sm">PDF 書き出し</button>
-            <button className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition shadow-lg">CSV ダウンロード</button>
+            <button 
+              onClick={exportToCSV}
+              disabled={isExporting || reports.length === 0}
+              className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition shadow-lg disabled:opacity-50"
+            >
+              {isExporting ? '出力中...' : 'CSV ダウンロード'}
+            </button>
           </div>
         </header>
 
@@ -139,10 +186,9 @@ export default function PostingReportsPage() {
           ))}
         </div>
 
-        {/* メインセクション：時系列グラフ */}
+        {/* メインセクション：時系列グラフとセグメント（本番用にプレースホルダー化） */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm min-h-[400px] flex flex-col relative overflow-hidden">
-             {/* グラフの背景装飾 */}
              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-[100px] opacity-50 -mr-20 -mt-20"></div>
             
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-10 flex items-center gap-2 relative z-10">
@@ -150,52 +196,38 @@ export default function PostingReportsPage() {
               エンゲージメント・タイムライン (直近13日間)
             </h3>
             
-            <div className="flex-1 flex items-end gap-2 px-2 relative z-10">
-              {[40, 70, 45, 90, 65, 80, 100, 50, 70, 85, 60, 75, 95].map((h, i) => (
-                <div key={i} className="flex-1 bg-indigo-50 rounded-t-xl relative group cursor-pointer" style={{ height: `${h}%` }}>
-                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    {Math.floor(h * 12.5)} views
-                  </div>
-                  <div className="absolute bottom-0 w-full bg-indigo-600 rounded-t-xl transition-all h-0 group-hover:h-[10px]"></div>
-                </div>
-              ))}
+            {/* 🎯 修正: ハードコードされたダミーグラフを削除し、本番用の「データ蓄積中」表示に変更 */}
+            <div className="flex-1 flex items-center justify-center relative z-10 border-2 border-dashed border-slate-100 rounded-3xl">
+               <div className="text-center">
+                 <span className="text-3xl opacity-20 block mb-2">📊</span>
+                 <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">詳細な時系列データは現在蓄積中です</p>
+               </div>
             </div>
           </div>
 
           {/* セグメント反応 */}
-          <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
-            <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-10 relative z-10 flex items-center gap-2">
+          <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden flex flex-col">
+            <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
               <span className="w-1.5 h-4 bg-indigo-400 rounded-full"></span>
               居住者層別の反応
             </h3>
-            <div className="space-y-8 relative z-10">
-              {[
-                { label: 'ファミリー層', val: 55, color: 'bg-indigo-500' },
-                { label: '単身者層', val: 25, color: 'bg-blue-400' },
-                { label: 'シニア層', val: 15, color: 'bg-purple-400' },
-                { label: '高所得層', val: 5, color: 'bg-emerald-400' },
-              ].map((d, i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-[10px] font-black uppercase mb-2 text-slate-400">
-                    <span>{d.label}</span>
-                    <span className="text-white">{d.val}%</span>
-                  </div>
-                  <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                    <div className={d.color + " h-full"} style={{ width: `${d.val}%` }}></div>
-                  </div>
-                </div>
-              ))}
+            
+            {/* 🎯 修正: ダミーのパーセンテージを削除 */}
+            <div className="flex-1 flex items-center justify-center relative z-10">
+               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 p-4 rounded-xl">十分なデータが集まると表示されます</p>
             </div>
-            <div className="mt-10 pt-10 border-t border-white/5 relative z-10">
+
+            <div className="mt-6 pt-8 border-t border-white/5 relative z-10">
               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4 italic">AI 分析インサイト</p>
-              <p className="text-[11px] leading-relaxed text-slate-300">
-                週末の午前10時台にファミリー層の反応が集中しています。次回は日曜朝のプッシュ通知との連動を推奨します。
+              {/* 🎯 修正: ダミーのテキストを削除 */}
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                現在、分析エンジンが配信データを学習中です。インサイトの生成までしばらくお待ちください。
               </p>
             </div>
           </div>
         </div>
 
-        {/* ✅ 詳細テーブル：広告ID( ad_id )ごとに個別出力 */}
+        {/* ✅ 詳細テーブル：実データでレンダリング */}
         <div className="mt-8 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm overflow-hidden">
           <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6">広告キャンペーン別詳細分析</h3>
           <div className="overflow-x-auto">
@@ -212,13 +244,13 @@ export default function PostingReportsPage() {
               <tbody className="text-sm font-bold text-slate-700">
                 {reports.map((report, idx) => (
                   <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
-                    <td className="py-6">
+                    <td className="py-6 min-w-[200px]">
                       <div className="flex flex-col">
                         <span className="text-slate-900 font-black italic">{report.adTitle}</span>
-                        <span className="text-[9px] text-slate-300 uppercase tracking-tighter">ID: {report.adId.slice(0,8)}...</span>
+                        <span className="text-[9px] text-slate-300 uppercase tracking-tighter mt-1">ID: {report.adId.slice(0,8)}...</span>
                       </div>
                     </td>
-                    <td className="py-6 text-slate-500">{report.propertyName}</td>
+                    <td className="py-6 text-slate-500 min-w-[150px]">{report.propertyName}</td>
                     <td className="py-6 text-center text-indigo-600 font-black">{report.views.toLocaleString()}</td>
                     <td className="py-6 text-center text-slate-400">{report.avgDuration}秒</td>
                     <td className="py-6 text-right text-green-500 font-black">{report.actionRate}%</td>
