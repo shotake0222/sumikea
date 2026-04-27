@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { adSchema } from '../../../lib/validations';
 import { uploadImage } from '../../../lib/upload';
 
+// 距離計算ロジック
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -99,39 +100,51 @@ export default function PostingDigitalDashboard() {
     initialize();
   }, [router]);
 
+  // 🌐 住所を座標に変換（リトライ機能付き）
+  const getCoords = async (query: string) => {
+    const normalized = query.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).split(' ')[0];
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(normalized)}&limit=1`, {
+        headers: { 'User-Agent': 'PosuttoPosting/1.0' }
+      });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // 🚨 修正: 画面上のリストに既に同じ名前のファイルがないかチェック
     const duplicateFiles = Array.from(files).filter(newFile => 
       uploadedFiles.some(existingFile => existingFile.name === newFile.name)
     );
 
     if (duplicateFiles.length > 0) {
-      const duplicateNames = duplicateFiles.map(f => f.name).join(', ');
-      alert(`【エラー】以下のファイルは既にリストに存在します。\n\n${duplicateNames}\n\n別のファイルを選択するか、リストから削除してください。`);
-      e.target.value = ''; // ファイル選択をリセット
-      return; // 処理をストップ
+      alert(`【エラー】既にリストに存在するファイルが含まれています。`);
+      e.target.value = '';
+      return;
     }
 
     setUploading(true);
     try {
       const newFilesData: {name: string, url: string}[] = [];
-      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const url = await uploadImage(file, 'sumikea-images', 'digital-leaflets');
         newFilesData.push({ name: file.name, url: url });
       }
-
       setUploadedFiles(prev => [...prev, ...newFilesData]);
     } catch (err: any) {
-      console.error("アップロード詳細エラー:", err);
-      alert(`アップロードに失敗しました。詳細: ${err.message || JSON.stringify(err)}`);
+      alert(`アップロードに失敗しました。`);
     } finally {
       setUploading(false);
-      e.target.value = ''; // 成功時もインプットをリセット
+      e.target.value = '';
     }
   };
 
@@ -153,27 +166,23 @@ export default function PostingDigitalDashboard() {
     setIsSearchingArea(true);
     
     try {
-      let targetLat: number | null = null;
-      let targetLng: number | null = null;
+      // 🎯 修正: 住所から座標を取得する処理を追加
+      const targetCoords = await getCoords(address);
 
       let result = [];
-
-      if (targetLat && targetLng) {
+      if (targetCoords) {
         result = allProperties.filter(p => {
           if (!p.lat || !p.lng) return false;
-          const distance = getDistanceFromLatLonInKm(targetLat, targetLng, p.lat, p.lng);
+          const distance = getDistanceFromLatLonInKm(targetCoords.lat, targetCoords.lng, p.lat, p.lng);
           return distance <= radius;
         });
       } else {
+        // 座標が取れなかった場合は名前の部分一致
         result = allProperties.filter(p => p.name?.includes(address) || p.address?.includes(address));
       }
       
       setFilteredProperties(result);
-      if (result.length > 0) {
-        alert(`指定エリア圏内で ${result.length} 件の物件が見つかりました`);
-      } else {
-        alert('指定エリア内に配信可能な物件がありませんでした');
-      }
+      alert(result.length > 0 ? `指定エリア圏内で ${result.length} 件の物件が見つかりました` : '配信可能な物件がありませんでした');
     } catch (error) {
       alert('エリア検索に失敗しました');
     } finally {
@@ -182,51 +191,59 @@ export default function PostingDigitalDashboard() {
   };
 
   const onSendAd = async (data: any) => {
-    if (uploadedFiles.length === 0) {
-      alert('チラシPDFをアップロードしてください');
-      return;
+    // 🎯 修正: バリデーションチェックを明示的に行う
+    if (uploadedFiles.length === 0) return alert('チラシPDFをアップロードしてください');
+    
+    let targetPropertyIds: string[] = [];
+    if (deliveryMode === 'specific') {
+        if (!data.property_id) return alert('物件を選択してください');
+        targetPropertyIds = [data.property_id];
+    } else if (deliveryMode === 'area') {
+        if (filteredProperties.length === 0) return alert('配信可能な物件が0件です。先にエリア検索を実行してください。');
+        targetPropertyIds = filteredProperties.map(p => p.id);
+    } else {
+        targetPropertyIds = allProperties.map(p => p.id); 
     }
 
-    let targetPropertyIds: string[] = [];
-    if (deliveryMode === 'specific' && data.property_id) {
-      targetPropertyIds = [data.property_id];
-    } else if (deliveryMode === 'area') {
-      if (filteredProperties.length === 0) {
-        alert('エリア内に配信可能な物件がありません。検索をやり直すか、物件を指定してください。');
-        return;
-      }
-      targetPropertyIds = filteredProperties.map(p => p.id);
-    } else {
-      targetPropertyIds = allProperties.map(p => p.id); 
-    }
+    if (!confirm(`計 ${targetPropertyIds.length} 件の物件にデジタル投函を開始しますか？`)) return;
 
     setIsSubmitting(true);
-    
-    const pdfUrlsString = uploadedFiles.map(f => f.url).join(',');
+    try {
+      const pdfUrlsString = uploadedFiles.map(f => f.url).join(',');
+      const inserts = targetPropertyIds.map(pid => ({
+        property_id: pid,
+        title: data.title,
+        content: data.content,
+        pdf_url: pdfUrlsString, 
+        is_segmented: isSegmentMode,
+        target_metadata: demographics,
+        starts_at: new Date(startDate).toISOString(),
+        expires_at: new Date(endDate).toISOString(),
+        status: 'active'
+      }));
 
-    const inserts = targetPropertyIds.map(pid => ({
-      property_id: pid,
-      title: data.title,
-      content: data.content,
-      pdf_url: pdfUrlsString, 
-      is_segmented: isSegmentMode,
-      target_metadata: demographics,
-      starts_at: new Date(startDate).toISOString(),
-      expires_at: new Date(endDate).toISOString(),
-      status: 'active'
-    }));
+      const { error } = await supabase.from('digital_flyers').insert(inserts);
 
-    const { error } = await supabase.from('digital_flyers').insert(inserts);
+      if (error) throw error;
 
-    if (!error) {
-      alert(`計 ${inserts.length} 件の物件にデジタル投函を開始しました！`);
+      alert(`投函完了しました！`);
       reset();
       setUploadedFiles([]);
       setAddress('');
-    } else {
-      alert('エラー: ' + error.message);
+      // 履歴を更新
+      const { data: campaigns } = await supabase.from('digital_flyers').select('*').order('created_at', { ascending: false }).limit(3);
+      setRecentCampaigns(campaigns || []);
+    } catch (err: any) {
+      alert('エラーが発生しました: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
+  };
+
+  // 🎯 修正: バリデーションエラーがある場合にアラートを出すデバッグ用
+  const onFormError = (err: any) => {
+    console.error("Validation Error:", err);
+    alert("入力内容に不備があります。タイトルや内容が未入力ではないか確認してください。");
   };
 
   if (loading) return (
@@ -262,9 +279,9 @@ export default function PostingDigitalDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* 投函作成エディタ */}
           <div className="lg:col-span-7 space-y-8">
-            <form onSubmit={handleSubmit(onSendAd)} className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
+            {/* 🎯 修正: handleSubmit の第二引数にエラーハンドラを追加 */}
+            <form onSubmit={handleSubmit(onSendAd, onFormError)} className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
               <h2 className="text-xl font-black text-slate-900 mb-10 flex items-center gap-3 italic uppercase tracking-tighter">
                 <span className="w-2 h-8 bg-indigo-600 rounded-full"></span>
                 新規キャンペーン作成
@@ -272,7 +289,6 @@ export default function PostingDigitalDashboard() {
 
               <div className="space-y-8">
                 
-                {/* 1. 配信エリア・物件の指定 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">配信エリアの指定</label>
@@ -333,7 +349,6 @@ export default function PostingDigitalDashboard() {
                   )}
                 </div>
 
-                {/* 期間設定 */}
                 <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">配信スケジュール設定</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -349,7 +364,6 @@ export default function PostingDigitalDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* PDFアップロード */}
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">チラシPDFデータ</label>
                     <label className={`w-full h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center cursor-pointer transition-all ${uploading ? 'opacity-50 pointer-events-none' : 'bg-slate-50 border-slate-200 hover:border-indigo-400 hover:bg-white'}`}>
@@ -362,15 +376,7 @@ export default function PostingDigitalDashboard() {
                       <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
                         {uploadedFiles.map((file, idx) => (
                           <div key={idx} className="flex items-center justify-between bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                            <a 
-                              href={file.url} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-xs font-black text-indigo-700 truncate max-w-[180px] hover:underline"
-                              title={file.name}
-                            >
-                              {file.name}
-                            </a>
+                            <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-xs font-black text-indigo-700 truncate max-w-[180px] hover:underline">{file.name}</a>
                             <button type="button" onClick={() => removeFile(idx)} className="text-indigo-300 hover:text-red-500 p-1">✕</button>
                           </div>
                         ))}
@@ -378,93 +384,58 @@ export default function PostingDigitalDashboard() {
                     )}
                   </div>
 
-                  {/* セグメントターゲット */}
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">ターゲット属性の絞り込み</label>
-                    
                     <div className="grid grid-cols-2 gap-3">
-                      <button 
-                        type="button" 
-                        onClick={toggleSelectAllDemographics}
-                        className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${Object.values(demographics).every(val => val) ? 'bg-indigo-900 border-indigo-900 text-white shadow-lg' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}
-                      >
+                      <button type="button" onClick={toggleSelectAllDemographics} className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${Object.values(demographics).every(val => val) ? 'bg-indigo-900 border-indigo-900 text-white shadow-lg' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}>
                         {Object.values(demographics).every(val => val) ? '全選択を解除' : '全選択する'}
                       </button>
-
-                      {[
-                        { key: 'family', label: 'ファミリー層' },
-                        { key: 'single', label: '単身者層' },
-                        { key: 'senior', label: 'シニア層' }
-                      ].map((target) => (
-                        <button key={target.key} type="button" onClick={() => setDemographics(d => ({ ...d, [target.key]: !d[target.key as keyof typeof demographics] }))}
-                          className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${demographics[target.key as keyof typeof demographics] ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
-                          {target.label}
+                      {['family', 'single', 'senior'].map((key) => (
+                        <button key={key} type="button" onClick={() => setDemographics(d => ({ ...d, [key]: !d[key as keyof typeof demographics] }))}
+                          className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${demographics[key as keyof typeof demographics] ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
+                          {key === 'family' ? 'ファミリー' : key === 'single' ? '単身者' : 'シニア'}
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                {/* 基本情報 */}
                 <div className="space-y-4">
-                  <input {...register('title')} placeholder="プッシュ通知のタイトル（例：今週のチラシが届きました）" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
-                  <textarea {...register('content')} placeholder="通知内容の詳細を入力してください..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm border-none resize-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                  <input {...register('title')} placeholder="プッシュ通知のタイトル" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                  <textarea {...register('content')} placeholder="通知内容の詳細..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm border-none resize-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
                 </div>
 
-                <button disabled={isSubmitting} className="w-full bg-slate-900 text-white py-8 rounded-[2.5rem] font-black text-xl italic hover:bg-indigo-600 transition-all shadow-2xl active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter">
+                <button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 text-white py-8 rounded-[2.5rem] font-black text-xl italic hover:bg-indigo-600 transition-all shadow-2xl active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter">
                   {isSubmitting ? '処理中...' : 'デジタル投函を実行する'}
                 </button>
               </div>
             </form>
           </div>
 
-          {/* 右サイド：モニタリング */}
           <div className="lg:col-span-5 space-y-8">
             <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-10 flex items-center justify-between">
-                ライブ・パフォーマンス
-                <span className="flex h-2 w-2 bg-red-500 rounded-full animate-pulse"></span>
-              </h3>
-              
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-10 flex items-center justify-between">ライブ・パフォーマンス<span className="flex h-2 w-2 bg-red-500 rounded-full animate-pulse"></span></h3>
               <div className="space-y-8">
                 {recentCampaigns.map((camp, i) => (
-                  <div key={i} className="group">
+                  <div key={i}>
                     <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-widest">配信中</span>
-                        <h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xl font-black text-slate-900 leading-none">{(camp.views_count || 0).toLocaleString()}</p>
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p>
-                      </div>
+                      <div><span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-widest">配信中</span><h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4></div>
+                      <div className="text-right"><p className="text-xl font-black text-slate-900 leading-none">{(camp.views_count || 0).toLocaleString()}</p><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p></div>
                     </div>
                     <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-600 shadow-[0_0_10px_rgba(79,70,229,0.4)]" style={{ width: camp.views_count ? '100%' : '0%' }}></div>
+                      <div className="h-full bg-indigo-600" style={{ width: camp.views_count ? '100%' : '0%' }}></div>
                     </div>
                   </div>
                 ))}
-                {recentCampaigns.length === 0 && (
-                  <p className="text-[10px] text-slate-300 font-bold text-center py-10 uppercase tracking-widest">現在稼働中のキャンペーンはありません</p>
-                )}
+                {recentCampaigns.length === 0 && <p className="text-center py-10 text-slate-300 font-bold uppercase text-[10px]">稼働中のキャンペーンなし</p>}
               </div>
             </div>
 
-            {/* 分析レポート誘導 */}
             <div className="bg-indigo-600 rounded-[3rem] p-12 text-white shadow-2xl relative overflow-hidden group">
-              <div className="relative z-10">
-                <h3 className="text-3xl font-black italic tracking-tighter mb-4">詳細な分析データ</h3>
-                <p className="text-xs font-bold leading-relaxed opacity-70 mb-8 max-w-[240px]">
-                  ターゲット属性別の開封率や、PDF閲覧ヒートマップを詳細に分析し、次回の配布計画を最適化できます。
-                </p>
-                <button 
-                  onClick={() => router.push('/posting/reports')}
-                  className="bg-white text-indigo-600 px-10 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-indigo-50 transition-all active:scale-95 shadow-xl shadow-indigo-900/20 tracking-widest"
-                >
-                  詳細レポートを表示 →
-                </button>
-              </div>
-              <div className="absolute -right-10 -bottom-10 text-[12rem] font-black italic opacity-5 select-none uppercase tracking-tighter group-hover:scale-110 transition-transform duration-700">データ</div>
+              <h3 className="text-3xl font-black italic tracking-tighter mb-4">詳細な分析データ</h3>
+              <p className="text-xs font-bold leading-relaxed opacity-70 mb-8 max-w-[240px]">ターゲット属性別の開封率や詳細レポートを表示できます。</p>
+              <button onClick={() => router.push('/posting/reports')} className="bg-white text-indigo-600 px-10 py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl tracking-widest">詳細レポートを表示 →</button>
+              <div className="absolute -right-10 -bottom-10 text-[12rem] font-black italic opacity-5 uppercase tracking-tighter group-hover:scale-110 transition-transform duration-700">データ</div>
             </div>
           </div>
         </div>
