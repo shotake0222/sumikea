@@ -25,8 +25,10 @@ export default function ManagementNoticePage() {
   const [expiresAt, setExpiresAt] = useState(
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
   );
-  const [pdfUrl, setPdfUrl] = useState('');
-  const [uploadedFileName, setUploadedFileName] = useState('');
+  
+  // 複数PDF対応のための状態
+  const [pdfUrls, setPdfUrls] = useState<string[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, url: string}[]>([]);
   const [uploading, setUploading] = useState(false);
   
   const [loading, setLoading] = useState(true);
@@ -38,7 +40,7 @@ export default function ManagementNoticePage() {
   const [newPropAddress, setNewPropAddress] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // --- 🌐 最強座標取得ロジック（正規化 + 5段階リトライ） ---
+  // --- 🌐 最強座標取得ロジック ---
   const getCoordinates = async (rawAddress: string) => {
     const normalized = rawAddress
       .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
@@ -216,19 +218,28 @@ export default function ManagementNoticePage() {
     }
   };
 
-  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // 🎯 複数ファイルアップロード対応
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      const url = await uploadImage(file, 'sumikea-images', 'management-docs');
-      setPdfUrl(url);
-      setUploadedFileName(file.name);
+      const newUploadedFiles = [...uploadedFiles];
+      for (let i = 0; i < files.length; i++) {
+        const url = await uploadImage(files[i], 'sumikea-images', 'management-docs');
+        newUploadedFiles.push({ name: files[i].name, url: url });
+      }
+      setUploadedFiles(newUploadedFiles);
     } catch (err: any) {
       alert(`アップロード失敗: ${err.message}`);
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
+  };
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -238,14 +249,16 @@ export default function ManagementNoticePage() {
     
     try {
         const finalTitle = category === 'urgent' && !title.includes('【重要】') ? `【重要】${title}` : title;
+        // 複数URLをカンマ区切りで結合
+        const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
         const { error } = await supabase.from('property_notifications').insert({
           property_id: selectedProperty,
           title: finalTitle,
           content,
           category,
-          target_audience: targetAudience, // RLS/FK制約に合わせて送信
-          pdf_url: pdfUrl,
+          target_audience: targetAudience,
+          pdf_url: combinedPdfUrls, // 複数URL対応
           is_permanent: isPermanent,
           expires_at: isPermanent ? null : new Date(expiresAt).toISOString(),
           status: status
@@ -254,7 +267,7 @@ export default function ManagementNoticePage() {
         if (error) throw error;
 
         alert('住民へ配信しました！');
-        setTitle(''); setContent(''); setPdfUrl(''); setUploadedFileName(''); 
+        setTitle(''); setContent(''); setUploadedFiles([]); 
         fetchNoticeHistory(selectedProperty);
     } catch (err: any) {
         alert('配信エラー: ' + err.message);
@@ -381,16 +394,27 @@ export default function ManagementNoticePage() {
                   <textarea className="md:col-span-2 w-full bg-slate-50 border-none p-10 rounded-[3rem] h-80 text-slate-700 outline-none resize-none leading-relaxed text-lg font-medium"
                       value={content} onChange={(e) => setContent(e.target.value)} placeholder="本文を入力..." required />
                   
-                  <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[3rem] h-80 cursor-pointer transition-all ${pdfUrl ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
-                    {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
-                      <div className="text-center p-6">
-                        <span className="text-6xl mb-4 block">{pdfUrl ? '✅' : '📤'}</span>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{pdfUrl ? 'READY' : '資料添付'}</p>
-                        {uploadedFileName && <p className="mt-2 text-[10px] font-bold text-blue-600 truncate max-w-[150px]">{uploadedFileName}</p>}
-                      </div>
-                    }
-                    <input type="file" className="hidden" onChange={handlePdfUpload} accept="application/pdf,image/*" />
-                  </label>
+                  <div className="space-y-4">
+                    <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-[3rem] h-60 cursor-pointer transition-all ${uploadedFiles.length > 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
+                        {uploading ? <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" /> : 
+                        <div className="text-center p-6">
+                            <span className="text-5xl mb-4 block">📤</span>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">資料を追加添付</p>
+                        </div>
+                        }
+                        <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
+                    </label>
+
+                    {/* 📎 アップロード済みファイルリスト */}
+                    <div className="space-y-2">
+                        {uploadedFiles.map((file, idx) => (
+                            <div key={idx} className="bg-white border border-slate-100 p-3 rounded-2xl flex items-center justify-between shadow-sm">
+                                <span className="text-[10px] font-bold text-slate-600 truncate max-w-[120px]">{file.name}</span>
+                                <button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-600 px-2 font-black text-xs">✕</button>
+                            </div>
+                        ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -414,7 +438,8 @@ export default function ManagementNoticePage() {
                         </span>
                         <div className="flex-1">
                           <p className="text-sm font-black text-slate-800 line-clamp-2">{notice.title}</p>
-                          <p className="text-[10px] font-bold text-slate-400 mt-1">{new Date(notice.created_at).toLocaleDateString()}</p>
+                          {/* 🕒 履歴にも投函日時を表示 */}
+                          <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic tracking-widest">Sent: {new Date(notice.created_at).toLocaleString()}</p>
                         </div>
                       </div>
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
