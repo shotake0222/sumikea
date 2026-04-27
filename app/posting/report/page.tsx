@@ -25,7 +25,7 @@ export default function PostingReportsPage() {
     avgDuration: '0秒',
     totalViews: '0',
     avgCtr: '0%',
-    bounceRate: '集計中' // 🎯 修正: ダミー値(18.4%)を削除し、実データ算出までのプレースホルダーに
+    bounceRate: '集計中'
   });
 
   useEffect(() => {
@@ -95,7 +95,12 @@ export default function PostingReportsPage() {
     }
   };
 
-  // CSVダウンロード機能
+  // 🎯 PDFダウンロード機能（ブラウザの印刷機能を利用しPDF保存へ誘導）
+  const exportToPDF = () => {
+    window.print();
+  };
+
+  // 🎯 CSVダウンロード機能
   const exportToCSV = () => {
     setIsExporting(true);
     try {
@@ -121,13 +126,14 @@ export default function PostingReportsPage() {
       const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
       const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
       
-      const url = URL.createObjectURL(blob);
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
       link.setAttribute('download', `posting_analysis_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url); // メモリ解放
     } catch (err) {
       alert("CSVエクスポート中にエラーが発生しました。");
     } finally {
@@ -142,7 +148,7 @@ export default function PostingReportsPage() {
   );
 
   return (
-    <div className="p-6 md:p-10 bg-[#F8FAFC] min-h-screen font-sans">
+    <div className="p-6 md:p-10 bg-[#F8FAFC] min-h-screen font-sans print:p-0 print:bg-white">
       <div className="max-w-[1200px] mx-auto">
         
         {/* ヘッダー */}
@@ -150,7 +156,7 @@ export default function PostingReportsPage() {
           <div>
             <button 
               onClick={() => router.back()}
-              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 flex items-center gap-2 hover:translate-x-[-4px] transition-transform"
+              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 flex items-center gap-2 hover:translate-x-[-4px] transition-transform print:hidden"
             >
               ← ダッシュボードへ戻る
             </button>
@@ -159,8 +165,14 @@ export default function PostingReportsPage() {
             </h1>
             <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-4">Posutto Posting Analysis System</p>
           </div>
-          <div className="flex gap-3">
-            <button className="bg-white border border-slate-200 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition shadow-sm">PDF 書き出し</button>
+          {/* 🎯 print:hidden を追加して印刷（PDF）時にはボタンを非表示にする */}
+          <div className="flex gap-3 print:hidden">
+            <button 
+              onClick={exportToPDF}
+              className="bg-white border border-slate-200 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition shadow-sm"
+            >
+              PDF 書き出し
+            </button>
             <button 
               onClick={exportToCSV}
               disabled={isExporting || reports.length === 0}
@@ -179,7 +191,7 @@ export default function PostingReportsPage() {
             { label: '平均アクション率 (CTR)', value: summary.avgCtr, color: 'text-green-500' },
             { label: '離脱率', value: summary.bounceRate, color: 'text-orange-500' },
           ].map((stat, i) => (
-            <div key={i} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+            <div key={i} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow print:border-slate-300 print:shadow-none">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{stat.label}</p>
               <p className={`text-3xl font-black ${stat.color} tracking-tighter`}>{stat.value}</p>
             </div>
@@ -188,16 +200,15 @@ export default function PostingReportsPage() {
 
         {/* メインセクション：時系列グラフとセグメント（本番用にプレースホルダー化） */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm min-h-[400px] flex flex-col relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-[100px] opacity-50 -mr-20 -mt-20"></div>
+          <div className="lg:col-span-2 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm min-h-[400px] flex flex-col relative overflow-hidden print:border-slate-300 print:shadow-none">
+             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-[100px] opacity-50 -mr-20 -mt-20 print:hidden"></div>
             
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-10 flex items-center gap-2 relative z-10">
               <span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>
               エンゲージメント・タイムライン (直近13日間)
             </h3>
             
-            {/* 🎯 修正: ハードコードされたダミーグラフを削除し、本番用の「データ蓄積中」表示に変更 */}
-            <div className="flex-1 flex items-center justify-center relative z-10 border-2 border-dashed border-slate-100 rounded-3xl">
+            <div className="flex-1 flex items-center justify-center relative z-10 border-2 border-dashed border-slate-100 rounded-3xl print:border-slate-300">
                <div className="text-center">
                  <span className="text-3xl opacity-20 block mb-2">📊</span>
                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">詳細な時系列データは現在蓄積中です</p>
@@ -206,21 +217,19 @@ export default function PostingReportsPage() {
           </div>
 
           {/* セグメント反応 */}
-          <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden flex flex-col">
-            <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
-              <span className="w-1.5 h-4 bg-indigo-400 rounded-full"></span>
+          <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden flex flex-col print:bg-white print:border print:border-slate-300 print:text-slate-900 print:shadow-none">
+            <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2 print:text-indigo-600">
+              <span className="w-1.5 h-4 bg-indigo-400 rounded-full print:bg-indigo-600"></span>
               居住者層別の反応
             </h3>
             
-            {/* 🎯 修正: ダミーのパーセンテージを削除 */}
             <div className="flex-1 flex items-center justify-center relative z-10">
-               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 p-4 rounded-xl">十分なデータが集まると表示されます</p>
+               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 p-4 rounded-xl print:border-slate-300">十分なデータが集まると表示されます</p>
             </div>
 
-            <div className="mt-6 pt-8 border-t border-white/5 relative z-10">
+            <div className="mt-6 pt-8 border-t border-white/5 relative z-10 print:border-slate-200">
               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4 italic">AI 分析インサイト</p>
-              {/* 🎯 修正: ダミーのテキストを削除 */}
-              <p className="text-[11px] leading-relaxed text-slate-400">
+              <p className="text-[11px] leading-relaxed text-slate-400 print:text-slate-600">
                 現在、分析エンジンが配信データを学習中です。インサイトの生成までしばらくお待ちください。
               </p>
             </div>
@@ -228,12 +237,12 @@ export default function PostingReportsPage() {
         </div>
 
         {/* ✅ 詳細テーブル：実データでレンダリング */}
-        <div className="mt-8 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm overflow-hidden">
+        <div className="mt-8 bg-white rounded-[3rem] p-10 border border-slate-100 shadow-sm overflow-hidden print:border-slate-300 print:shadow-none print:p-0 print:mt-10">
           <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6">広告キャンペーン別詳細分析</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-50">
+                <tr className="border-b border-slate-50 print:border-slate-200">
                   <th className="py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">広告キャンペーン名</th>
                   <th className="py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">対象マンション</th>
                   <th className="py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">総閲覧数</th>
@@ -243,7 +252,7 @@ export default function PostingReportsPage() {
               </thead>
               <tbody className="text-sm font-bold text-slate-700">
                 {reports.map((report, idx) => (
-                  <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
+                  <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group print:border-slate-200">
                     <td className="py-6 min-w-[200px]">
                       <div className="flex flex-col">
                         <span className="text-slate-900 font-black italic">{report.adTitle}</span>
@@ -268,7 +277,7 @@ export default function PostingReportsPage() {
           </div>
         </div>
 
-        <footer className="mt-12 mb-10 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em]">
+        <footer className="mt-12 mb-10 text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.4em] print:mt-20">
           Posutto Analytics Module - Data Science v3.0
         </footer>
 
