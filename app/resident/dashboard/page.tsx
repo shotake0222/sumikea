@@ -23,6 +23,9 @@ export default function ResidentDashboard() {
   const [uploading, setUploading] = useState(false);
   const [isEditingCalendar, setIsEditingCalendar] = useState(false);
 
+  // 🎯 カレンダー画像拡大用ステート
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+
   const [targetLang, setTargetLang] = useState('ja');
   const [isTranslating, setIsTranslating] = useState(false);
   const [translatedPriorities, setTranslatedPriorities] = useState<any[]>([]);
@@ -113,7 +116,6 @@ export default function ResidentDashboard() {
       setGarbageContact(prof?.garbage_contact_info || '');
 
       if (prof?.property_id) {
-        // 1. 古い構造（レガシーのデジタルチラシ）の取得
         const { data: flyers } = await supabase
           .from('digital_flyers')
           .select('*')
@@ -121,27 +123,21 @@ export default function ResidentDashboard() {
           .eq('status', 'active')
           .order('created_at', { ascending: false });
 
-        // 2. 新しい構造（管理画面から飛んでくる全通知）の取得
         const { data: rawNotices } = await supabase
           .from('property_notifications')
           .select('*')
           .eq('property_id', prof.property_id)
           .order('created_at', { ascending: false });
         
-        // 🎯 ロジック：有効な通知のみを厳選してフィルタリング
         const now = new Date();
         const validNotices = (rawNotices || []).filter(n => {
-           // 下書きは除外
            if (n.status === 'draft') return false;
-           // 予約配信の場合、時間が来ていなければ除外
            if (n.status === 'scheduled' && n.published_at) {
              if (new Date(n.published_at) > now) return false;
            }
-           // 掲載終了日を過ぎていれば除外
            if (!n.is_permanent && n.expires_at) {
              if (new Date(n.expires_at) < now) return false;
            }
-           // ターゲットセグメントのチェック（resident または all が含まれているか）
            if (n.target_audience) {
              if (Array.isArray(n.target_audience) && !n.target_audience.includes('resident') && !n.target_audience.includes('all')) return false;
              if (typeof n.target_audience === 'string' && !n.target_audience.includes('resident') && !n.target_audience.includes('all')) return false;
@@ -149,11 +145,9 @@ export default function ResidentDashboard() {
            return true;
         });
 
-        // 緊急カテゴリは重要ポストへ、それ以外は通常掲示板へ
         const urgentNotices = validNotices.filter(n => n.category === 'urgent');
         const regularNotices = validNotices.filter(n => n.category !== 'urgent');
 
-        // 古いチラシと新しい緊急通知を結合して表示
         const combinedPriority = [...(flyers || []), ...urgentNotices].sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
@@ -161,7 +155,6 @@ export default function ResidentDashboard() {
         setPriorityPosts(combinedPriority);
         setNotices(regularNotices);
 
-        // 🎯 既読ステータスの自動送信（管理画面の分析用）
         const allNoticeIds = validNotices.map(n => n.id);
         if (allNoticeIds.length > 0) {
             try {
@@ -172,7 +165,6 @@ export default function ResidentDashboard() {
             }
         }
 
-        // 従来のチラシ用インプレッショントラッキング
         if (flyers) {
           flyers.forEach(flyer => {
             if (!impressionTracked.current.has(flyer.id)) {
@@ -198,12 +190,10 @@ export default function ResidentDashboard() {
     return urlString.split(',').map(u => u.trim()).filter(u => u.length > 0);
   };
 
-  // 🎯 修正：DBのクリック記録が失敗しても必ず別タブでURLを開く
   const handleAdInteraction = async (adId: string, pdfUrl: string) => {
     if (!pdfUrl) return;
     viewStartTime.current = Date.now();
     
-    // DBへの記録は非同期のまま投げっぱなしにし、成否に関わらずすぐ開く
     supabase.rpc('increment_ad_clicks', { target_ad_id: adId }).catch(e => {
         console.warn("Click tracking skipped for this entity type (expected behavior for new notices).");
     });
@@ -249,6 +239,30 @@ export default function ResidentDashboard() {
   return (
     <div className="max-w-md mx-auto bg-[#F4F7FA] min-h-screen pb-44 font-sans overflow-x-hidden relative">
       
+      {/* 🎯 拡大画像表示用モーダル */}
+      {zoomedImage && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col justify-center items-center p-4"
+          onClick={() => setZoomedImage(null)}
+        >
+          <div className="absolute top-6 right-6 z-[110]">
+            <button 
+              onClick={() => setZoomedImage(null)}
+              className="w-12 h-12 bg-white/20 hover:bg-white/40 backdrop-blur-md rounded-full flex items-center justify-center text-white text-xl font-black transition-all"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="w-full h-full flex items-center justify-center overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={zoomedImage} 
+              alt="Zoomed Calendar" 
+              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl animate-in zoom-in-90 duration-300"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Immersive Header */}
       <div className="relative bg-slate-900 pt-16 pb-20 px-8 rounded-b-[4.5rem] shadow-2xl overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full opacity-30">
@@ -424,8 +438,13 @@ export default function ResidentDashboard() {
           <div className="p-6 min-h-[260px] flex items-center justify-center bg-white px-8">
             {garbageCalendars[selectedYearMonth] ? (
               <div className="w-full">
-                <img src={garbageCalendars[selectedYearMonth]} alt="Calendar" className="w-full h-auto rounded-[2.5rem] shadow-md border border-slate-50 active:scale-95 transition-transform" 
-                  onClick={() => window.open(garbageCalendars[selectedYearMonth], '_blank')} />
+                {/* 🎯 修正：タップ時に別タブではなく、ステートにURLをセットしてモーダルを開く */}
+                <img 
+                  src={garbageCalendars[selectedYearMonth]} 
+                  alt="Calendar" 
+                  className="w-full h-auto rounded-[2.5rem] shadow-md border border-slate-50 active:scale-95 transition-transform cursor-pointer" 
+                  onClick={() => setZoomedImage(garbageCalendars[selectedYearMonth])} 
+                />
                 <p className="mt-4 text-center text-[9px] font-black text-slate-300 uppercase tracking-widest">タップして拡大表示</p>
               </div>
             ) : (
