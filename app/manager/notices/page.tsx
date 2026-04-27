@@ -86,7 +86,6 @@ export default function ManagementNoticePage() {
     fetchAuthAndData();
   }, [router]);
 
-  // 🎯 物件リスト取得ロジックの修正
   const refreshPropertyList = async (userId: string, role: string, targetNewId?: string) => {
     let propertyList: any[] = [];
     if (role === 'ADMIN') {
@@ -107,18 +106,15 @@ export default function ManagementNoticePage() {
     
     setManagedProperties(propertyList);
 
-    // デフォルト選択物件の決定
     if (propertyList.length > 0) {
       const target = targetNewId 
         ? propertyList.find(p => p.property_id === targetNewId) 
         : propertyList[0];
       
       if (target) {
-        // 重要：IDとデータを確実にセット
-        const cleanId = target.property_id;
-        setSelectedProperty(cleanId);
+        setSelectedProperty(target.property_id);
         setSelectedPropertyData(target.properties);
-        fetchNoticeHistory(cleanId);
+        fetchNoticeHistory(target.property_id);
       }
     }
   };
@@ -182,7 +178,6 @@ export default function ManagementNoticePage() {
       setNewPropName(''); setNewPropAddress(''); setIsRegisterModalOpen(false);
       
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', currentUserId).single();
-      // 新規物件IDを渡してリスト更新
       await refreshPropertyList(currentUserId, profile?.role || 'MANAGER', newProp.id);
 
     } catch (err: any) { alert('物件登録エラー: ' + err.message); } finally { setIsRegistering(false); }
@@ -217,9 +212,9 @@ export default function ManagementNoticePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 🎯 送信直前の ID バリデーション
-    if (!selectedProperty || selectedProperty.length < 10 || selectedProperty === 'undefined') {
-        return alert('エラー: 物件が正しく選択されていません。リストから選択し直してください。');
+    // 🎯 徹底ガード: IDが実在するか、長さを満たしているかチェック
+    if (!selectedProperty || selectedProperty.length < 20 || selectedProperty === 'undefined') {
+        return alert('エラー: 物件が正しく選択されていません。一度物件リストを切り替えてから再度お試しください。');
     }
 
     setIsSubmitting(true);
@@ -229,7 +224,7 @@ export default function ManagementNoticePage() {
         const combinedPdfUrls = uploadedFiles.map(f => f.url).join(',');
 
         const { error } = await supabase.from('property_notifications').insert({
-          property_id: selectedProperty, // ここが properties テーブルの ID と完全一致する必要があります
+          property_id: selectedProperty, // ここがpropertiesテーブルに存在するUUIDと完全一致する
           title: finalTitle,
           content,
           category,
@@ -246,7 +241,7 @@ export default function ManagementNoticePage() {
         setTitle(''); setContent(''); setUploadedFiles([]); 
         fetchNoticeHistory(selectedProperty);
     } catch (err: any) {
-        console.error("FKEY Error with ID:", selectedProperty);
+        console.error("ForeignKey Error Context ID:", selectedProperty);
         alert('配信エラー: ' + err.message);
     } finally { setIsSubmitting(false); }
   };
@@ -270,6 +265,7 @@ export default function ManagementNoticePage() {
           #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none !important; }
           .no-print { display: none !important; }
         }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
 
       <div className="max-w-7xl mx-auto">
@@ -278,7 +274,7 @@ export default function ManagementNoticePage() {
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-3">
                 <span className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest italic">Now Editing</span>
-                <h1 className="text-4xl md:text-7xl font-black text-slate-900 tracking-tighter italic uppercase">
+                <h1 className="text-4xl md:text-7xl font-black text-slate-900 tracking-tighter italic uppercase truncate">
                   {selectedPropertyData?.name || '---'}
                 </h1>
               </div>
