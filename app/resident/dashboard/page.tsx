@@ -9,7 +9,6 @@ export default function ResidentDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
   
-  // デジタル投函（チラシ）を配列で管理
   const [priorityPosts, setPriorityPosts] = useState<any[]>([]); 
   const [notices, setNotices] = useState<any[]>([]);           
   
@@ -41,7 +40,8 @@ export default function ResidentDashboard() {
       calendarNotSet: 'カレンダーがまだ登録されていません', set: '写真を登録する', complete: '保存完了',
       contactText: '粗大ゴミ等の問い合わせ先', 
       adsTitle: '近隣のトピックス', noAds: '周辺のお得な情報を探索中...', home: 'ホーム', settings: '設定', logout: 'ログアウト',
-      langLabel: 'TRANSLATE / 多言語表示'
+      langLabel: 'TRANSLATE / 多言語表示',
+      viewFlyer: 'チラシを見る'
     },
     en: {
       room: ' Room', mypage: 'My Page', postTitle: 'PRIORITY POST', noPost: 'Waiting for updates...',
@@ -51,7 +51,8 @@ export default function ResidentDashboard() {
       calendarNotSet: 'No calendar registered yet', set: 'Upload Photo', complete: 'Done',
       contactText: 'Trash Contact Info', 
       adsTitle: 'LOCAL TOPICS', noAds: 'Exploring local deals...', home: 'Home', settings: 'Settings', logout: 'Logout',
-      langLabel: 'TRANSLATE'
+      langLabel: 'TRANSLATE',
+      viewFlyer: 'View Flyer'
     }
   };
   const t = uiTexts[targetLang] || uiTexts.ja;
@@ -61,7 +62,6 @@ export default function ResidentDashboard() {
     return () => { handleTrackDuration(); };
   }, []);
 
-  // 翻訳ロジック
   useEffect(() => {
     const doTranslate = async () => {
       if (targetLang === 'ja') {
@@ -107,7 +107,6 @@ export default function ResidentDashboard() {
       setGarbageContact(prof?.garbage_contact_info || '');
 
       if (prof?.property_id) {
-        // 全ての有効なデジタル投函チラシを取得
         const { data: flyers } = await supabase
           .from('digital_flyers')
           .select('*')
@@ -117,7 +116,6 @@ export default function ResidentDashboard() {
 
         if (flyers) {
           setPriorityPosts(flyers);
-          // 各チラシのインプレッション計測
           flyers.forEach(flyer => {
             if (!impressionTracked.current.has(flyer.id)) {
               supabase.rpc('increment_ad_views', { target_ad_id: flyer.id });
@@ -145,19 +143,16 @@ export default function ResidentDashboard() {
     }
   };
 
-  const handleAdInteraction = async (ad: any) => {
-    if (!ad) return;
-    viewStartTime.current = Date.now();
-    await supabase.rpc('increment_ad_clicks', { target_ad_id: ad.id });
+  // 🎯 PDF解析ロジック
+  const getPdfUrls = (urlString: string) => {
+    if (!urlString) return [];
+    return urlString.split(',').map(u => u.trim()).filter(u => u.length > 0);
+  };
 
-    const urlString = ad.pdf_url || '';
-    const urls = urlString.split(',').map((u: string) => u.trim()).filter((u: string) => u.length > 0);
-    
-    if (urls.length > 0) {
-      window.open(urls[0], '_blank');
-    } else {
-      alert('詳細を準備中です');
-    }
+  const handleAdInteraction = async (adId: string, pdfUrl: string) => {
+    viewStartTime.current = Date.now();
+    await supabase.rpc('increment_ad_clicks', { target_ad_id: adId });
+    window.open(pdfUrl, '_blank');
   };
 
   const handleCalendarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,7 +185,7 @@ export default function ResidentDashboard() {
   return (
     <div className="max-w-md mx-auto bg-[#F4F7FA] min-h-screen pb-44 font-sans overflow-x-hidden relative">
       
-      {/* 🌟 Immersive Header */}
+      {/* Immersive Header */}
       <div className="relative bg-slate-900 pt-16 pb-20 px-8 rounded-b-[4.5rem] shadow-2xl overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full opacity-30">
           <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-blue-600 rounded-full blur-[80px]"></div>
@@ -225,7 +220,7 @@ export default function ResidentDashboard() {
 
       <div className="px-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 🎯 1. 重要ポスト（複数表示：縦に並べて全件表示） */}
+        {/* 1. 重要ポスト（全チラシPDFへのアクセス機能追加） */}
         <section className="space-y-6">
           <div className="flex items-center gap-3 px-4">
             <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
@@ -234,28 +229,48 @@ export default function ResidentDashboard() {
 
           {translatedPriorities.length > 0 ? (
             <div className="space-y-6">
-              {translatedPriorities.map((post) => (
-                <div 
-                  key={post.id}
-                  onClick={() => handleAdInteraction(post)}
-                  className="bg-slate-900 rounded-[3.5rem] shadow-2xl border border-slate-800 p-10 text-white relative group active:scale-[0.98] transition-all cursor-pointer"
-                >
-                  <div className="absolute top-6 right-8 opacity-10 text-6xl">📬</div>
-                  <div className="relative z-10">
-                    <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block shadow-lg">NEW DIGITAL POST</span>
-                    <h3 className="text-2xl font-black leading-tight mb-4 italic tracking-tight underline decoration-blue-500/50 underline-offset-4">
-                        {post.title}
-                    </h3>
-                    <p className="text-[14px] text-slate-300 leading-relaxed font-medium bg-white/5 p-6 rounded-[2rem] border border-white/5">
-                        {post.content}
-                    </p>
-                    <div className="mt-6 flex items-center gap-2 text-blue-400 font-black text-[10px] uppercase tracking-widest">
-                        <span>Tap to view flyer PDF</span>
-                        <span className="animate-bounce">→</span>
+              {translatedPriorities.map((post) => {
+                const pdfs = getPdfUrls(post.pdf_url);
+                return (
+                  <div 
+                    key={post.id}
+                    className="bg-slate-900 rounded-[3.5rem] shadow-2xl border border-slate-800 p-10 text-white relative group transition-all"
+                  >
+                    <div className="absolute top-6 right-8 opacity-10 text-6xl">📬</div>
+                    <div className="relative z-10">
+                      <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block shadow-lg">DIGITAL POST</span>
+                      <h3 className="text-2xl font-black leading-tight mb-4 italic tracking-tight underline decoration-blue-500/50 underline-offset-4">
+                          {post.title}
+                      </h3>
+                      <p className="text-[14px] text-slate-300 leading-relaxed font-medium bg-white/5 p-6 rounded-[2rem] border border-white/5 mb-8">
+                          {post.content}
+                      </p>
+                      
+                      {/* 🎯 チラシPDFリスト表示エリア */}
+                      <div className="space-y-3">
+                        <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em] ml-1">Attachments / 添付資料</p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {pdfs.length > 0 ? pdfs.map((url, index) => (
+                            <button
+                              key={index}
+                              onClick={() => handleAdInteraction(post.id, url)}
+                              className="w-full bg-white text-slate-900 py-4 px-6 rounded-2xl font-black text-[11px] flex items-center justify-between hover:bg-blue-50 transition-colors active:scale-[0.98]"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className="text-lg">📄</span>
+                                <span className="uppercase tracking-tighter">{t.viewFlyer} {pdfs.length > 1 ? `#${index + 1}` : ''}</span>
+                              </div>
+                              <span className="text-slate-300">→</span>
+                            </button>
+                          )) : (
+                            <p className="text-[10px] text-slate-500 italic ml-1">No flyer attached.</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="bg-slate-900 rounded-[3.5rem] p-12 flex flex-col items-center gap-4 border-2 border-dashed border-slate-800">
@@ -265,7 +280,7 @@ export default function ResidentDashboard() {
           )}
         </section>
 
-        {/* 2. デジタル掲示板（管理会社からのお知らせ） */}
+        {/* 2. デジタル掲示板 */}
         <section className="bg-white rounded-[3.5rem] shadow-xl shadow-slate-200 border border-white overflow-hidden">
           <div className="p-10">
             <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-8 text-center italic">— {t.boardTitle} —</h2>
@@ -323,10 +338,10 @@ export default function ResidentDashboard() {
               </div>
             ) : (
               <div className="text-center py-10">
-                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100 shadow-inner">
                   <span className="text-4xl opacity-20">📸</span>
                 </div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.calendarNotSet}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.calendarNotSet}</p>
               </div>
             )}
           </div>
