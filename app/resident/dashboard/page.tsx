@@ -9,10 +9,9 @@ export default function ResidentDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
   
-  // セグメント分けされたお知らせ・チラシ
-  const [priorityPost, setPriorityPost] = useState<any>(null); // デジタル投函（チラシ）をここに統合
-  const [notices, setNotices] = useState<any[]>([]);           // 管理会社からのお知らせ
-  const [ads, setAds] = useState<any[]>([]);                  // 純粋な外部広告（必要に応じて）
+  // デジタル投函（チラシ）を配列で管理
+  const [priorityPosts, setPriorityPosts] = useState<any[]>([]); 
+  const [notices, setNotices] = useState<any[]>([]);           
   
   const [loading, setLoading] = useState(true);
   
@@ -27,7 +26,7 @@ export default function ResidentDashboard() {
 
   const [targetLang, setTargetLang] = useState('ja');
   const [isTranslating, setIsTranslating] = useState(false);
-  const [translatedPriority, setTranslatedPriority] = useState<any>(null);
+  const [translatedPriorities, setTranslatedPriorities] = useState<any[]>([]);
   const [translatedNotices, setTranslatedNotices] = useState<any[]>([]);
 
   const viewStartTime = useRef<number | null>(null);
@@ -40,7 +39,7 @@ export default function ResidentDashboard() {
       trashTitle: 'ゴミ収集カレンダー', 
       trashHint: 'お手持ちのゴミカレンダーを撮影してアップロードすると、いつでもここから確認できて便利です！',
       calendarNotSet: 'カレンダーがまだ登録されていません', set: '写真を登録する', complete: '保存完了',
-      uploadText: 'の画像を登録', contactText: '粗大ゴミ等の問い合わせ先', sending: '送信中...',
+      contactText: '粗大ゴミ等の問い合わせ先', 
       adsTitle: '近隣のトピックス', noAds: '周辺のお得な情報を探索中...', home: 'ホーム', settings: '設定', logout: 'ログアウト',
       langLabel: 'TRANSLATE / 多言語表示'
     },
@@ -50,7 +49,7 @@ export default function ResidentDashboard() {
       trashTitle: 'TRASH CALENDAR', 
       trashHint: 'Upload a photo of your local trash calendar to check it anytime here!',
       calendarNotSet: 'No calendar registered yet', set: 'Upload Photo', complete: 'Done',
-      uploadText: ' Upload Image', contactText: 'Trash Contact Info', sending: 'Sending...',
+      contactText: 'Trash Contact Info', 
       adsTitle: 'LOCAL TOPICS', noAds: 'Exploring local deals...', home: 'Home', settings: 'Settings', logout: 'Logout',
       langLabel: 'TRANSLATE'
     }
@@ -66,7 +65,7 @@ export default function ResidentDashboard() {
   useEffect(() => {
     const doTranslate = async () => {
       if (targetLang === 'ja') {
-        setTranslatedPriority(priorityPost);
+        setTranslatedPriorities(priorityPosts);
         setTranslatedNotices(notices);
         return;
       }
@@ -80,22 +79,20 @@ export default function ResidentDashboard() {
         } catch (err) { return text; }
       };
 
-      if (priorityPost) {
-        setTranslatedPriority({
-          ...priorityPost,
-          title: await translateText(priorityPost.title),
-          content: await translateText(priorityPost.content)
-        });
-      }
-
+      const transPriorities = await Promise.all(priorityPosts.map(async (p) => ({
+        ...p, title: await translateText(p.title), content: await translateText(p.content)
+      })));
+      
       const transNotices = await Promise.all(notices.map(async (n) => ({
         ...n, title: await translateText(n.title), content: await translateText(n.content)
       })));
+      
+      setTranslatedPriorities(transPriorities);
       setTranslatedNotices(transNotices);
       setIsTranslating(false);
     };
     doTranslate();
-  }, [targetLang, priorityPost, notices]);
+  }, [targetLang, priorityPosts, notices]);
 
   const fetchResidentData = async () => {
     try {
@@ -110,25 +107,25 @@ export default function ResidentDashboard() {
       setGarbageContact(prof?.garbage_contact_info || '');
 
       if (prof?.property_id) {
-        // 1. デジタル投函（チラシ）を「重要ポスト」として取得
+        // 🎯 修正: 全ての有効なデジタル投函チラシを取得（limit(1)を削除）
         const { data: flyers } = await supabase
           .from('digital_flyers')
           .select('*')
           .eq('property_id', prof.property_id)
           .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .order('created_at', { ascending: false });
 
-        if (flyers && flyers.length > 0) {
-          setPriorityPost(flyers[0]);
-          // インプレッション計測
-          if (!impressionTracked.current.has(flyers[0].id)) {
-            supabase.rpc('increment_ad_views', { target_ad_id: flyers[0].id });
-            impressionTracked.current.add(flyers[0].id);
-          }
+        if (flyers) {
+          setPriorityPosts(flyers);
+          // 各チラシのインプレッション計測
+          flyers.forEach(flyer => {
+            if (!impressionTracked.current.has(flyer.id)) {
+              supabase.rpc('increment_ad_views', { target_ad_id: flyer.id });
+              impressionTracked.current.add(flyer.id);
+            }
+          });
         }
 
-        // 2. 管理会社からの掲示板（categoryがposting以外）を取得
         const { data: rawNotices } = await supabase
           .from('property_notifications')
           .select('*')
@@ -148,15 +145,11 @@ export default function ResidentDashboard() {
     }
   };
 
-  // 🎯 PDF表示ギミックの修正
   const handleAdInteraction = async (ad: any) => {
     if (!ad) return;
-    
     viewStartTime.current = Date.now();
-    // クリック数カウント
     await supabase.rpc('increment_ad_clicks', { target_ad_id: ad.id });
 
-    // pdf_url がカンマ区切りの文字列である場合を考慮して解析
     const urlString = ad.pdf_url || '';
     const urls = urlString.split(',').map((u: string) => u.trim()).filter((u: string) => u.length > 0);
     
@@ -180,7 +173,6 @@ export default function ResidentDashboard() {
       await supabase.from('profiles').update({ monthly_garbage_calendars: updatedCalendars }).eq('id', user?.id);
       setGarbageCalendars(updatedCalendars);
       setIsEditingCalendar(false);
-      alert(`${selectedYearMonth} のカレンダーを更新しました`);
     } catch (err) { alert('アップロード失敗'); } finally { setUploading(false); }
   };
 
@@ -191,10 +183,7 @@ export default function ResidentDashboard() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Loading Resident Data...</p>
-      </div>
+      <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
     </div>
   );
 
@@ -236,39 +225,42 @@ export default function ResidentDashboard() {
 
       <div className="px-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 1. 重要ポスト（デジタル投函チラシをここに表示） */}
-        <section 
-            onClick={() => priorityPost && handleAdInteraction(priorityPost)}
-            className="bg-slate-900 rounded-[3.5rem] shadow-2xl border border-slate-800 overflow-hidden text-white relative group cursor-pointer active:scale-95 transition-transform"
-        >
-          <div className="absolute top-0 right-0 p-8 opacity-5 text-8xl group-hover:scale-110 transition-transform">📬</div>
-          <div className="p-10">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
-              <h2 className="text-[10px] font-black text-blue-400 uppercase tracking-widest italic">{t.postTitle}</h2>
-            </div>
-            
-            {translatedPriority ? (
-              <div className="animate-in fade-in slide-in-from-bottom-3 duration-700">
-                <span className="text-[9px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block">New Digital Flyer</span>
-                <h3 className="text-2xl font-black leading-tight mb-4 italic tracking-tight text-white underline decoration-blue-500/50 underline-offset-8">
-                    {translatedPriority.title}
-                </h3>
-                <p className="text-[14px] text-slate-300 leading-relaxed font-medium bg-white/5 p-6 rounded-3xl border border-white/5 line-clamp-3">
-                    {translatedPriority.content}
-                </p>
-                <div className="mt-6 flex items-center gap-2 text-blue-400 font-black text-[10px] uppercase tracking-widest">
-                    <span>Tap to view PDF flyer</span>
-                    <span className="animate-bounce">→</span>
-                </div>
-              </div>
-            ) : (
-              <div className="py-12 flex flex-col items-center gap-4 border-2 border-dashed border-slate-800 rounded-[2.5rem] bg-white/2">
-                <span className="text-4xl opacity-20">📭</span>
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.noPost}</p>
-              </div>
-            )}
+        {/* 🎯 1. 重要ポスト（複数投函に対応したループ表示） */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-3 px-4">
+            <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">{t.postTitle}</h2>
           </div>
+
+          {translatedPriorities.length > 0 ? (
+            <div className="flex overflow-x-auto gap-4 pb-4 px-1 snap-x no-scrollbar custom-scrollbar">
+              {translatedPriorities.map((post) => (
+                <div 
+                  key={post.id}
+                  onClick={() => handleAdInteraction(post)}
+                  className="min-w-[85%] bg-slate-900 rounded-[3rem] shadow-2xl border border-slate-800 p-8 snap-center text-white relative group active:scale-[0.98] transition-transform"
+                >
+                  <div className="absolute top-4 right-6 opacity-10 text-5xl">📬</div>
+                  <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block shadow-lg">NEW POST</span>
+                  <h3 className="text-xl font-black leading-tight mb-4 italic tracking-tight line-clamp-2 underline decoration-blue-500/50 underline-offset-4">
+                      {post.title}
+                  </h3>
+                  <p className="text-[12px] text-slate-300 leading-relaxed font-medium bg-white/5 p-4 rounded-2xl border border-white/5 line-clamp-3">
+                      {post.content}
+                  </p>
+                  <div className="mt-6 flex items-center gap-2 text-blue-400 font-black text-[9px] uppercase tracking-widest">
+                      <span>Tap to open PDF flyer</span>
+                      <span className="animate-bounce">→</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-slate-900 rounded-[3.5rem] p-12 flex flex-col items-center gap-4 border-2 border-dashed border-slate-800">
+              <span className="text-4xl opacity-20">📭</span>
+              <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t.noPost}</p>
+            </div>
+          )}
         </section>
 
         {/* 2. デジタル掲示板（管理会社からのお知らせ） */}
@@ -371,6 +363,16 @@ export default function ResidentDashboard() {
           </button>
         </nav>
       </div>
+
+      <style jsx>{`
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </div>
   );
 }
