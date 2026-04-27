@@ -41,8 +41,8 @@ export default function ResidentDashboard() {
       contactText: '粗大ゴミ等の問い合わせ先', 
       adsTitle: '近隣のトピックス', noAds: '周辺のお得な情報を探索中...', home: 'ホーム', settings: '設定', logout: 'ログアウト',
       langLabel: 'TRANSLATE / 多言語表示',
-      viewFlyer: 'チラシを見る',
-      postedAt: '投函日時'
+      viewFlyer: '資料を見る',
+      postedAt: '配信日時'
     },
     en: {
       room: ' Room', mypage: 'My Page', postTitle: 'PRIORITY POST', noPost: 'Waiting for updates...',
@@ -53,7 +53,7 @@ export default function ResidentDashboard() {
       contactText: 'Trash Contact Info', 
       adsTitle: 'LOCAL TOPICS', noAds: 'Exploring local deals...', home: 'Home', settings: 'Settings', logout: 'Logout',
       langLabel: 'TRANSLATE',
-      viewFlyer: 'View Flyer',
+      viewFlyer: 'View Document',
       postedAt: 'Posted at'
     }
   };
@@ -82,11 +82,15 @@ export default function ResidentDashboard() {
       };
 
       const transPriorities = await Promise.all(priorityPosts.map(async (p) => ({
-        ...p, title: await translateText(p.title), content: await translateText(p.content)
+        ...p, 
+        title: await translateText(p.title), 
+        content: await translateText(p.content || p.description || '')
       })));
       
       const transNotices = await Promise.all(notices.map(async (n) => ({
-        ...n, title: await translateText(n.title), content: await translateText(n.content)
+        ...n, 
+        title: await translateText(n.title), 
+        content: await translateText(n.content)
       })));
       
       setTranslatedPriorities(transPriorities);
@@ -109,6 +113,7 @@ export default function ResidentDashboard() {
       setGarbageContact(prof?.garbage_contact_info || '');
 
       if (prof?.property_id) {
+        // 1. 古い構造（レガシーのデジタルチラシ）の取得
         const { data: flyers } = await supabase
           .from('digital_flyers')
           .select('*')
@@ -116,23 +121,66 @@ export default function ResidentDashboard() {
           .eq('status', 'active')
           .order('created_at', { ascending: false });
 
-        if (flyers) {
-          setPriorityPosts(flyers);
-          flyers.forEach(flyer => {
-            if (!impressionTracked.current.has(flyer.id)) {
-              supabase.rpc('increment_ad_views', { target_ad_id: flyer.id });
-              impressionTracked.current.add(flyer.id);
-            }
-          });
-        }
-
+        // 2. 新しい構造（管理画面から飛んでくる全通知）の取得
         const { data: rawNotices } = await supabase
           .from('property_notifications')
           .select('*')
           .eq('property_id', prof.property_id)
           .order('created_at', { ascending: false });
         
-        setNotices(rawNotices || []);
+        // 🎯 ロジック：有効な通知のみを厳選してフィルタリング
+        const now = new Date();
+        const validNotices = (rawNotices || []).filter(n => {
+           // 下書きは除外
+           if (n.status === 'draft') return false;
+           // 予約配信の場合、時間が来ていなければ除外
+           if (n.status === 'scheduled' && n.published_at) {
+             if (new Date(n.published_at) > now) return false;
+           }
+           // 掲載終了日を過ぎていれば除外
+           if (!n.is_permanent && n.expires_at) {
+             if (new Date(n.expires_at) < now) return false;
+           }
+           // ターゲットセグメントのチェック（resident または all が含まれているか）
+           if (n.target_audience) {
+             if (Array.isArray(n.target_audience) && !n.target_audience.includes('resident') && !n.target_audience.includes('all')) return false;
+             if (typeof n.target_audience === 'string' && !n.target_audience.includes('resident') && !n.target_audience.includes('all')) return false;
+           }
+           return true;
+        });
+
+        // 緊急カテゴリは重要ポストへ、それ以外は通常掲示板へ
+        const urgentNotices = validNotices.filter(n => n.category === 'urgent');
+        const regularNotices = validNotices.filter(n => n.category !== 'urgent');
+
+        // 古いチラシと新しい緊急通知を結合して表示
+        const combinedPriority = [...(flyers || []), ...urgentNotices].sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        setPriorityPosts(combinedPriority);
+        setNotices(regularNotices);
+
+        // 🎯 既読ステータスの自動送信（管理画面の分析用）
+        const allNoticeIds = validNotices.map(n => n.id);
+        if (allNoticeIds.length > 0) {
+            try {
+                const readPayload = allNoticeIds.map(id => ({ notification_id: id, user_id: user.id }));
+                await supabase.from('notification_reads').upsert(readPayload, { onConflict: 'notification_id, user_id' });
+            } catch (e) {
+                console.error("Failed to mark read status", e);
+            }
+        }
+
+        // 従来のチラシ用インプレッショントラッキング
+        if (flyers) {
+          flyers.forEach(flyer => {
+            if (!impressionTracked.current.has(flyer.id)) {
+              supabase.rpc('increment_ad_views', { target_ad_id: flyer.id }).catch(() => {});
+              impressionTracked.current.add(flyer.id);
+            }
+          });
+        }
       }
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -140,7 +188,7 @@ export default function ResidentDashboard() {
   const handleTrackDuration = async (adId?: string) => {
     if (viewStartTime.current && adId) {
       const duration = Math.round((Date.now() - viewStartTime.current) / 1000);
-      if (duration > 0) await supabase.rpc('add_ad_duration', { target_ad_id: adId, duration_seconds: duration });
+      if (duration > 0) await supabase.rpc('add_ad_duration', { target_ad_id: adId, duration_seconds: duration }).catch(() => {});
       viewStartTime.current = null;
     }
   };
@@ -150,10 +198,17 @@ export default function ResidentDashboard() {
     return urlString.split(',').map(u => u.trim()).filter(u => u.length > 0);
   };
 
+  // 🎯 修正：DBのクリック記録が失敗しても必ず別タブでURLを開く
   const handleAdInteraction = async (adId: string, pdfUrl: string) => {
+    if (!pdfUrl) return;
     viewStartTime.current = Date.now();
-    await supabase.rpc('increment_ad_clicks', { target_ad_id: adId });
-    window.open(pdfUrl, '_blank');
+    
+    // DBへの記録は非同期のまま投げっぱなしにし、成否に関わらずすぐ開く
+    supabase.rpc('increment_ad_clicks', { target_ad_id: adId }).catch(e => {
+        console.warn("Click tracking skipped for this entity type (expected behavior for new notices).");
+    });
+    
+    window.open(pdfUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleCalendarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,7 +232,6 @@ export default function ResidentDashboard() {
     await supabase.from('profiles').update({ garbage_contact_info: garbageContact }).eq('id', user?.id);
   };
 
-  // 🎯 日時フォーマット関数
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('ja-JP', {
@@ -187,8 +241,8 @@ export default function ResidentDashboard() {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
+    <div className="min-h-screen flex items-center justify-center bg-[#F4F7FA]">
+      <div className="w-16 h-16 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
     </div>
   );
 
@@ -230,7 +284,7 @@ export default function ResidentDashboard() {
 
       <div className="px-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 🎯 1. 重要ポスト（投函日時を表示に追加） */}
+        {/* 1. 重要ポスト */}
         <section className="space-y-6">
           <div className="flex items-center gap-3 px-4">
             <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
@@ -250,9 +304,8 @@ export default function ResidentDashboard() {
                     <div className="relative z-10">
                       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                         <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">DIGITAL POST</span>
-                        {/* 🕒 投函日時を表示 */}
                         <span className="text-[9px] font-bold text-white/40 tabular-nums">
-                           {t.postedAt}: {formatDate(post.created_at)}
+                           {t.postedAt}: {formatDate(post.published_at || post.created_at)}
                         </span>
                       </div>
                       
@@ -296,22 +349,43 @@ export default function ResidentDashboard() {
           )}
         </section>
 
-        {/* 2. デジタル掲示板 */}
+        {/* 2. デジタル掲示板（通常のお知らせ＋PDFボタン対応） */}
         <section className="bg-white rounded-[3.5rem] shadow-xl shadow-slate-200 border border-white overflow-hidden">
           <div className="p-10">
             <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-8 text-center italic">— {t.boardTitle} —</h2>
             {translatedNotices.length > 0 ? (
               <div className="space-y-8 animate-in fade-in duration-1000">
-                {translatedNotices.slice(0, 5).map((notice, i) => (
-                    <div key={notice.id} className={`${i !== 0 ? 'pt-8 border-t border-slate-50' : ''}`}>
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="text-lg font-black text-slate-900 leading-tight tracking-tight">{notice.title}</h3>
+                {translatedNotices.slice(0, 5).map((notice, i) => {
+                    const pdfs = getPdfUrls(notice.pdf_url);
+                    return (
+                        <div key={notice.id} className={`${i !== 0 ? 'pt-8 border-t border-slate-50' : ''}`}>
+                            <div className="flex justify-between items-start mb-3">
+                                <h3 className="text-lg font-black text-slate-900 leading-tight tracking-tight">{notice.title}</h3>
+                                <span className="text-[8px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
+                                    {formatDate(notice.published_at || notice.created_at).split(' ')[0]}
+                                </span>
+                            </div>
+                            <div className="text-[14px] text-slate-600 leading-relaxed bg-[#F9FBFF] p-6 rounded-[2rem] whitespace-pre-wrap font-medium border border-slate-100 mb-4">
+                                {notice.content}
+                            </div>
+                            
+                            {/* PDFが添付されている場合のみボタンを表示 */}
+                            {pdfs.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                    {pdfs.map((url, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => handleAdInteraction(notice.id, url)}
+                                            className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-black flex items-center gap-2 hover:bg-blue-50 hover:text-blue-600 transition-colors shadow-sm"
+                                        >
+                                            📄 {t.viewFlyer} {pdfs.length > 1 ? `#${idx + 1}` : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                        <div className="text-[14px] text-slate-600 leading-relaxed bg-[#F9FBFF] p-6 rounded-[2rem] whitespace-pre-wrap font-medium border border-slate-100">
-                        {notice.content}
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
               </div>
             ) : (
               <div className="py-10 text-center">
