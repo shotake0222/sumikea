@@ -41,7 +41,8 @@ export default function ResidentDashboard() {
       contactText: '粗大ゴミ等の問い合わせ先', 
       adsTitle: '近隣のトピックス', noAds: '周辺のお得な情報を探索中...', home: 'ホーム', settings: '設定', logout: 'ログアウト',
       langLabel: 'TRANSLATE / 多言語表示',
-      viewFlyer: 'チラシを見る'
+      viewFlyer: 'チラシを見る',
+      postedAt: '投函日時'
     },
     en: {
       room: ' Room', mypage: 'My Page', postTitle: 'PRIORITY POST', noPost: 'Waiting for updates...',
@@ -52,7 +53,8 @@ export default function ResidentDashboard() {
       contactText: 'Trash Contact Info', 
       adsTitle: 'LOCAL TOPICS', noAds: 'Exploring local deals...', home: 'Home', settings: 'Settings', logout: 'Logout',
       langLabel: 'TRANSLATE',
-      viewFlyer: 'View Flyer'
+      viewFlyer: 'View Flyer',
+      postedAt: 'Posted at'
     }
   };
   const t = uiTexts[targetLang] || uiTexts.ja;
@@ -143,7 +145,6 @@ export default function ResidentDashboard() {
     }
   };
 
-  // 🎯 PDF解析ロジック
   const getPdfUrls = (urlString: string) => {
     if (!urlString) return [];
     return urlString.split(',').map(u => u.trim()).filter(u => u.length > 0);
@@ -174,6 +175,15 @@ export default function ResidentDashboard() {
   const saveContactInfo = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('profiles').update({ garbage_contact_info: garbageContact }).eq('id', user?.id);
+  };
+
+  // 🎯 日時フォーマット関数
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('ja-JP', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
   };
 
   if (loading) return (
@@ -220,7 +230,7 @@ export default function ResidentDashboard() {
 
       <div className="px-6 space-y-10 -mt-8 relative z-20">
         
-        {/* 1. 重要ポスト（全チラシPDFへのアクセス機能追加） */}
+        {/* 🎯 1. 重要ポスト（投函日時を表示に追加） */}
         <section className="space-y-6">
           <div className="flex items-center gap-3 px-4">
             <div className="w-1.5 h-6 bg-blue-500 rounded-full"></div>
@@ -238,7 +248,14 @@ export default function ResidentDashboard() {
                   >
                     <div className="absolute top-6 right-8 opacity-10 text-6xl">📬</div>
                     <div className="relative z-10">
-                      <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block shadow-lg">DIGITAL POST</span>
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <span className="text-[8px] font-black bg-blue-600 px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">DIGITAL POST</span>
+                        {/* 🕒 投函日時を表示 */}
+                        <span className="text-[9px] font-bold text-white/40 tabular-nums">
+                           {t.postedAt}: {formatDate(post.created_at)}
+                        </span>
+                      </div>
+                      
                       <h3 className="text-2xl font-black leading-tight mb-4 italic tracking-tight underline decoration-blue-500/50 underline-offset-4">
                           {post.title}
                       </h3>
@@ -246,7 +263,6 @@ export default function ResidentDashboard() {
                           {post.content}
                       </p>
                       
-                      {/* 🎯 チラシPDFリスト表示エリア */}
                       <div className="space-y-3">
                         <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em] ml-1">Attachments / 添付資料</p>
                         <div className="grid grid-cols-1 gap-2">
@@ -288,7 +304,9 @@ export default function ResidentDashboard() {
               <div className="space-y-8 animate-in fade-in duration-1000">
                 {translatedNotices.slice(0, 5).map((notice, i) => (
                     <div key={notice.id} className={`${i !== 0 ? 'pt-8 border-t border-slate-50' : ''}`}>
-                        <h3 className="text-lg font-black text-slate-900 leading-tight tracking-tight mb-4">{notice.title}</h3>
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="text-lg font-black text-slate-900 leading-tight tracking-tight">{notice.title}</h3>
+                        </div>
                         <div className="text-[14px] text-slate-600 leading-relaxed bg-[#F9FBFF] p-6 rounded-[2rem] whitespace-pre-wrap font-medium border border-slate-100">
                         {notice.content}
                         </div>
