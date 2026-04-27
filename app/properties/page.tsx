@@ -149,7 +149,7 @@ export default function AdminPropertiesPage() {
 
       const initialPassword = Math.random().toString(36).slice(-8);
       const assignRole = activeTab === 'manager' ? 'MANAGER' : activeTab === 'shop' ? 'SHOP' : 'POSTING';
-      const roleName = activeTab === 'manager' ? '管理会社' : activeTab === 'shop' ? '提携店舗' : 'ポスティング業者';
+      // const roleName = activeTab === 'manager' ? '管理会社' : activeTab === 'shop' ? '提携店舗' : 'ポスティング業者';
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newItem.email,
@@ -191,8 +191,9 @@ export default function AdminPropertiesPage() {
         }
       }
 
-      // 🎯 Resendによるウェルカムメール送信APIの呼び出し
       const loginUrl = `${window.location.origin}/login?type=${activeTab}`;
+
+      /* 🎯 Resendによるメール送信（準備中につき一時停止）
       await fetch('/api/send-welcome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -204,6 +205,7 @@ export default function AdminPropertiesPage() {
           roleName: roleName
         }),
       });
+      */
 
       setRegisteredInfo({ url: loginUrl, email: newItem.email, pw: initialPassword });
       setNewItem({ name: '', email: '', address: '' });
@@ -239,9 +241,9 @@ export default function AdminPropertiesPage() {
   };
 
   const handleResetPassword = async () => {
-    if (!confirm('パスワードを再発行し、メールで通知しますか？')) return;
+    if (!confirm('パスワードを再発行しますか？（画面上に表示されます）')) return;
     const newPassword = Math.random().toString(36).slice(-8);
-    const roleName = activeTab === 'manager' ? '管理会社' : activeTab === 'shop' ? '提携店舗' : 'ポスティング業者';
+    // const roleName = activeTab === 'manager' ? '管理会社' : activeTab === 'shop' ? '提携店舗' : 'ポスティング業者';
     
     try {
       let table = activeTab === 'posting' ? 'posting_companies' : activeTab === 'manager' ? 'management_companies' : 'stores';
@@ -252,7 +254,7 @@ export default function AdminPropertiesPage() {
 
       if (upError) throw upError;
 
-      // 🎯 再発行メール送信APIの呼び出し
+      /* 🎯 再発行メール送信API（準備中につき一時停止）
       await fetch('/api/send-welcome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -264,6 +266,7 @@ export default function AdminPropertiesPage() {
           roleName: `${roleName}（パスワード再発行）`
         }),
       });
+      */
 
       setIsManageModalOpen(false);
       setRegisteredInfo({ url: `${window.location.origin}/login`, email: selectedItem.email, pw: newPassword });
@@ -333,7 +336,7 @@ export default function AdminPropertiesPage() {
             <div key={item.id} className="bg-white rounded-[3rem] shadow-sm border border-slate-100 p-8 flex flex-col group hover:border-blue-200 transition-all">
               <div className="flex justify-between items-start mb-2">
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${item.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
-                  {item.status === 'active' ? '利用中' : '招待中（メール送信済）'}
+                  {item.status === 'active' ? '利用中' : '招待中（PW発行済）'}
                 </span>
                 {item.lat ? (
                   <span className="text-[9px] text-emerald-500 font-mono">📍 {item.lat.toFixed(3)}, {item.lng.toFixed(3)}</span>
@@ -385,7 +388,7 @@ export default function AdminPropertiesPage() {
               <div className="text-center py-4">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl animate-bounce">✓</div>
                 <h2 className="text-2xl font-black mb-2 italic uppercase">Registration Success</h2>
-                <p className="text-[10px] font-black text-emerald-600 mb-6 uppercase tracking-widest italic">ログイン情報をメールで送信しました</p>
+                <p className="text-[10px] font-black text-emerald-600 mb-6 uppercase tracking-widest italic">（現在メール送信はスキップされています）</p>
                 <div className="bg-slate-50 p-6 rounded-[2.5rem] text-left space-y-4 mb-8 border border-emerald-100">
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">Login ID</label><p className="text-sm font-black">{registeredInfo.email}</p></div>
                   <div><label className="text-[9px] font-black text-slate-400 uppercase">Initial Password</label><p className="text-2xl font-black text-orange-600 tracking-wider">{registeredInfo.pw}</p></div>
@@ -406,7 +409,7 @@ export default function AdminPropertiesPage() {
               <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={selectedItem.name} onChange={(e) => setSelectedItem({...selectedItem, name: e.target.value})} />
               <input className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={selectedItem.address} onChange={(e) => setSelectedItem({...selectedItem, address: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-orange-600 hover:text-white transition-all">🔑 パスワード再発行通知</button>
+                <button onClick={handleResetPassword} className="bg-orange-50 text-orange-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-orange-600 hover:text-white transition-all">🔑 パスワード再発行（表示のみ）</button>
                 <button onClick={handleDeleteItem} className="bg-red-50 text-red-600 py-4 rounded-2xl font-black text-[10px] uppercase hover:bg-red-600 hover:text-white transition-all">🗑️ アカウント削除</button>
               </div>
               <button onClick={handleUpdateItem} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">情報を更新</button>
