@@ -73,15 +73,14 @@ export default function PostingDigitalDashboard() {
         const { data: campaigns } = await supabase
           .from('digital_flyers')
           .select('*')
-          .order('created_at', { ascending: false })
-          .limit(3);
-        setRecentCampaigns(campaigns || []);
+          .order('created_at', { ascending: false });
+          
+        setRecentCampaigns(campaigns?.slice(0, 3) || []);
 
-        const { data: adStats } = await supabase.from('local_ad_stats').select('views_count, clicks_count');
-        
-        if (adStats) {
-          const totalViews = adStats.reduce((sum, item) => sum + (item.views_count || 0), 0);
-          const totalClicks = adStats.reduce((sum, item) => sum + (item.clicks_count || 0), 0);
+        // 🎯 修正: 'local_ad_stats' ではなく、実際のデータが入っている 'digital_flyers' から集計する
+        if (campaigns) {
+          const totalViews = campaigns.reduce((sum, item) => sum + (item.views_count || 0), 0);
+          const totalClicks = campaigns.reduce((sum, item) => sum + (item.clicks_count || 0), 0);
           const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(2) : '0.00';
           
           setTotalStats({
@@ -129,7 +128,6 @@ export default function PostingDigitalDashboard() {
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      // 🎯 修正: 型定義を明示的に指定
       const newFilesData: { name: string; url: string }[] = [];
       for (let i = 0; i < files.length; i++) {
         const url = await uploadImage(files[i], 'sumikea-images', 'digital-leaflets');
@@ -241,19 +239,20 @@ export default function PostingDigitalDashboard() {
       <div className="max-w-[1400px] mx-auto">
         
         <header className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 flex flex-col justify-center">
             <h1 className="text-4xl font-black italic uppercase">Posutto <span className="text-indigo-600">Posting</span></h1>
             <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2">デジタルチラシ投函コンソール</p>
           </div>
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">総インプレッション数</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">総インプレッション</p>
               <p className="text-3xl font-black text-slate-900 tracking-tighter">{totalStats.impressions.toLocaleString()}</p>
             </div>
             <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full">LIVE</div>
           </div>
-          <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center">
-            <div>
+          <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center relative overflow-hidden">
+            <div className="absolute right-[-10%] top-[-10%] opacity-10 text-7xl">📈</div>
+            <div className="relative z-10">
               <p className="text-[10px] font-black text-slate-500 uppercase">平均クリック率</p>
               <p className="text-3xl font-black tracking-tighter">{totalStats.ctr}%</p>
             </div>
@@ -352,15 +351,33 @@ export default function PostingDigitalDashboard() {
             <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
               <h3 className="text-[10px] font-black text-slate-400 uppercase mb-10">最近のキャンペーン</h3>
               <div className="space-y-8">
-                {recentCampaigns.map((camp, i) => (
-                  <div key={i}>
-                    <div className="flex justify-between items-start mb-4">
-                      <div><span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">LIVE</span><h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4></div>
-                      <div className="text-right"><p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p></div>
+                {recentCampaigns.length > 0 ? (
+                  recentCampaigns.map((camp, i) => (
+                    <div key={i} className="group border-b border-slate-50 pb-6 last:border-0 last:pb-0 cursor-pointer" onClick={() => router.push('/posting/report')}>
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">LIVE</span>
+                          <h4 className="text-md font-black text-slate-800 mt-2 italic line-clamp-1 group-hover:text-indigo-600 transition-colors">{camp.title}</h4>
+                        </div>
+                        <div className="text-right pl-4">
+                          <p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p>
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Views</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center py-6">キャンペーンがありません</p>
+                )}
               </div>
+
+              {/* 🎯 復元: レポート出力画面へのボタン */}
+              <button 
+                onClick={() => router.push('/posting/report')}
+                className="w-full mt-10 py-5 border-2 border-slate-100 rounded-3xl text-[11px] font-black text-slate-400 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all uppercase tracking-widest"
+              >
+                詳細なレポートを出力 →
+              </button>
             </div>
           </div>
         </div>
