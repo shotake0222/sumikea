@@ -3,9 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { adSchema } from '../../../lib/validations';
 import { uploadImage } from '../../../lib/upload';
 
 // 距離計算ロジック
@@ -33,6 +30,11 @@ export default function PostingDigitalDashboard() {
   const [radius, setRadius] = useState<number>(3); 
   const [isSearchingArea, setIsSearchingArea] = useState(false);
 
+  // フォーム用ステート（React Hook Formを使わず直接管理することで確実に値をキャッチする）
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [targetPropertyId, setTargetPropertyId] = useState('');
+
   const [totalStats, setTotalStats] = useState({
     impressions: 0,
     ctr: '0.00'
@@ -49,10 +51,6 @@ export default function PostingDigitalDashboard() {
   const [endDate, setEndDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16));
 
   const isSegmentMode = Object.values(demographics).some(val => val === true);
-
-  const { register, handleSubmit, formState: { errors }, reset } = useForm({
-    resolver: zodResolver(adSchema)
-  });
 
   useEffect(() => {
     const initialize = async () => {
@@ -100,25 +98,15 @@ export default function PostingDigitalDashboard() {
     initialize();
   }, [router]);
 
-  // 🌐 住所を座標に変換（正規化 + 削りリトライ機能）
   const getCoords = async (rawAddress: string) => {
-    // 1. 表記ゆれの正規化
     const normalized = rawAddress
       .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
       .replace(/[－ー－―ー−-]/g, '-')
       .replace(/[　]/g, ' ')
       .trim();
 
-    // 2. 検索パターンの構築
     const base = normalized.split(' ')[0];
-    const searchPatterns = [
-      normalized,
-      base,
-      base.replace(/-\d+$/, ''),
-      base.replace(/-\d+$/, '').replace(/-\d+$/, ''),
-      base.replace(/\d+.*$/, '')
-    ];
-
+    const searchPatterns = [normalized, base, base.replace(/-\d+$/, ''), base.replace(/\d+.*$/, '')];
     const uniquePatterns = Array.from(new Set(searchPatterns)).filter(p => p.length > 3);
 
     for (const query of uniquePatterns) {
@@ -128,13 +116,10 @@ export default function PostingDigitalDashboard() {
         });
         const data = await res.json();
         if (data && data.length > 0) {
-          console.log(`Geocoding success: "${query}"`);
           return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         }
         await new Promise(r => setTimeout(r, 200));
-      } catch (e) {
-        console.error('Geocoder Error:', e);
-      }
+      } catch (e) { console.error(e); }
     }
     return null;
   };
@@ -142,28 +127,16 @@ export default function PostingDigitalDashboard() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
-    const duplicateFiles = Array.from(files).filter(newFile => 
-      uploadedFiles.some(existingFile => existingFile.name === newFile.name)
-    );
-
-    if (duplicateFiles.length > 0) {
-      alert(`【エラー】既にリストに存在するファイルが含まれています。`);
-      e.target.value = '';
-      return;
-    }
-
     setUploading(true);
     try {
-      const newFilesData: {name: string, url: string}[] = [];
+      const newFilesData = [];
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const url = await uploadImage(file, 'sumikea-images', 'digital-leaflets');
-        newFilesData.push({ name: file.name, url: url });
+        const url = await uploadImage(files[i], 'sumikea-images', 'digital-leaflets');
+        newFilesData.push({ name: files[i].name, url: url });
       }
       setUploadedFiles(prev => [...prev, ...newFilesData]);
     } catch (err: any) {
-      alert(`アップロードに失敗しました。`);
+      alert(`アップロード失敗`);
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -186,53 +159,55 @@ export default function PostingDigitalDashboard() {
   const handleSearchArea = async () => {
     if (!address) return;
     setIsSearchingArea(true);
-    
     try {
       const targetCoords = await getCoords(address);
-
       let result = [];
       if (targetCoords) {
         result = allProperties.filter(p => {
           if (!p.lat || !p.lng) return false;
-          const distance = getDistanceFromLatLonInKm(targetCoords.lat, targetCoords.lng, p.lat, p.lng);
-          return distance <= radius;
+          return getDistanceFromLatLonInKm(targetCoords.lat, targetCoords.lng, p.lat, p.lng) <= radius;
         });
       } else {
         result = allProperties.filter(p => p.name?.includes(address) || p.address?.includes(address));
       }
-      
       setFilteredProperties(result);
-      alert(result.length > 0 ? `指定エリア圏内で ${result.length} 件の物件が見つかりました` : '配信可能な物件がありませんでした');
+      alert(result.length > 0 ? `${result.length}件の物件がヒットしました` : '配信可能物件なし');
     } catch (error) {
-      alert('エリア検索に失敗しました');
+      alert('エリア検索失敗');
     } finally {
       setIsSearchingArea(false);
     }
   };
 
-  const onSendAd = async (data: any) => {
+  // 🎯 送信ギミック：handleSubmitを使わずステートを直接見てバリデーションする
+  const onSendAdManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // 1. バリデーションチェック
+    if (!title) return alert('タイトルを入力してください');
+    if (!content) return alert('配信内容を入力してください');
     if (uploadedFiles.length === 0) return alert('チラシPDFをアップロードしてください');
     
     let targetPropertyIds: string[] = [];
     if (deliveryMode === 'specific') {
-        if (!data.property_id) return alert('物件を選択してください');
-        targetPropertyIds = [data.property_id];
+        if (!targetPropertyId) return alert('配信先物件を選択してください');
+        targetPropertyIds = [targetPropertyId];
     } else if (deliveryMode === 'area') {
-        if (filteredProperties.length === 0) return alert('配信可能な物件が0件です。先にエリア検索を実行してください。');
+        if (filteredProperties.length === 0) return alert('対象物件が0件です。エリア検索を行ってください。');
         targetPropertyIds = filteredProperties.map(p => p.id);
     } else {
         targetPropertyIds = allProperties.map(p => p.id); 
     }
 
-    if (!confirm(`計 ${targetPropertyIds.length} 件の物件にデジタル投函を開始しますか？`)) return;
+    if (!confirm(`計 ${targetPropertyIds.length} 件の物件にデジタル投函を開始します。よろしいですか？`)) return;
 
     setIsSubmitting(true);
     try {
       const pdfUrlsString = uploadedFiles.map(f => f.url).join(',');
       const inserts = targetPropertyIds.map(pid => ({
         property_id: pid,
-        title: data.title,
-        content: data.content,
+        title: title,
+        content: content,
         pdf_url: pdfUrlsString, 
         is_segmented: isSegmentMode,
         target_metadata: demographics,
@@ -242,29 +217,22 @@ export default function PostingDigitalDashboard() {
       }));
 
       const { error } = await supabase.from('digital_flyers').insert(inserts);
-
       if (error) throw error;
 
-      alert(`投函完了しました！`);
-      reset();
-      setUploadedFiles([]);
-      setAddress('');
+      alert(`計 ${inserts.length} 件に投函を完了しました！`);
+      setTitle(''); setContent(''); setUploadedFiles([]); setAddress('');
+      
       const { data: campaigns } = await supabase.from('digital_flyers').select('*').order('created_at', { ascending: false }).limit(3);
       setRecentCampaigns(campaigns || []);
     } catch (err: any) {
-      alert('エラーが発生しました: ' + err.message);
+      alert('送信エラー: ' + err.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const onFormError = (err: any) => {
-    console.error("Validation Error:", err);
-    alert("入力内容に不備があります。タイトルや内容が未入力ではないか確認してください。");
-  };
-
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50 font-black text-slate-400 uppercase tracking-widest italic text-center">
+    <div className="flex items-center justify-center min-h-screen font-black text-slate-400 uppercase tracking-widest italic">
       Loading...
     </div>
   );
@@ -277,7 +245,7 @@ export default function PostingDigitalDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
           <div className="md:col-span-2">
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">Posutto <span className="text-indigo-600">Posting</span></h1>
-            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2">デジタルチラシ投函・運用コンソール</p>
+            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2">デジタルチラシ投函コンソール</p>
           </div>
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
             <div>
@@ -286,18 +254,18 @@ export default function PostingDigitalDashboard() {
             </div>
             <div className="text-green-500 font-black text-[10px] bg-green-50 px-3 py-1 rounded-full">LIVE</div>
           </div>
-          <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center relative overflow-hidden">
-            <div className="relative z-10">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">平均クリック率 (CTR)</p>
+          <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex justify-between items-center">
+            <div>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">平均クリック率</p>
               <p className="text-3xl font-black tracking-tighter">{totalStats.ctr}%</p>
             </div>
-            <div className="absolute -right-4 -bottom-4 text-6xl italic font-black opacity-10">%</div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-7 space-y-8">
-            <form onSubmit={handleSubmit(onSendAd, onFormError)} className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
+            {/* 🎯 送信イベントを onSendAdManual に切り替え */}
+            <form onSubmit={onSendAdManual} className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
               <h2 className="text-xl font-black text-slate-900 mb-10 flex items-center gap-3 italic uppercase tracking-tighter">
                 <span className="w-2 h-8 bg-indigo-600 rounded-full"></span>
                 新規キャンペーン作成
@@ -309,106 +277,74 @@ export default function PostingDigitalDashboard() {
                   <div className="flex items-center justify-between">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">配信エリアの指定</label>
                      <div className="flex bg-slate-100 rounded-full p-1">
-                        <button type="button" onClick={() => setDeliveryMode('area')} className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === 'area' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>圏内指定</button>
-                        <button type="button" onClick={() => setDeliveryMode('specific')} className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === 'specific' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>物件指定</button>
-                        <button type="button" onClick={() => { setDeliveryMode('all'); setFilteredProperties(allProperties); }} className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === 'all' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>全物件配信</button>
+                        {['area', 'specific', 'all'].map((mode) => (
+                          <button key={mode} type="button" onClick={() => setDeliveryMode(mode as any)} 
+                            className={`text-[10px] font-black px-4 py-1.5 rounded-full transition-all ${deliveryMode === mode ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>
+                            {mode === 'area' ? '圏内指定' : mode === 'specific' ? '物件指定' : '全物件配信'}
+                          </button>
+                        ))}
                      </div>
                   </div>
 
                   {deliveryMode === 'area' && (
                     <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100 space-y-4">
                       <div className="flex gap-4">
-                        <input 
-                          type="text" 
-                          value={address} 
-                          onChange={(e) => setAddress(e.target.value)} 
-                          placeholder="基準となる住所や店舗名を入力..." 
-                          className="flex-1 bg-white p-4 rounded-2xl font-bold text-sm border border-slate-200 outline-none focus:border-indigo-400"
-                        />
-                        <select 
-                          value={radius} 
-                          onChange={(e) => setRadius(Number(e.target.value))}
-                          className="bg-white p-4 rounded-2xl font-bold text-sm border border-slate-200 outline-none focus:border-indigo-400 w-32"
-                        >
+                        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="基準となる住所..." className="flex-1 bg-white p-4 rounded-2xl font-bold text-sm outline-none" />
+                        <select value={radius} onChange={(e) => setRadius(Number(e.target.value))} className="bg-white p-4 rounded-2xl font-bold text-sm outline-none w-32">
                           <option value={1}>半径 1km</option>
                           <option value={3}>半径 3km</option>
                           <option value={5}>半径 5km</option>
-                          <option value={10}>半径 10km</option>
                         </select>
                       </div>
-                      <button 
-                        type="button" 
-                        onClick={handleSearchArea}
-                        disabled={isSearchingArea || !address}
-                        className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl text-sm hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
-                      >
-                        {isSearchingArea ? '検索中...' : 'この圏内にある物件を検索'}
-                      </button>
-                      
-                      <p className="text-[10px] font-bold text-indigo-600 text-right mt-2">
-                        対象エリア内に <span className="text-lg font-black">{filteredProperties.length}</span> 件の物件が見つかりました。
-                      </p>
+                      <button type="button" onClick={handleSearchArea} disabled={isSearchingArea} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl text-sm shadow-lg">圏内物件を検索</button>
+                      <p className="text-[10px] font-bold text-indigo-600 text-right">現在: <span className="text-lg font-black">{filteredProperties.length}</span> 件ヒット中</p>
                     </div>
                   )}
 
                   {deliveryMode === 'specific' && (
-                    <select {...register('property_id')} className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20">
-                      <option value="">配信先（マンション）を選択してください</option>
+                    <select value={targetPropertyId} onChange={(e) => setTargetPropertyId(e.target.value)} className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm outline-none">
+                      <option value="">配信先を選択してください</option>
                       {allProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   )}
-                  
-                  {deliveryMode === 'all' && (
-                    <div className="bg-slate-50 p-6 rounded-[2rem] text-center border border-slate-100">
-                       <p className="text-sm font-black text-slate-600">登録されているすべての物件（{allProperties.length}件）に配信します</p>
-                    </div>
-                  )}
                 </div>
 
-                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">配信スケジュール設定</label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <p className="text-[10px] font-black text-slate-400 ml-1">配信開始日時</p>
-                      <input type="datetime-local" value={startDate} onChange={(e)=>setStartDate(e.target.value)} className="w-full bg-white border-none p-5 rounded-2xl font-bold text-sm shadow-inner outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                      <input type="datetime-local" value={startDate} onChange={(e)=>setStartDate(e.target.value)} className="w-full bg-white p-5 rounded-2xl font-bold text-sm outline-none shadow-inner" />
                     </div>
                     <div className="space-y-2">
                       <p className="text-[10px] font-black text-slate-400 ml-1">配信終了日時</p>
-                      <input type="datetime-local" value={endDate} onChange={(e)=>setEndDate(e.target.value)} className="w-full bg-white border-none p-5 rounded-2xl font-bold text-sm shadow-inner outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                      <input type="datetime-local" value={endDate} onChange={(e)=>setEndDate(e.target.value)} className="w-full bg-white p-5 rounded-2xl font-bold text-sm outline-none shadow-inner" />
                     </div>
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">チラシPDFデータ</label>
-                    <label className={`w-full h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center cursor-pointer transition-all ${uploading ? 'opacity-50 pointer-events-none' : 'bg-slate-50 border-slate-200 hover:border-indigo-400 hover:bg-white'}`}>
+                    <label className="w-full h-40 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all">
                       <span className="text-3xl mb-2">{uploading ? '⏳' : '📄'}</span>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{uploading ? 'アップロード中...' : 'PDFをここにドロップ'}</span>
+                      <span className="text-[10px] font-black text-slate-400">{uploading ? 'UP中...' : '資料をドロップ'}</span>
                       <input type="file" className="hidden" onChange={handleFileUpload} accept="application/pdf,image/*" multiple />
                     </label>
-
-                    {uploadedFiles.length > 0 && (
-                      <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                        {uploadedFiles.map((file, idx) => (
-                          <div key={idx} className="flex items-center justify-between bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                            <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-xs font-black text-indigo-700 truncate max-w-[180px] hover:underline">{file.name}</a>
-                            <button type="button" onClick={() => removeFile(idx)} className="text-indigo-300 hover:text-red-500 p-1">✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <div className="space-y-2">
+                      {uploadedFiles.map((file, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-indigo-50 p-3 rounded-xl border border-indigo-100 text-[10px] font-black text-indigo-700">
+                          <span className="truncate max-w-[200px]">{file.name}</span>
+                          <button type="button" onClick={() => removeFile(idx)} className="text-indigo-300 hover:text-red-500">✕</button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">ターゲット属性の絞り込み</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">属性絞り込み</label>
                     <div className="grid grid-cols-2 gap-3">
-                      <button type="button" onClick={toggleSelectAllDemographics} className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${Object.values(demographics).every(val => val) ? 'bg-indigo-900 border-indigo-900 text-white shadow-lg' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}>
-                        {Object.values(demographics).every(val => val) ? '全選択を解除' : '全選択する'}
-                      </button>
+                      <button type="button" onClick={toggleSelectAllDemographics} className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${Object.values(demographics).every(val => val) ? 'bg-indigo-900 border-indigo-900 text-white shadow-lg' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}>全選択</button>
                       {['family', 'single', 'senior'].map((key) => (
                         <button key={key} type="button" onClick={() => setDemographics(d => ({ ...d, [key]: !d[key as keyof typeof demographics] }))}
-                          className={`p-4 rounded-2xl text-[10px] font-black transition-all border-2 ${demographics[key as keyof typeof demographics] ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
+                          className={`p-4 rounded-2xl text-[10px] font-black border-2 transition-all ${demographics[key as keyof typeof demographics] ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400'}`}>
                           {key === 'family' ? 'ファミリー' : key === 'single' ? '単身者' : 'シニア'}
                         </button>
                       ))}
@@ -417,8 +353,9 @@ export default function PostingDigitalDashboard() {
                 </div>
 
                 <div className="space-y-4">
-                  <input {...register('title')} placeholder="プッシュ通知のタイトル" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
-                  <textarea {...register('content')} placeholder="通知内容の詳細..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm border-none resize-none outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                  {/* 🎯 value と onChange を明示的にバインド */}
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="プッシュ通知のタイトル" className="w-full bg-slate-50 p-5 rounded-2xl font-bold text-sm outline-none" />
+                  <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="通知内容の詳細..." className="w-full bg-slate-50 p-5 rounded-[2rem] h-32 text-sm outline-none resize-none" />
                 </div>
 
                 <button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 text-white py-8 rounded-[2.5rem] font-black text-xl italic hover:bg-indigo-600 transition-all shadow-2xl active:scale-[0.98] disabled:opacity-50 uppercase tracking-tighter">
@@ -430,28 +367,17 @@ export default function PostingDigitalDashboard() {
 
           <div className="lg:col-span-5 space-y-8">
             <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-100">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-10 flex items-center justify-between">ライブ・パフォーマンス<span className="flex h-2 w-2 bg-red-500 rounded-full animate-pulse"></span></h3>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-10 flex items-center justify-between">配信中キャンペーン</h3>
               <div className="space-y-8">
                 {recentCampaigns.map((camp, i) => (
                   <div key={i}>
                     <div className="flex justify-between items-start mb-4">
-                      <div><span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-widest">配信中</span><h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4></div>
-                      <div className="text-right"><p className="text-xl font-black text-slate-900 leading-none">{(camp.views_count || 0).toLocaleString()}</p><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p></div>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-600" style={{ width: camp.views_count ? '100%' : '0%' }}></div>
+                      <div><span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">LIVE</span><h4 className="text-md font-black text-slate-800 mt-2 italic">{camp.title}</h4></div>
+                      <div className="text-right"><p className="text-xl font-black text-slate-900">{(camp.views_count || 0).toLocaleString()}</p><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">開封数</p></div>
                     </div>
                   </div>
                 ))}
-                {recentCampaigns.length === 0 && <p className="text-center py-10 text-slate-300 font-bold uppercase text-[10px]">稼働中のキャンペーンなし</p>}
               </div>
-            </div>
-
-            <div className="bg-indigo-600 rounded-[3rem] p-12 text-white shadow-2xl relative overflow-hidden group">
-              <h3 className="text-3xl font-black italic tracking-tighter mb-4">詳細な分析データ</h3>
-              <p className="text-xs font-bold leading-relaxed opacity-70 mb-8 max-w-[240px]">ターゲット属性別の開封率や詳細レポートを表示できます。</p>
-              <button onClick={() => router.push('/posting/reports')} className="bg-white text-indigo-600 px-10 py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl tracking-widest">詳細レポートを表示 →</button>
-              <div className="absolute -right-10 -bottom-10 text-[12rem] font-black italic opacity-5 uppercase tracking-tighter group-hover:scale-110 transition-transform duration-700">データ</div>
             </div>
           </div>
         </div>
