@@ -168,7 +168,10 @@ export default function ResidentDashboard() {
         if (flyers) {
           flyers.forEach(flyer => {
             if (!impressionTracked.current.has(flyer.id)) {
-              supabase.rpc('increment_ad_views', { target_ad_id: flyer.id }).catch(() => {});
+              // 🎯 修正：.catch() ではなく .then() でエラーを処理（TypeScriptの型エラー回避）
+              supabase.rpc('increment_ad_views', { target_ad_id: flyer.id }).then(({ error }) => {
+                if (error) console.warn("Impression track skipped", error.message);
+              });
               impressionTracked.current.add(flyer.id);
             }
           });
@@ -180,7 +183,11 @@ export default function ResidentDashboard() {
   const handleTrackDuration = async (adId?: string) => {
     if (viewStartTime.current && adId) {
       const duration = Math.round((Date.now() - viewStartTime.current) / 1000);
-      if (duration > 0) await supabase.rpc('add_ad_duration', { target_ad_id: adId, duration_seconds: duration }).catch(() => {});
+      if (duration > 0) {
+        // 🎯 修正：await 実行後に error をチェックする形に変更
+        const { error } = await supabase.rpc('add_ad_duration', { target_ad_id: adId, duration_seconds: duration });
+        if (error) console.warn("Duration track skipped", error.message);
+      }
       viewStartTime.current = null;
     }
   };
@@ -194,8 +201,9 @@ export default function ResidentDashboard() {
     if (!pdfUrl) return;
     viewStartTime.current = Date.now();
     
-    supabase.rpc('increment_ad_clicks', { target_ad_id: adId }).catch(e => {
-        console.warn("Click tracking skipped for this entity type (expected behavior for new notices).");
+    // 🎯 修正：DBへの記録は非同期で投げつつ、エラー時は警告を出すだけにする
+    supabase.rpc('increment_ad_clicks', { target_ad_id: adId }).then(({ error }) => {
+        if (error) console.warn("Click tracking skipped for this entity type (expected behavior for new notices).");
     });
     
     window.open(pdfUrl, '_blank', 'noopener,noreferrer');
@@ -438,7 +446,7 @@ export default function ResidentDashboard() {
           <div className="p-6 min-h-[260px] flex items-center justify-center bg-white px-8">
             {garbageCalendars[selectedYearMonth] ? (
               <div className="w-full">
-                {/* 🎯 修正：タップ時に別タブではなく、ステートにURLをセットしてモーダルを開く */}
+                {/* 🎯 タップ時に別タブではなく、ステートにURLをセットしてモーダルを開く */}
                 <img 
                   src={garbageCalendars[selectedYearMonth]} 
                   alt="Calendar" 
