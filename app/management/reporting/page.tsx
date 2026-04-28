@@ -20,18 +20,17 @@ function ReportingContent() {
     trend: '+0%'
   });
 
-  // 🎯 デモグラフィック用のステートを追加
   const [demographics, setDemographics] = useState({
     age: [
-      { label: '20代', value: 15, color: 'bg-blue-300' },
-      { label: '30代', value: 35, color: 'bg-blue-500' },
-      { label: '40代', value: 30, color: 'bg-blue-700' },
-      { label: '50代以上', value: 20, color: 'bg-slate-800' }
+      { label: '20代', value: 0, color: 'bg-blue-300' },
+      { label: '30代', value: 0, color: 'bg-blue-500' },
+      { label: '40代', value: 0, color: 'bg-blue-700' },
+      { label: '50代以上', value: 0, color: 'bg-slate-800' }
     ],
     household: [
-      { label: '単身世帯', value: 45, color: 'bg-emerald-400' },
-      { label: 'ファミリー', value: 40, color: 'bg-emerald-600' },
-      { label: 'シニア・その他', value: 15, color: 'bg-slate-800' }
+      { label: '単身世帯', value: 0, color: 'bg-emerald-400' },
+      { label: 'ファミリー', value: 0, color: 'bg-emerald-600' },
+      { label: 'シニア・その他', value: 0, color: 'bg-slate-800' }
     ],
     insight: ''
   });
@@ -51,17 +50,11 @@ function ReportingContent() {
     try {
       setLoading(true);
       
-      // 🎯 デモグラフィックとインサイトのモックデータ生成（営業用トークスクリプト）
-      // ※実際はSupabaseの profiles テーブル等から年齢や家族構成を group by で集計します。
-      let currentInsight = '';
-
+      // 1. メインKPIデータの取得
       if (target === 'resident') {
         const { count: total } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER');
         const { count: active } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).not('property_id', 'is', null);
         setSummary({ mainValue: (total || 0).toLocaleString(), sub1: (active || 0).toLocaleString(), sub2: '1.4回/人', trend: '+12.4%' });
-        
-        currentInsight = '30〜40代のファミリー層が全体の中心。生活必需品や教育・飲食への関心が非常に高く、ポスティング広告への反応率（CTR）が他媒体より高い傾向にあります。';
-      
       } else if (target === 'shop') {
         const { count: total } = await supabase.from('stores').select('*', { count: 'exact', head: true });
         const { data: stats } = await supabase.from('local_ad_stats').select('views_count, clicks_count');
@@ -69,9 +62,6 @@ function ReportingContent() {
         const totalClicks = stats?.reduce((acc, cur) => acc + (cur.clicks_count || 0), 0) || 0;
         const ctr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0';
         setSummary({ mainValue: (total || 0).toLocaleString(), sub1: `${ctr}%`, sub2: totalClicks.toLocaleString(), trend: '+5.2%' });
-        
-        currentInsight = '飲食店・クリニックのクーポン利用が好調です。特に単身世帯（45%）に向けた「平日夜のテイクアウト・デリバリー広告」が極めて高い費用対効果を出しています。';
-      
       } else if (target === 'posting') {
         const { count: total } = await supabase.from('digital_flyers').select('*', { count: 'exact', head: true });
         const { data: stats } = await supabase.from('local_ad_stats').select('views_count, total_view_duration');
@@ -79,18 +69,90 @@ function ReportingContent() {
         const totalDuration = stats?.reduce((acc, cur) => acc + (cur.total_view_duration || 0), 0) || 0;
         const avgDur = totalViews > 0 ? Math.floor(totalDuration / totalViews) : 0;
         setSummary({ mainValue: (total || 0).toLocaleString(), sub1: totalViews.toLocaleString(), sub2: `${avgDur}秒`, trend: '+18.9%' });
-        
-        currentInsight = 'デジタルチラシの平均滞在時間は紙媒体の「一瞥（約1秒）」を大きく上回っています。居住者に直接Push通知で届くため、確実なリーチが可能です。';
-      
       } else if (target === 'manager') {
         const { count: total } = await supabase.from('properties').select('*', { count: 'exact', head: true });
         const { count: notices } = await supabase.from('property_notifications').select('*', { count: 'exact', head: true });
         setSummary({ mainValue: (total || 0).toLocaleString(), sub1: (notices || 0).toLocaleString(), sub2: '2.1件/月', trend: '+3.1%' });
-        
-        currentInsight = '管理会社からの通知既読率は90%を超過。ペーパーレス化によるコスト削減効果に加え、物件のDX化が新たな入居者へのアピールポイントとして活用されています。';
       }
 
-      setDemographics(prev => ({ ...prev, insight: currentInsight }));
+      // 2. 本番環境からのデモグラフィックデータ集計
+      // ※profilesテーブルに age_group, household_type があると仮定。
+      // もし別テーブルや別カラム名の場合は適宜変更してください。
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('age_group, household_type')
+        .eq('role', 'USER');
+
+      let currentInsight = '';
+      let ageData = [
+        { label: '20代', value: 0, color: 'bg-blue-300' },
+        { label: '30代', value: 0, color: 'bg-blue-500' },
+        { label: '40代', value: 0, color: 'bg-blue-700' },
+        { label: '50代以上', value: 0, color: 'bg-slate-800' }
+      ];
+      let householdData = [
+        { label: '単身世帯', value: 0, color: 'bg-emerald-400' },
+        { label: 'ファミリー', value: 0, color: 'bg-emerald-600' },
+        { label: 'シニア・その他', value: 0, color: 'bg-slate-800' }
+      ];
+
+      if (profilesData && profilesData.length > 0) {
+        const totalUsers = profilesData.length;
+        
+        // 年齢層の集計
+        let ageCounts = { '20代': 0, '30代': 0, '40代': 0, '50代以上': 0 };
+        // 世帯構成の集計
+        let householdCounts = { '単身世帯': 0, 'ファミリー': 0, 'シニア・その他': 0 };
+
+        profilesData.forEach(p => {
+          if (p.age_group && ageCounts[p.age_group as keyof typeof ageCounts] !== undefined) {
+            ageCounts[p.age_group as keyof typeof ageCounts]++;
+          }
+          if (p.household_type && householdCounts[p.household_type as keyof typeof householdCounts] !== undefined) {
+            householdCounts[p.household_type as keyof typeof householdCounts]++;
+          }
+        });
+
+        ageData = [
+          { label: '20代', value: Math.round((ageCounts['20代'] / totalUsers) * 100) || 0, color: 'bg-blue-300' },
+          { label: '30代', value: Math.round((ageCounts['30代'] / totalUsers) * 100) || 0, color: 'bg-blue-500' },
+          { label: '40代', value: Math.round((ageCounts['40代'] / totalUsers) * 100) || 0, color: 'bg-blue-700' },
+          { label: '50代以上', value: Math.round((ageCounts['50代以上'] / totalUsers) * 100) || 0, color: 'bg-slate-800' }
+        ];
+
+        householdData = [
+          { label: '単身世帯', value: Math.round((householdCounts['単身世帯'] / totalUsers) * 100) || 0, color: 'bg-emerald-400' },
+          { label: 'ファミリー', value: Math.round((householdCounts['ファミリー'] / totalUsers) * 100) || 0, color: 'bg-emerald-600' },
+          { label: 'シニア・その他', value: Math.round((householdCounts['シニア・その他'] / totalUsers) * 100) || 0, color: 'bg-slate-800' }
+        ];
+
+        // 実データに基づく動的インサイトの生成
+        const maxAgeGroup = Object.keys(ageCounts).reduce((a, b) => ageCounts[a as keyof typeof ageCounts] > ageCounts[b as keyof typeof ageCounts] ? a : b);
+        const maxHousehold = Object.keys(householdCounts).reduce((a, b) => householdCounts[a as keyof typeof householdCounts] > householdCounts[b as keyof typeof householdCounts] ? a : b);
+
+        if (target === 'resident' || target === 'shop' || target === 'posting') {
+             currentInsight = `現在の主要なユーザー層は「${maxAgeGroup}」の「${maxHousehold}」です。`;
+             
+             if (maxHousehold === '単身世帯') {
+                 currentInsight += ` 単身世帯向けにテイクアウトやデリバリー、日用品の広告を配信することで高い反応率（CTR）が見込めます。`;
+             } else if (maxHousehold === 'ファミリー') {
+                 currentInsight += ` ファミリー層向けに休日のレジャーや教育、大型スーパーの特売情報などを配信すると、購買アクションに直結しやすい傾向にあります。`;
+             } else {
+                 currentInsight += ` 地域に根ざした医療機関や生活支援サービスの案内が効果的に機能します。`;
+             }
+        } else if (target === 'manager') {
+             currentInsight = `管理物件内の居住者は「${maxAgeGroup}」の「${maxHousehold}」が中心となっています。この層はデジタル通知への親和性が高く、アプリを通じたお知らせ配信により、伝達漏れの防止とペーパーレス化によるコスト削減効果が最大限に発揮されています。`;
+        }
+      } else {
+         // データがまだない場合のフォールバック
+         currentInsight = '十分なデータが蓄積されていません。ユーザー登録が進むにつれ、ここに具体的な属性分析とターゲティングの推奨事項が表示されます。';
+      }
+
+      setDemographics({
+        age: ageData,
+        household: householdData,
+        insight: currentInsight
+      });
 
     } catch (err) {
       console.error('分析データ取得失敗:', err);
@@ -218,7 +280,7 @@ function ReportingContent() {
             </div>
           </div>
 
-          {/* 🎯 新規追加：デモグラフィック分析＆インサイトエリア */}
+          {/* デモグラフィック分析＆インサイトエリア */}
           <div className="grid md:grid-cols-2 gap-8">
             {/* デモグラフィックチャート */}
             <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 print:border-slate-300">
@@ -233,7 +295,7 @@ function ReportingContent() {
                 </div>
                 <div className="w-full h-4 flex rounded-full overflow-hidden mb-2">
                   {demographics.age.map((item, idx) => (
-                    <div key={idx} className={`h-full ${item.color}`} style={{ width: `${item.value}%` }} title={`${item.label}: ${item.value}%`}></div>
+                     item.value > 0 && <div key={idx} className={`h-full ${item.color}`} style={{ width: `${item.value}%` }} title={`${item.label}: ${item.value}%`}></div>
                   ))}
                 </div>
                 <div className="flex gap-3 text-[9px] font-black text-slate-400 flex-wrap">
@@ -253,7 +315,7 @@ function ReportingContent() {
                 </div>
                 <div className="w-full h-4 flex rounded-full overflow-hidden mb-2">
                   {demographics.household.map((item, idx) => (
-                    <div key={idx} className={`h-full ${item.color}`} style={{ width: `${item.value}%` }} title={`${item.label}: ${item.value}%`}></div>
+                    item.value > 0 && <div key={idx} className={`h-full ${item.color}`} style={{ width: `${item.value}%` }} title={`${item.label}: ${item.value}%`}></div>
                   ))}
                 </div>
                 <div className="flex gap-3 text-[9px] font-black text-slate-400 flex-wrap">
