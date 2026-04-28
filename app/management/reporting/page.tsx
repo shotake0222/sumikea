@@ -13,6 +13,8 @@ function ReportingContent() {
 
   const [target, setTarget] = useState<ReportTarget>(initialTarget);
   const [loading, setLoading] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState(false); // 認証ステータス
+
   const [summary, setSummary] = useState({
     mainValue: '0',
     sub1: '0',
@@ -42,15 +44,44 @@ function ReportingContent() {
     manager: { label: '物件分析', mainLabel: '管理物件総数', sub1: '稼働掲示板', sub2: '未読通知数', color: 'text-emerald-600' }
   };
 
+  // 🎯 1. 運営会社（ADMIN）の権限チェック
   useEffect(() => {
-    fetchLiveAnalytics();
-  }, [target]);
+    const verifyAdmin = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push('/login?type=admin');
+          return;
+        }
+        
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (profile?.role !== 'ADMIN') {
+          alert('このページは運営会社専用です。');
+          router.push('/login?type=admin');
+          return;
+        }
+        
+        setIsAuthorized(true);
+      } catch (err) {
+        console.error('権限確認エラー:', err);
+        router.push('/login?type=admin');
+      }
+    };
+    verifyAdmin();
+  }, [router]);
+
+  // 🎯 2. 権限確認後にデータを取得
+  useEffect(() => {
+    if (isAuthorized) {
+      fetchLiveAnalytics();
+    }
+  }, [target, isAuthorized]);
 
   const fetchLiveAnalytics = async () => {
     try {
       setLoading(true);
       
-      // 1. メインKPIデータの取得
+      // メインKPIデータの取得
       if (target === 'resident') {
         const { count: total } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER');
         const { count: active } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).not('property_id', 'is', null);
@@ -75,9 +106,7 @@ function ReportingContent() {
         setSummary({ mainValue: (total || 0).toLocaleString(), sub1: (notices || 0).toLocaleString(), sub2: '2.1件/月', trend: '+3.1%' });
       }
 
-      // 2. 本番環境からのデモグラフィックデータ集計
-      // ※profilesテーブルに age_group, household_type があると仮定。
-      // もし別テーブルや別カラム名の場合は適宜変更してください。
+      // 本番環境からのデモグラフィックデータ集計
       const { data: profilesData } = await supabase
         .from('profiles')
         .select('age_group, household_type')
@@ -99,9 +128,7 @@ function ReportingContent() {
       if (profilesData && profilesData.length > 0) {
         const totalUsers = profilesData.length;
         
-        // 年齢層の集計
         let ageCounts = { '20代': 0, '30代': 0, '40代': 0, '50代以上': 0 };
-        // 世帯構成の集計
         let householdCounts = { '単身世帯': 0, 'ファミリー': 0, 'シニア・その他': 0 };
 
         profilesData.forEach(p => {
@@ -126,7 +153,6 @@ function ReportingContent() {
           { label: 'シニア・その他', value: Math.round((householdCounts['シニア・その他'] / totalUsers) * 100) || 0, color: 'bg-slate-800' }
         ];
 
-        // 実データに基づく動的インサイトの生成
         const maxAgeGroup = Object.keys(ageCounts).reduce((a, b) => ageCounts[a as keyof typeof ageCounts] > ageCounts[b as keyof typeof ageCounts] ? a : b);
         const maxHousehold = Object.keys(householdCounts).reduce((a, b) => householdCounts[a as keyof typeof householdCounts] > householdCounts[b as keyof typeof householdCounts] ? a : b);
 
@@ -144,7 +170,6 @@ function ReportingContent() {
              currentInsight = `管理物件内の居住者は「${maxAgeGroup}」の「${maxHousehold}」が中心となっています。この層はデジタル通知への親和性が高く、アプリを通じたお知らせ配信により、伝達漏れの防止とペーパーレス化によるコスト削減効果が最大限に発揮されています。`;
         }
       } else {
-         // データがまだない場合のフォールバック
          currentInsight = '十分なデータが蓄積されていません。ユーザー登録が進むにつれ、ここに具体的な属性分析とターゲティングの推奨事項が表示されます。';
       }
 
@@ -187,6 +212,15 @@ function ReportingContent() {
 
   const handleExportPDF = () => window.print();
 
+  // 認証前は画面全体をローディングにする
+  if (!isAuthorized) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="w-10 h-10 border-4 border-slate-900 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style type="text/css" media="print">
@@ -208,7 +242,10 @@ function ReportingContent() {
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">
               Posutto <span className="text-blue-600">Reporting</span>
             </h1>
-            <p className="text-slate-400 text-[10px] font-black tracking-widest mt-2 uppercase">実数値ベース・システム・インテリジェンス</p>
+            <p className="text-slate-400 text-[10px] font-black tracking-widest mt-2 uppercase flex items-center gap-2">
+              <span className="bg-slate-900 text-white px-2 py-0.5 rounded-sm">運営会社専用</span>
+              実数値ベース・システム・インテリジェンス
+            </p>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
             <button onClick={handleExportCSV} className="flex-1 md:flex-none bg-white border border-slate-200 text-slate-700 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition">CSV出力</button>
@@ -247,7 +284,6 @@ function ReportingContent() {
             </div>
           </div>
           
-          {/* メインKPIエリア */}
           <div className="w-full bg-slate-50 rounded-[2.5rem] p-8 md:p-10 mb-8 relative overflow-hidden border border-slate-100 print:bg-white print:border-slate-300">
             <div className="relative z-10 grid md:grid-cols-2 items-center gap-6">
               <div>
@@ -280,15 +316,12 @@ function ReportingContent() {
             </div>
           </div>
 
-          {/* デモグラフィック分析＆インサイトエリア */}
           <div className="grid md:grid-cols-2 gap-8">
-            {/* デモグラフィックチャート */}
             <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 print:border-slate-300">
               <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
                 <span className="text-xl">📊</span> ユーザー属性 (Demographics)
               </h3>
               
-              {/* 年齢層 */}
               <div className="mb-6">
                 <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-2">
                   <span>年齢層分布</span>
@@ -308,7 +341,6 @@ function ReportingContent() {
                 </div>
               </div>
 
-              {/* 世帯構成 */}
               <div>
                 <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-2">
                   <span>世帯構成比率</span>
@@ -329,7 +361,6 @@ function ReportingContent() {
               </div>
             </div>
 
-            {/* AIインサイト（営業トーク用エリア） */}
             <div className="bg-blue-50 border border-blue-100 rounded-[2rem] p-8 relative overflow-hidden print:bg-white print:border-2 print:border-blue-200">
               <div className="absolute -right-4 -top-4 text-7xl opacity-10">💡</div>
               <h3 className="text-[11px] font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
